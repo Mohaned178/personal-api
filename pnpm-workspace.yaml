@@ -6,4 +6,6 @@ packages:
 minimumReleaseAge: 20160
 
 # Dependency build scripts are blocked unless listed here.
-allowBuilds: {}
+allowBuilds:
+  # SWC compiles TypeScript for Vitest (decorator metadata); its install script fetches the native binary.
+  "@swc/core": true
