@@ -12,7 +12,8 @@
     "test": "vitest run",
     "test:int": "vitest run --config vitest.int.config.mts",
     "db:generate": "node --env-file-if-exists=../../.env ./node_modules/drizzle-kit/bin.cjs generate",
-    "db:migrate": "node --env-file-if-exists=../../.env ./node_modules/drizzle-kit/bin.cjs migrate"
+    "db:migrate": "node --env-file-if-exists=../../.env ./node_modules/drizzle-kit/bin.cjs migrate",
+    "worker": "tsc -p tsconfig.build.json && node --env-file-if-exists=../../.env dist/worker.js"
   },
   "dependencies": {
     "@nestjs/common": "11.2.6",
@@ -21,6 +22,7 @@
     "drizzle-orm": "0.45.3",
     "nestjs-pino": "5.2.1",
     "pg": "8.23.0",
+    "pg-boss": "12.35.0",
     "pino": "10.3.1",
     "pino-http": "11.0.0",
     "reflect-metadata": "0.2.2",

@@ -6,6 +6,7 @@ import { APP_CONFIG, ConfigModule } from "./config/config.module";
 import { DbModule } from "./platform/db/db.module";
 import { ProblemFilter } from "./platform/errors/problem.filter";
 import { HealthModule } from "./platform/health/health.module";
+import { JobsModule } from "./platform/jobs/jobs.module";
 import { buildPinoHttpOptions } from "./platform/logging/logging";
 
 @Module({
@@ -17,6 +18,8 @@ import { buildPinoHttpOptions } from "./platform/logging/logging";
     }),
     HealthModule,
     DbModule,
+    // The API only enqueues; the worker process (src/worker.ts) runs the handlers.
+    JobsModule.forRoot({ work: false }),
   ],
   providers: [{ provide: APP_FILTER, useClass: ProblemFilter }],
 })
