@@ -9,3 +9,10 @@ minimumReleaseAge: 20160
 allowBuilds:
   # SWC compiles TypeScript for Vitest (decorator metadata); its install script fetches the native binary.
   "@swc/core": true
+  # Optional native add-ons (ssh2/cpu-features via testcontainers' docker client) and
+  # esbuild/protobufjs postinstall steps are not needed: esbuild ships its binary as an
+  # optional dependency, and the rest have pure-JS fallbacks.
+  "cpu-features": false
+  "ssh2": false
+  "esbuild": false
+  "protobufjs": false

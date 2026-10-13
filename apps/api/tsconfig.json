@@ -7,5 +7,5 @@
     "verbatimModuleSyntax": false,
     "types": ["node"]
   },
-  "include": ["src", "vitest.config.mts"]
+  "include": ["src", "test", "vitest.config.mts", "vitest.int.config.mts", "drizzle.config.ts"]
 }
