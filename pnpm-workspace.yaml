@@ -1,0 +1,9 @@
+packages:
+  - apps/*
+  - packages/*
+
+# Refuse package versions published less than 14 days ago (value is minutes).
+minimumReleaseAge: 20160
+
+# Dependency build scripts are blocked unless listed here.
+allowBuilds: {}

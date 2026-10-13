@@ -1,6 +1,32 @@
-# Expanded in M0-01
+# Dependencies
 node_modules/
+
+# Build output
+dist/
+build/
+.output/
+.wxt/
+*.tsbuildinfo
+
+# Turborepo cache
+.turbo/
+
+# Test and coverage output
+coverage/
+playwright-report/
+test-results/
+
+# Environment files (keep the example)
 .env
 .env.*
 !.env.example
+
+# Local tool settings
 .claude/settings.local.json
+
+# Editor and OS
+.idea/
+.vscode/*
+!.vscode/extensions.json
+.DS_Store
+Thumbs.db
