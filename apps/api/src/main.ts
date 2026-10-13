@@ -6,7 +6,8 @@ import type { AppConfig } from "./config/config";
 import { APP_CONFIG } from "./config/config.module";
 
 async function bootstrap(): Promise<void> {
-  const app = await NestFactory.create(AppModule, { bufferLogs: true });
+  // Better Auth reads the raw request stream; BodyParserModule re-adds parsing for other routes.
+  const app = await NestFactory.create(AppModule, { bufferLogs: true, bodyParser: false });
   app.useLogger(app.get(Logger));
   app.enableShutdownHooks();
   const config = app.get<AppConfig>(APP_CONFIG);
