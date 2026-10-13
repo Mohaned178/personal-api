@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "extends": "@personal-api/tsconfig/node.json",
+  "compilerOptions": {
+    "types": ["node", "chrome"],
+    "lib": ["ES2023", "DOM"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler"
+  },
+  "include": ["support", "tests", "playwright.config.ts"]
+}

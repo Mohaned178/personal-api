@@ -19,7 +19,9 @@
     "db:migrate": "pnpm --filter @personal-api/api db:migrate",
     "db:generate": "pnpm --filter @personal-api/api db:generate",
     "test:int": "turbo run test:int",
-    "worker": "pnpm --filter @personal-api/api worker"
+    "worker": "pnpm --filter @personal-api/api worker",
+    "test:e2e": "turbo run test:e2e",
+    "e2e:install": "pnpm --filter @personal-api/e2e e2e:install"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.14",
