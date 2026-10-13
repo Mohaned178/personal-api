@@ -11,6 +11,8 @@
   "scripts": {
     "lint": "biome check .",
     "format": "biome format --write .",
+    "db:up": "docker compose up -d --wait",
+    "db:down": "docker compose down",
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
     "build": "turbo run build"
