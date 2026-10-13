@@ -1,0 +1,6 @@
+# Expanded in M0-01
+node_modules/
+.env
+.env.*
+!.env.example
+.claude/settings.local.json
