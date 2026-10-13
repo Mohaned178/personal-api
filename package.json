@@ -15,7 +15,10 @@
     "db:down": "docker compose down",
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
-    "build": "turbo run build"
+    "build": "turbo run build",
+    "db:migrate": "pnpm --filter @personal-api/api db:migrate",
+    "db:generate": "pnpm --filter @personal-api/api db:generate",
+    "test:int": "turbo run test:int"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.14",

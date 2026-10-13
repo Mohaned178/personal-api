@@ -49,3 +49,29 @@ jobs:
 
       - name: Unit tests
         run: pnpm test
+
+  # Integration tests need Docker (Testcontainers); ubuntu runners provide it.
+  integration:
+    name: integration (ubuntu-latest)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Check out
+        uses: actions/checkout@v7
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v6
+
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Integration tests
+        run: pnpm test:int
