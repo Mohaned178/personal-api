@@ -1,13 +1,16 @@
-import type { IncomingMessage, ServerResponse } from "node:http";
-import type { Request } from "express";
+import { once } from "node:events";
+import http, { type IncomingMessage, type ServerResponse } from "node:http";
+import type { AddressInfo } from "node:net";
+import type { Express, Request } from "express";
 import express from "express";
 import request from "supertest";
 import { describe, expect, it, vi } from "vitest";
 import {
+  AUTH_BODY_LIMIT_BYTES,
   AUTH_ROUTE,
   createAuthRequestHandler,
-  createBodyParser,
   isAuthPath,
+  isBodyTooLarge,
   isSignUpPath,
   type SignupAdmission,
 } from "./auth.http";
@@ -110,28 +113,107 @@ describe("createAuthRequestHandler", () => {
   });
 });
 
-describe("createBodyParser", () => {
-  function app() {
-    const server = express();
-    server.use(createBodyParser());
-    server.post("/{*splat}", (request, response) => {
-      response.json({ body: request.body ?? null, readable: request.readable });
-    });
-    return server;
+/** Sends a POST whose body goes out with chunked transfer encoding (no Content-Length). */
+async function postChunked(app: Express, path: string) {
+  const server = http.createServer(app).listen(0, "127.0.0.1");
+  await once(server, "listening");
+  const { port } = server.address() as AddressInfo;
+  try {
+    return await new Promise<{ status: number | undefined; type: string; body: string }>(
+      (resolve, reject) => {
+        const outgoing = http.request(
+          {
+            host: "127.0.0.1",
+            port,
+            path,
+            method: "POST",
+            headers: { "content-type": "application/json" },
+          },
+          (res) => {
+            let body = "";
+            res.setEncoding("utf8");
+            res.on("data", (chunk: string) => {
+              body += chunk;
+            });
+            res.on("end", () =>
+              resolve({ status: res.statusCode, type: res.headers["content-type"] ?? "", body }),
+            );
+          },
+        );
+        outgoing.on("error", reject);
+        outgoing.write('{"email":"chunked@b.test",');
+        outgoing.end('"password":"x"}');
+      },
+    );
+  } finally {
+    server.close();
   }
+}
 
-  it("parses JSON for ordinary routes", async () => {
-    const res = await request(app()).post("/v1/things").send({ a: 1 });
-    expect(res.body.body).toEqual({ a: 1 });
+describe("isBodyTooLarge", () => {
+  const headers = (values: Record<string, string>) => ({ headers: values }) as Request;
+
+  it("accepts no body and bodies up to the limit", () => {
+    expect(isBodyTooLarge(headers({}))).toBe(false);
+    expect(isBodyTooLarge(headers({ "content-length": "0" }))).toBe(false);
+    expect(isBodyTooLarge(headers({ "content-length": String(AUTH_BODY_LIMIT_BYTES) }))).toBe(
+      false,
+    );
   });
 
-  it("parses urlencoded forms for ordinary routes", async () => {
-    const res = await request(app()).post("/v1/things").type("form").send("a=1");
-    expect(res.body.body).toEqual({ a: "1" });
+  it("refuses bodies over the limit, of unknown length, or with a malformed length", () => {
+    expect(isBodyTooLarge(headers({ "content-length": String(AUTH_BODY_LIMIT_BYTES + 1) }))).toBe(
+      true,
+    );
+    expect(isBodyTooLarge(headers({ "transfer-encoding": "chunked" }))).toBe(true);
+    expect(isBodyTooLarge(headers({ "content-length": "1e9" }))).toBe(true);
+    expect(isBodyTooLarge(headers({ "content-length": "-1" }))).toBe(true);
+    expect(isBodyTooLarge(headers({ "content-length": "abc" }))).toBe(true);
+  });
+});
+
+describe("createAuthRequestHandler body limit", () => {
+  it("refuses a body over 100 kb with 413 problem+json before Better Auth or the gate", async () => {
+    const gate = { admit: vi.fn(admitAll.admit) };
+    const { app, handle } = mount(gate);
+    for (const path of ["/api/auth/sign-in/email", "/api/auth/sign-up/email"]) {
+      const res = await request(app)
+        .post(path)
+        .send({ email: "big@b.test", pad: "x".repeat(AUTH_BODY_LIMIT_BYTES) });
+      expect(res.status).toBe(413);
+      expect(res.headers["content-type"]).toMatch(/^application\/problem\+json/);
+      expect(res.body).toMatchObject({ status: 413, code: "http.payload_too_large" });
+      expect(res.text).not.toContain("big@b.test");
+    }
+    expect(handle).not.toHaveBeenCalled();
+    expect(gate.admit).not.toHaveBeenCalled();
   });
 
-  it("leaves the raw stream untouched for Better Auth routes", async () => {
-    const res = await request(app()).post("/api/auth/sign-in/email").send({ a: 1 });
-    expect(res.body).toEqual({ body: null, readable: true });
+  it("refuses a chunked body (no Content-Length) with 413 before Better Auth or the gate", async () => {
+    const gate = { admit: vi.fn(admitAll.admit) };
+    const { app, handle } = mount(gate);
+    for (const path of ["/api/auth/sign-in/email", "/api/auth/sign-up/email"]) {
+      const res = await postChunked(app, path);
+      expect(res.status).toBe(413);
+      expect(res.type).toMatch(/^application\/problem\+json/);
+      expect(JSON.parse(res.body)).toMatchObject({ status: 413, code: "http.payload_too_large" });
+    }
+    expect(handle).not.toHaveBeenCalled();
+    expect(gate.admit).not.toHaveBeenCalled();
+  });
+
+  it("passes a body of exactly the limit, and a request with no body, through", async () => {
+    const { app, handle } = mount(admitAll);
+    const prefix = '{"pad":"';
+    const exact = `${prefix}${"x".repeat(AUTH_BODY_LIMIT_BYTES - prefix.length - 2)}"}`;
+    expect(Buffer.byteLength(exact)).toBe(AUTH_BODY_LIMIT_BYTES);
+    const full = await request(app)
+      .post("/api/auth/sign-in/email")
+      .set("Content-Type", "application/json")
+      .send(exact);
+    expect(full.status).toBe(200);
+    const empty = await request(app).post("/api/auth/sign-out");
+    expect(empty.status).toBe(200);
+    expect(handle).toHaveBeenCalledTimes(2);
   });
 });

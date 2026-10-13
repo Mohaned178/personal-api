@@ -60,6 +60,20 @@ export function createAuth({ config, db, canCreateUser }: CreateAuthOptions) {
     },
     telemetry: { enabled: false },
     logger: { log: logSafely },
+    // Without this, better-call answers an unexpected (non-APIError) failure itself with a bare
+    // 500 after `console.error`-ing the raw error, and a Drizzle error message carries the SQL
+    // and its params (an email on sign-in), bypassing pino (invariant 6). With `throw: true` the
+    // router still turns APIErrors into normal responses but rethrows everything else out of
+    // `auth.handler`, where createAuthRequestHandler logs the error name only and answers 500
+    // problem+json.
+    //
+    // Known remaining direct console write: @better-auth/core's adapter factory also calls
+    // `console.error(error)` when a *fallback join* query fails (a second query run because
+    // `advanced.database.joins` is off). That happens only if the DB fails between the base query
+    // and the join query. It cannot be hooked from options, and silencing it would mean patching
+    // the global console, so it is left as is; enabling native joins (needs Drizzle relations)
+    // would remove the path entirely.
+    onAPIError: { throw: true },
     databaseHooks: {
       user: {
         create: {

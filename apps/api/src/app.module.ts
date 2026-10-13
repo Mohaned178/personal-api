@@ -3,16 +3,21 @@ import { APP_FILTER } from "@nestjs/core";
 import { LoggerModule } from "nestjs-pino";
 import type { AppConfig } from "./config/config";
 import { APP_CONFIG, ConfigModule } from "./config/config.module";
+import { isAuthPath } from "./modules/auth/auth.http";
 import { AuthModule } from "./modules/auth/auth.module";
 import { DbModule } from "./platform/db/db.module";
 import { ProblemFilter } from "./platform/errors/problem.filter";
 import { HealthModule } from "./platform/health/health.module";
+import { BodyParserModule } from "./platform/http/body-parser.module";
 import { JobsModule } from "./platform/jobs/jobs.module";
 import { buildPinoHttpOptions } from "./platform/logging/logging";
 
 @Module({
   imports: [
     ConfigModule,
+    // The app is created with `bodyParser: false`; this parses bodies for every route except
+    // Better Auth's, which needs the raw stream.
+    BodyParserModule.forRoot({ skip: isAuthPath }),
     LoggerModule.forRootAsync({
       inject: [APP_CONFIG],
       useFactory: (config: AppConfig) => ({ pinoHttp: buildPinoHttpOptions(config.LOG_LEVEL) }),
