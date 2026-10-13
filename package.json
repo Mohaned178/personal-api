@@ -1,0 +1,23 @@
+{
+  "name": "personal-api",
+  "version": "0.0.0",
+  "private": true,
+  "description": "A self-hosted, multi-account personal data platform.",
+  "packageManager": "pnpm@11.28.2",
+  "engines": {
+    "node": ">=24 <25",
+    "pnpm": ">=11.28.2 <12"
+  },
+  "scripts": {
+    "lint": "biome check .",
+    "format": "biome format --write .",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test",
+    "build": "turbo run build"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.5.14",
+    "turbo": "2.11.5",
+    "typescript": "6.0.3"
+  }
+}
