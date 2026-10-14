@@ -135,11 +135,20 @@ locked time, at most 60 s, would count as attention), not a failure of the proto
 ### F3. Real OS window blur (focus to another application), heartbeat off
 
 Same steps, expectations and pass line as Chrome's M3 (Alt+Tab away at T1, click back at T2,
-minimize at T3, restore at T4, end at T5), with `about:robots` as the resting tab. In addition,
-right after T5 open the background console and record what
-`await browser.windows.getLastFocused()` returns while another application has focus (do it by
-switching to the other application, waiting 2 s, switching back, then reading
-`(await __spike.segments())` only): the level-triggered focus check needs `focused: false` there.
+minimize at T3, restore at T4, end at T5), with `about:robots` as the resting tab.
+
+In addition, after T5, check what `browser.windows.getLastFocused()` returns while another
+application has focus (the level-triggered focus check needs `focused: false` there). Opening
+the console and clicking away would itself be focus changes, so do not try to read it by hand:
+in the background console run
+
+```js
+setTimeout(async () => console.log(JSON.stringify(await browser.windows.getLastFocused())), 5000)
+```
+
+then within 5 s switch to another application (Alt+Tab) and wait there about 10 s. Switch back
+and read the logged line in the console. Record its `focused` value in the Notes column. (This
+`setTimeout` is only a one-off probe typed into the console, not prototype code.)
 
 ### F4. Browser restart (quit and relaunch), heartbeat on (permanent install only)
 
@@ -169,4 +178,5 @@ Same as Chrome's M5.
 | F5 sleep (optional) | | | on | n/a | | | | | |
 
 When done, turn the heartbeat back on, remove the spike from `about:addons` (or let the temporary
-add-on go with the next quit), and update the Firefox part of ADR 0002's "Manual verification".
+add-on go with the next quit), and summarise the results in ADR 0002's "Manual verification
+(Firefox)" table (in its Firefox (Spike C) section).
