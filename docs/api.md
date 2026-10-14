@@ -1,0 +1,174 @@
+# API quick start
+
+Examples for a local API. Every request below was run against a local API on
+`http://localhost:3000` (the `BETTER_AUTH_URL` from `.env.example`), with `ALLOW_SIGNUP=true`.
+
+Keys in these examples are placeholders. Your real ingest key is shown once, in the response
+to creating an integration, and the server keeps only its SHA-256 hash.
+
+```bash
+export BASE=http://localhost:3000
+export JAR=$(mktemp)            # cookie jar for the dashboard session
+```
+
+## 1. Sign up
+
+Dashboard auth is Better Auth, mounted at `/api/auth`. Its state-changing routes check the
+`Origin` header against `BETTER_AUTH_URL`, so send it with the same origin. With
+`ALLOW_SIGNUP=false` only the first account can be created; other attempts get
+`403 auth.signup_disabled`.
+
+```bash
+curl -s -X POST "$BASE/api/auth/sign-up/email" \
+  -H "Origin: $BASE" \
+  -H "Content-Type: application/json" \
+  -c "$JAR" \
+  -d '{"email":"you@example.com","password":"use-a-long-passphrase","name":"You"}'
+```
+
+The response is `200` with `{ "token": "...", "user": { ... } }` and a `better-auth.session_token`
+cookie, which is written to `$JAR`. To sign in later, use `/api/auth/sign-in/email` with the
+same body shape (email and password) and `-c "$JAR"`.
+
+## 2. Create an `http` integration
+
+`POST /v1/integrations` needs the session cookie (`-b "$JAR"`). The integration belongs to the
+signed-in user; the body cannot name a user. Only `kind: "http"` is accepted here (browser
+integrations come from pairing, M2-01). New integrations start with `defaultPolicy: "deny"`.
+
+```bash
+curl -s -X POST "$BASE/v1/integrations" \
+  -H "Content-Type: application/json" \
+  -b "$JAR" \
+  -d '{"kind":"http","name":"Work laptop"}'
+```
+
+```json
+{
+  "integration": {
+    "id": "01a13ab2-9115-7297-97ce-f317f4310b8e",
+    "kind": "http",
+    "name": "Work laptop",
+    "defaultPolicy": "deny",
+    "status": "active",
+    "lastSeenAt": null,
+    "createdAt": "2026-10-14T13:55:43.507Z"
+  },
+  "ingestKey": {
+    "id": "01a13ab2-9117-7147-b880-4b6e29a01fec",
+    "key": "pa_ing_<shown-once-placeholder>",
+    "prefix": "pa_ing_<first-6-chars>"
+  }
+}
+```
+
+**The `ingestKey.key` is shown only in this response.** Store it now. The response is
+`Cache-Control: no-store`. If you lose it, revoke the integration and create a new one (there is
+no key listing endpoint).
+
+Set the key for the next calls:
+
+```bash
+export KEY=pa_ing_<paste-the-key-from-the-previous-response>
+```
+
+## 3. Ingest a batch
+
+`POST /v1/ingest/events` takes `Authorization: Bearer <ingest key>`. The key decides the user and
+the integration; the body cannot set them. A batch holds 1 to 100 events and the body is at most
+256 KB. Each event is checked on its own, so one bad event does not fail the batch.
+
+```bash
+curl -s -X POST "$BASE/v1/ingest/events" \
+  -H "Authorization: Bearer $KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "events": [
+      {
+        "id": "0190f5a8-7c1e-7a2b-9d3f-4b5c6d7e8f90",
+        "type": "browser.page_visited",
+        "typeVersion": 1,
+        "occurredAt": "2026-10-13T10:00:00.000Z",
+        "data": { "domain": "example.com", "path": "/docs/start", "transition": "link", "tabRef": "k3j2h1g4f5d6a7b8" },
+        "meta": { "ruleSetVersion": 0, "client": "curl-example" }
+      },
+      {
+        "id": "0190f5a8-7c1e-7a2b-9d3f-4b5c6d7e8f91",
+        "type": "browser.page_visited",
+        "typeVersion": 1,
+        "occurredAt": "2026-10-13T10:00:00.000Z",
+        "data": { "domain": "example.com", "path": "/?q=1", "tabRef": "k3j2h1g4f5d6a7b8" }
+      }
+    ]
+  }'
+```
+
+Response: `200` with one result per event, in request order:
+
+```json
+{
+  "results": [
+    { "id": "0190f5a8-7c1e-7a2b-9d3f-4b5c6d7e8f90", "status": "accepted" },
+    { "id": "0190f5a8-7c1e-7a2b-9d3f-4b5c6d7e8f91", "status": "rejected", "code": "ingest.payload_invalid" }
+  ]
+}
+```
+
+- `accepted`: stored now.
+- `duplicate`: this `id` was already stored for this integration (safe to resend).
+- `dropped`: refused by the rules; only a counter is kept, never the payload.
+- `rejected`: invalid; `code` says why. The second event above has a query string in `path`,
+  so it is rejected.
+
+Sending the same batch again returns `duplicate` for each stored event, so retries are safe.
+
+## 4. Heartbeat
+
+`POST /v1/ingest/heartbeat` reports queue health and updates `lastSeenAt`. It uses the same
+Bearer ingest key. All four fields are required. Success is `204 No Content` with no body.
+
+```bash
+curl -s -o /dev/null -w "%{http_code}\n" -X POST "$BASE/v1/ingest/heartbeat" \
+  -H "Authorization: Bearer $KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"queueDepth":0,"oldestQueuedAgeMs":0,"droppedCount":0,"clientVersion":"0.1.0"}'
+```
+
+## 5. Read an integration (dashboard)
+
+```bash
+curl -s "$BASE/v1/integrations/<integration-id>" -b "$JAR"
+```
+
+Use `GET /v1/integrations` for the list. `lastSeenAt` shows the last heartbeat or batch.
+
+## Error codes
+
+Errors are `application/problem+json` (RFC 9457) with a stable `code`:
+
+```json
+{ "type": "about:blank", "title": "Invalid API key", "status": 401, "code": "auth.invalid_key" }
+```
+
+### Per-event codes (`rejected` items in an ingest response)
+
+| Code                            | Meaning                                                                                 |
+| ------------------------------- | --------------------------------------------------------------------------------------- |
+| `ingest.envelope_invalid`       | The envelope fails the schema: bad `id`, `occurredAt`, unknown keys, or a missing field. |
+| `ingest.type_unknown`           | `type` is not a registered event type.                                                  |
+| `ingest.type_version_unknown`   | `typeVersion` is not registered for that type.                                          |
+| `ingest.payload_invalid`        | `data` fails the schema for that type (for example a `path` with `?`, or an unknown key). |
+| `ingest.occurred_at_too_old`    | `occurredAt` is older than the accepted window.                                         |
+
+### Whole-request codes
+
+| HTTP | Code                       | When                                                                                   |
+| ---- | -------------------------- | -------------------------------------------------------------------------------------- |
+| 400  | `ingest.batch_invalid`     | The batch has no `events` array, an empty one, more than 100 events, or an unknown top-level key. |
+| 400  | `request.invalid`          | A request body fails validation (for example the heartbeat or an integration create).  |
+| 401  | `auth.invalid_key`         | The Bearer ingest key is missing, malformed, unknown or revoked.                       |
+| 401  | `auth.unauthenticated`     | A dashboard route was called without a valid session cookie.                           |
+| 403  | `auth.signup_disabled`     | Sign-up is closed (`ALLOW_SIGNUP=false` and an account already exists).                 |
+| 404  | `integration.not_found`    | The integration id is unknown, belongs to another user, or is malformed (all look the same). |
+| 413  | `http.payload_too_large`   | The body is over the route's limit (100 KB, or 256 KB for `/v1/ingest/events`), or has no declared length on the auth routes. |
+| 500  | `internal.error`           | Unexpected failure. Details are logged, not returned.                                  |
