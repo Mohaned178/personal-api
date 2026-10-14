@@ -1,6 +1,7 @@
 import { Inject, Injectable } from "@nestjs/common";
 import {
   eventIdSchema,
+  type HeartbeatRequest,
   INGEST_BATCH_INVALID_CODE,
   type IngestBatchResponse,
   type IngestErrorCode,
@@ -121,6 +122,9 @@ export function countResults(results: readonly IngestItemResult[]): IngestionCou
   return counts;
 }
 
+/** integrations.last_seen_at is written at most once per this interval per integration. */
+export const LAST_SEEN_UPDATE_INTERVAL_MS = 60_000;
+
 @Injectable()
 export class IngestService {
   constructor(
@@ -152,7 +156,33 @@ export class IngestService {
       { events, bucket: hourBucket(receivedAt) },
       (ids) => countResults(toResults(plan, ids)),
     );
+    await this.repository.touchLastSeen(
+      userId,
+      integrationId,
+      receivedAt,
+      LAST_SEEN_UPDATE_INTERVAL_MS,
+    );
     return { results: toResults(plan, stored) };
+  }
+
+  /**
+   * `POST /v1/ingest/heartbeat`. The body was validated by the contract (strict). Stores it as the
+   * integration's `last_heartbeat` and bumps `last_seen_at` (throttled). Scope comes from the
+   * ingest AuthContext only (invariant 4). Nothing here logs.
+   */
+  async recordHeartbeat(
+    userId: string,
+    integrationId: string,
+    heartbeat: HeartbeatRequest,
+  ): Promise<void> {
+    assertUserScope(userId);
+    await this.repository.recordHeartbeat(
+      userId,
+      integrationId,
+      { ...heartbeat },
+      this.clock.now(),
+      LAST_SEEN_UPDATE_INTERVAL_MS,
+    );
   }
 }
 

@@ -1,9 +1,9 @@
 import { Inject, Injectable } from "@nestjs/common";
 import type { IngestErrorCode } from "@personal-api/contracts";
-import { sql } from "drizzle-orm";
+import { and, eq, isNull, lte, or, sql } from "drizzle-orm";
 import type { Database } from "../../platform/db/db";
 import { DB } from "../../platform/db/db.tokens";
-import { events, ingestionLog } from "../../platform/db/schema";
+import { events, ingestionLog, integrations } from "../../platform/db/schema";
 import {
   type TenantDb,
   TenantScopeViolationError,
@@ -80,6 +80,65 @@ export class IngestRepository {
       await addCounts(tx, scope.userId, integrationId, batch.bucket, summarize(stored));
       return stored;
     });
+  }
+
+  /**
+   * Sets last_seen_at to `at` unless it was already set within `intervalMs` before `at`. The
+   * condition is in the UPDATE itself, so concurrent requests write once. Touches only the
+   * caller's own active integration. Returns whether a row was written.
+   */
+  async touchLastSeen(
+    userId: string,
+    integrationId: string,
+    at: Date,
+    intervalMs: number,
+  ): Promise<boolean> {
+    const scope = tenantScope(this.db, userId);
+    assertIntegrationId(integrationId);
+    const rows = await scope.update(
+      integrations,
+      { lastSeenAt: at },
+      and(
+        eq(integrations.id, integrationId),
+        eq(integrations.status, "active"),
+        or(
+          isNull(integrations.lastSeenAt),
+          lte(integrations.lastSeenAt, new Date(at.getTime() - intervalMs)),
+        ),
+      ),
+    );
+    return rows.length > 0;
+  }
+
+  /**
+   * Stores `heartbeat` as last_heartbeat (always: it is the latest report) and bumps last_seen_at
+   * under the same throttle as `touchLastSeen`, in one UPDATE on the caller's active integration.
+   */
+  async recordHeartbeat(
+    userId: string,
+    integrationId: string,
+    heartbeat: Record<string, unknown>,
+    at: Date,
+    intervalMs: number,
+  ): Promise<boolean> {
+    const scope = tenantScope(this.db, userId);
+    assertIntegrationId(integrationId);
+    const stale = new Date(at.getTime() - intervalMs);
+    const rows = await scope.update(
+      integrations,
+      {
+        lastHeartbeat: heartbeat,
+        lastSeenAt: sql`case when ${integrations.lastSeenAt} is null or ${integrations.lastSeenAt} <= ${sql.param(stale, integrations.lastSeenAt)} then ${sql.param(at, integrations.lastSeenAt)} else ${integrations.lastSeenAt} end`,
+      },
+      and(eq(integrations.id, integrationId), eq(integrations.status, "active")),
+    );
+    return rows.length > 0;
+  }
+}
+
+function assertIntegrationId(integrationId: string): void {
+  if (!isUuid(integrationId)) {
+    throw new TenantScopeViolationError("an integration id from the auth context is required");
   }
 }
 
