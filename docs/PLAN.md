@@ -16,7 +16,7 @@
 | Default URL capture | **Domain and path only.** The query string and `#fragment` are always stripped unless a rule opts a domain in. |
 | Default collection policy | **Deny by default.** A fresh extension collects nothing until the user allows a site. This matches demo step 3 and "explicitly configure what may be collected". |
 | Element interactions | **Deferred to v1.1.** v1 uses only the tabs and idle APIs, with no content scripts. |
-| Browsers | **Chromium** (Chrome, Edge, Brave, Arc) with one MV3 build. WXT keeps a later Firefox build cheap. |
+| Browsers | **Firefox and Edge**, two MV3 builds from one WXT codebase (`firefox-mv3` with an event-page background, `chrome-mv3` for Edge). Distributed only through free stores: Firefox Add-ons (AMO) and Edge Add-ons. The Chrome Web Store (paid developer fee) is not a target; Chrome, Brave and Opera can still load the Edge build but are untested. Changed 2026-10-14. |
 | Event storage model | **Fixed envelope columns plus a `data` JSONB payload validated against a versioned schema per event type.** This gives one common table and still keeps payloads strict. |
 | Pace | Near full-time. Milestones are about 1 week each. |
 
@@ -36,10 +36,10 @@ The whole project uses TypeScript in strict mode. Coming from JavaScript, this i
 | Dashboard auth | **Better Auth** (Drizzle adapter), email + password sessions | Self-hostable. TOTP and passkeys are available later. |
 | Machine auth | Custom **hashed API keys** (`pa_ing_…`, `pa_read_…`), SHA-256 at rest, shown once | Keys are simple, revocable and scoped. Ingest keys and read keys are separate. |
 | Contracts | **Zod 4** in `packages/contracts` | One source of truth for the envelope, event types, rule format and API DTOs. |
-| Extension | **WXT** (Vite-based, MV3) + TypeScript; IndexedDB queue via `idb` | Best DX for MV3: hot reload, manifest generation, and a cross-browser path later. |
+| Extension | **WXT** (Vite-based, MV3) + TypeScript; IndexedDB queue via `idb` | Best DX for MV3: hot reload, manifest generation, and one codebase for the Firefox and Edge builds (`browser.*` API through WXT, never raw `chrome.*`). |
 | Dashboard | **Vite + React 19 + TanStack Router/Query + shadcn/ui + Tailwind v4** | A logged-in SPA needs no SSR. The API serves it as static files, so it's same-origin with simple cookies and no CORS. |
 | Lint/format | **Biome** | One fast tool for lint and format. |
-| Tests | **Vitest** (with SWC for Nest decorators), **supertest** against the Nest app, **Testcontainers** (Postgres), **fast-check** (rule properties), **Playwright** (loads the unpacked extension for e2e) | The full demo runs as an automated e2e test in CI. |
+| Tests | **Vitest** (with SWC for Nest decorators), **supertest** against the Nest app, **Testcontainers** (Postgres), **fast-check** (rule properties), **Playwright** (loads the unpacked Edge/Chromium build for e2e), **web-ext + Selenium/geckodriver** (Firefox smoke) | The full demo runs as an automated e2e test in CI on Chromium; Firefox gets an automated smoke test. |
 | Deploy | **docker compose**: `postgres`, `api`, `worker` (same image, different command). Optional **Caddy** for TLS on a VPS. | One documented command. |
 
 Pin exact versions when scaffolding in M0, using releases at least 14 days old. The dev Postgres runs on **port 5433** so it never touches a Postgres already on 5432.
@@ -49,7 +49,7 @@ Pin exact versions when scaffolding in M0, using releases at least 14 days old. 
 ## 3. Architecture
 
 ```text
-┌──────────── Chrome extension (MV3, WXT) ─────────────┐        ┌──── other sources (v1: any HTTP client) ───┐
+┌───── Browser extension (Firefox + Edge, MV3, WXT) ───┐        ┌──── other sources (v1: any HTTP client) ───┐
 │ tabs/idle listeners → normalize → sanitize URL       │        │ curl / scripts / future GitHub integration │
 │ → collect-rules (shared engine, cached, fail-closed) │        └───────────────────┬────────────────────────┘
 │ → IndexedDB queue → batch flush (alarms + backoff)   │                            │
@@ -82,7 +82,7 @@ Pin exact versions when scaffolding in M0, using releases at least 14 days old. 
 
 ```text
 users, sessions, accounts, verification — Better Auth
-integrations   id, user_id, kind ('chrome-extension' | 'http'), name, default_policy ('deny'|'allow'),
+integrations   id, user_id, kind ('browser-extension' | 'http'), name, default_policy ('deny'|'allow'),
                status ('active'|'revoked'), last_seen_at, last_heartbeat jsonb (queue depth, version)
 api_keys       id, user_id, kind ('ingest'|'read'), integration_id?, prefix, hash, scopes jsonb,
                endpoint_id?, created_at, last_used_at, revoked_at
@@ -121,12 +121,12 @@ The server sets the source (`integration_id`) from the key, never from the body,
 
 | Type | Data | Notes |
 | --- | --- | --- |
-| `browser.page_visited` | domain, path, transition, tabRef | Navigation committed in a tab. `tabRef` is a per-session random id, not the Chrome tab id. |
+| `browser.page_visited` | domain, path, transition, tabRef | Navigation committed in a tab. `tabRef` is a per-session random id, not the browser's tab id. |
 | `browser.focus_segment` | domain, path, startedAt, endedAt, durationMs | A **closed interval** of real attention. It ends on tab switch, window blur, idle (60 s) or lock. Time-on-site is the sum of these intervals, so lost events can't cause runaway durations. |
 | `browser.tab_opened` / `browser.tab_closed` | tabRef, domain? | |
 | `browser.session_started` / `browser.session_ended` | reason (start: startup/resume; end: idle/lock/shutdown/recovered) | A session ends after 30 minutes idle. |
 
-Page titles, full URLs, form contents, keystrokes and incognito activity are **never** collected in v1. Incognito also requires the user to opt in at the Chrome level, and the extension ignores incognito tabs even then.
+Page titles, full URLs, form contents, keystrokes and incognito activity are **never** collected in v1. Incognito / private windows also require the user to opt in at the browser level, and the extension ignores them even then.
 
 ---
 
@@ -139,7 +139,7 @@ Page titles, full URLs, form contents, keystrokes and incognito activity are **n
   "priority": 10,
   "stage": "collect",
   "when": {
-    "source": ["chrome-extension"],
+    "source": ["browser-extension"],
     "type": ["browser.*"],
     "all": [
       { "field": "data.domain", "op": "domain_matches", "value": "github.com" }
@@ -190,8 +190,8 @@ Errors use RFC 9457 `application/problem+json`. Lists use keyset cursors on `(oc
 ## 7. Extension behavior
 
 - **Permissions:** `tabs`, `idle`, `storage`, `alarms`. The API origin is requested at runtime from `optional_host_permissions` when the user enters the server URL. There are no content scripts and no `<all_urls>`.
-- **Connect flow:** in the dashboard, choose "Add Chrome extension" to get a 10-minute pairing code. In the popup, enter the server URL and code. The extension requests the origin permission, calls `POST /v1/pair`, stores the key, and fetches the config.
-- **Queue:** events are persisted to IndexedDB at capture time, because the MV3 service worker can be killed at any moment. A flush runs on an alarm and on new events, in batches of 100, with exponential backoff and jitter. The queue is capped at 50k events or 14 days. If it overflows, the oldest events are dropped **and the drop count is shown and reported in the heartbeat**, so nothing is lost silently.
+- **Connect flow:** in the dashboard, choose "Add browser extension" to get a 10-minute pairing code. In the popup, enter the server URL and code. The extension requests the origin permission, calls `POST /v1/pair`, stores the key, and fetches the config.
+- **Queue:** events are persisted to IndexedDB at capture time, because the MV3 background (a service worker on Edge, an event page on Firefox) can be suspended at any moment. A flush runs on an alarm and on new events, in batches of 100, with exponential backoff and jitter. The queue is capped at 50k events or 14 days. If it overflows, the oldest events are dropped **and the drop count is shown and reported in the heartbeat**, so nothing is lost silently.
 - **Server responses:** a `401` or a revoked key puts the extension in the "Disconnected" state, which stops capture and offers "clear local queue". A `4xx` for a single item removes just that item and logs it locally. `5xx` and network errors cause a retry.
 - **Popup:** connection state, pause/resume, queue depth, last successful sync, dropped count, the current tab's collection verdict and why, and a link to the dashboard.
 
@@ -217,8 +217,8 @@ personal-api/
                        src/modules/{auth,integrations,ingest,rules,events,activity,endpoints,keys,
                                     retention,exports,diagnostics} · src/platform/{db,jobs,logging,config}
   apps/web/            React dashboard (built into apps/api/public at release)
-  apps/extension/      WXT MV3 extension
-  apps/e2e/            Playwright e2e (loads the unpacked extension) + local fixture site
+  apps/extension/      WXT MV3 extension (firefox-mv3 + chrome-mv3 builds for Edge)
+  apps/e2e/            Playwright e2e (loads the unpacked Edge/Chromium build) + Firefox smoke (web-ext + Selenium) + local fixture site
   packages/contracts/  Zod: envelope, event types, API DTOs, rule + saved-query schemas
   packages/rules/      Pure rule engine + saved-query validator (no Node/DOM deps)
   packages/tsconfig/   Shared TS config
@@ -271,14 +271,20 @@ Each milestone ends with something demoable, green CI and a short demo note in t
 
 ### M2: Extension capture and delivery
 
+Targets changed on 2026-10-14: Firefox + Edge (free stores only) instead of Chrome. Every M2 extension task must build and pass its unit tests for both `firefox-mv3` and `chrome-mv3`.
+
+- [ ] **M2-00a [S · medium] Cross-browser build:** WXT targets `firefox-mv3` and `chrome-mv3` (`build`, `build:firefox`, `zip` for both), `browser_specific_settings.gecko` (id + `strict_min_version`) and Firefox `data_collection_permissions` in the manifest, and the M0-08 manifest test extended to both outputs. Rename the integration kind `chrome-extension` → `browser-extension` (contracts, schema, migration, tests). *Done when:* both builds succeed in CI, both manifest tests assert exactly `tabs`, `idle`, `storage`, `alarms` + `optional_host_permissions`, no content scripts, incognito not allowed; `pnpm test:int` covers the migrated constraint.
+- [ ] **M2-00b [O · high] Spike C, Firefox lifecycle:** re-run the Spike A design (ADR 0002 option B) on a Firefox MV3 event page with web-ext + Selenium/geckodriver: forced background suspension during capture, idle, lock (Firefox may not report `locked`), window blur and browser restart. *Done when:* an automated test suspends/reloads the background 20× during capture with zero lost or duplicated events (or the PR explains why Firefox can't force this and what was measured instead), blur/tab-switch segments are off by less than 2 s, and ADR 0002 gains a Firefox section with go/no-go and any per-browser differences M2-04/M2-05 must handle.
+- [ ] **M2-00c [S · high] Firefox e2e smoke harness:** web-ext + Selenium/geckodriver loads the `firefox-mv3` build against the local fixture site, plus a CI job. *Done when:* it runs headless in CI and can read the extension's stored state.
+
 - [ ] **M2-01 [S · high] Pairing (API):** a `pairing_codes` table, `POST /v1/integrations/:id/pairing-code` (session) and `POST /v1/pair` (single use, 10-minute expiry, rate limited). *Done when:* tests cover expired, reused and brute-force-throttled codes.
-- [ ] **M2-02 [S · medium] Connect UI (extension):** server URL input, `chrome.permissions.request` for that origin, pairing, key stored in `chrome.storage.local`, and a disconnect button.
-- [ ] **M2-03 [S · high] URL sanitizer:** keep domain + path, strip query and fragment, normalize IDN and case, and ignore non-http(s) schemes (`chrome://`, `file://`, `about:`). *Done when:* property tests show the output never contains `?` or `#`.
-- [ ] **M2-04 [O · high] Capture engine:** listeners → `page_visited`, `tab_opened/closed`, a `focus_segment` state machine, session start and end, incognito ignored, state persisted following the Spike A ADR. *Done when:* unit tests with mocked chrome APIs and fake timers pass, covering the idle, lock and blur cases.
-- [ ] **M2-05 [O · xhigh] Persistent queue and sync:** IndexedDB store, alarm-driven batch flush, backoff + jitter, per-item result handling, the 50k / 14-day cap with a reported drop counter, and 401 → disconnected. *Done when:* tests cover network failure, partial batch failure and a service-worker restart mid-flush with no loss and no duplicates.
+- [ ] **M2-02 [S · medium] Connect UI (extension):** server URL input, `browser.permissions.request` for that origin (inside the click handler: Firefox requires a user gesture), pairing, key stored in `browser.storage.local`, and a disconnect button.
+- [ ] **M2-03 [S · high] URL sanitizer:** keep domain + path, strip query and fragment, normalize IDN and case, and ignore non-http(s) schemes (`chrome://`, `edge://`, `moz-extension://`, `chrome-extension://`, `file://`, `about:`). *Done when:* property tests show the output never contains `?` or `#`.
+- [ ] **M2-04 [O · high] Capture engine:** listeners → `page_visited`, `tab_opened/closed`, a `focus_segment` state machine, session start and end, incognito ignored, state persisted following ADR 0002 (Spike A + Spike C). *Done when:* unit tests with mocked `browser.*` APIs and fake timers pass, covering the idle, lock and blur cases, including Firefox's differences recorded by Spike C.
+- [ ] **M2-05 [O · xhigh] Persistent queue and sync:** IndexedDB store, alarm-driven batch flush, backoff + jitter, per-item result handling, the 50k / 14-day cap with a reported drop counter, and 401 → disconnected. *Done when:* tests cover network failure, partial batch failure and a background restart mid-flush (service worker on Edge, event page on Firefox) with no loss and no duplicates.
 - [ ] **M2-06 [S · medium] Popup v1 and heartbeat:** connection state, pause/resume, queue depth, last sync, dropped count, and a heartbeat on an alarm.
 - [ ] **M2-07 [S · low] Temporary allow list** in extension storage (replaced in M4).
-- [ ] **M2-08 [S · high] e2e:** pair → visit fixture → events in the DB; go offline → reconnect → nothing lost or duplicated.
+- [ ] **M2-08 [S · high] e2e:** Playwright/Chromium: pair → visit fixture → events in the DB; go offline → reconnect → nothing lost or duplicated. Firefox smoke (M2-00c harness): pair → visit fixture → events in the DB.
 - [ ] **M2-R [O · high] Milestone review.**
 
 ### M3: Dashboard v0
@@ -329,18 +335,18 @@ Each milestone ends with something demoable, green CI and a short demo note in t
 
 ### M7: Hardening and v1.0
 
-- [ ] **M7-01 [S · high] The full 8-step demo as one Playwright e2e test in CI.** This is the v1 definition of done.
+- [ ] **M7-01 [S · high] The full 8-step demo as one Playwright e2e test in CI** (Chromium/Edge build), plus the Firefox smoke passing. This is the v1 definition of done.
 - [ ] **M7-02 [S · high] Route-table-generated suite:** every route checked for unauthenticated, wrong-key-type and cross-tenant access.
 - [ ] **M7-03 [S · medium] Hardening:** rate limits (login, pairing, ingest per key), helmet security headers, and CSRF checks on mutations.
 - [ ] **M7-04 [O · xhigh] Security pass:** `/security-review`, fixes, and a short threat model in `docs/`.
-- [ ] **M7-05 [H · medium] Production packaging:** a multi-stage Dockerfile, a compose prod profile, a Caddy example, and dependency audit and license check.
+- [ ] **M7-05 [H · medium] Production packaging:** extension zips for AMO and Edge Add-ons (AMO source-code bundle included), a multi-stage Dockerfile, a compose prod profile, a Caddy example, and dependency audit and license check.
 - [ ] **M7-06 [H · low] Docs:** README quickstart and `self-hosting.md` (TLS, backups, upgrades), with `rule-format.md` and `api.md` finalized.
 - [ ] **M7-07 [H · low] Release prep:** CHANGELOG and version bump. Tagging `v1.0.0` needs the user's approval.
 - [ ] **M7-R [O · xhigh] Final review.**
 
 ### v1.1 and later (explicitly out of v1)
 
-Webhook `forward` action (HMAC-signed, retries, SSRF guard), a GitHub integration (webhooks for commits and PRs, which proves a second real source), content-script interactions for one site, Postgres RLS, user-defined event types with JSON Schema, Firefox build, monthly partitioning if volume needs it.
+Webhook `forward` action (HMAC-signed, retries, SSRF guard), a GitHub integration (webhooks for commits and PRs, which proves a second real source), content-script interactions for one site, Postgres RLS, user-defined event types with JSON Schema, a Chrome Web Store listing, monthly partitioning if volume needs it.
 
 ---
 
@@ -348,11 +354,12 @@ Webhook `forward` action (HMAC-signed, retries, SSRF guard), a GitHub integratio
 
 | Risk | Mitigation |
 | --- | --- |
-| MV3 service worker gets killed, so in-memory state is lost | Persist everything to IndexedDB at capture. Use alarms, not timers. Spike A proves this before anything is built on it. |
+| MV3 background gets killed (Edge service worker, Firefox event page), so in-memory state is lost | Persist everything to IndexedDB at capture. Use alarms, not timers. Spike A (Chromium) and Spike C (Firefox) prove this before anything is built on it. |
+| Firefox and Edge APIs differ (idle/lock states, background lifecycle, permission prompts) | One `browser.*` codebase via WXT; Spike C records the differences; unit tests run for both builds; Firefox smoke e2e in CI. |
 | Time-on-site inflates from missed "end" events | Send closed `focus_segment` intervals. Idle, lock and blur close the open segment. Cap any single segment at 30 minutes. |
 | Rules change while events sit in the queue | The server always re-applies current collect rules, and the stricter outcome wins. `meta.ruleSetVersion` is recorded for debugging. |
 | Rule bugs widen collection | Deny by default, fail closed, property tests on the engine, and the dry-run preview before saving. |
-| The `tabs` permission shows a "read browsing history" warning | Unavoidable for this product. Explain it on the onboarding screen. Distribute v1 as unpacked or as a private Web Store listing. |
+| The `tabs` permission shows a "read browsing history" warning | Unavoidable for this product. Explain it on the onboarding screen. Distribute v1 through Firefox Add-ons and Edge Add-ons (both free), or unpacked. |
 | Client clock skew | Store both `occurredAt` and `receivedAt`. Clamp future timestamps and flag them. |
 | Scope creep from the big vision | Anything not on the M0–M7 list goes to v1.1 or later. |
 
