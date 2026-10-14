@@ -11,6 +11,9 @@
     "typecheck": "wxt prepare && tsc --noEmit",
     "test": "wxt build && vitest run"
   },
+  "dependencies": {
+    "@personal-api/contracts": "workspace:*"
+  },
   "devDependencies": {
     "@types/node": "24.19.0",
     "typescript": "6.0.3",

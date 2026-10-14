@@ -124,7 +124,7 @@ The server sets the source (`integration_id`) from the key, never from the body,
 | `browser.page_visited` | domain, path, transition, tabRef | Navigation committed in a tab. `tabRef` is a per-session random id, not the Chrome tab id. |
 | `browser.focus_segment` | domain, path, startedAt, endedAt, durationMs | A **closed interval** of real attention. It ends on tab switch, window blur, idle (60 s) or lock. Time-on-site is the sum of these intervals, so lost events can't cause runaway durations. |
 | `browser.tab_opened` / `browser.tab_closed` | tabRef, domain? | |
-| `browser.session_started` / `browser.session_ended` | reason (startup/idle/lock/shutdown) | A session ends after 30 minutes idle. |
+| `browser.session_started` / `browser.session_ended` | reason (start: startup/resume; end: idle/lock/shutdown/recovered) | A session ends after 30 minutes idle. |
 
 Page titles, full URLs, form contents, keystrokes and incognito activity are **never** collected in v1. Incognito also requires the user to opt in at the Chrome level, and the extension ignores incognito tabs even then.
 
@@ -259,13 +259,13 @@ Each milestone ends with something demoable, green CI and a short demo note in t
 
 ### M1: Ingestion API
 
-- [ ] **M1-01 [O · high] Contracts:** the envelope schema, an event-type registry (`type@version` → Zod schema) and the v1 browser types in `packages/contracts`. *Done when:* unknown types and versions are rejected with clear error codes, and the types are exported for both the API and the extension.
-- [ ] **M1-02 [S · medium] Schema:** `integrations`, `api_keys`, `events` (unique dedupe key + indexes from §4) and `ingestion_log` migrations.
-- [ ] **M1-03 [O · xhigh] API keys and tenant scoping:** key generation (prefix + 32 random bytes), SHA-256 at rest, constant-time lookup, `IngestKeyGuard`, an `AuthContext` that carries `userId` + `integrationId`, a tenant-scoped repository helper that won't run a query without `userId`, and throttled `last_used_at`. *Done when:* revoked or unknown keys get 401 and no repository method can be called without a user scope.
+- [x] **M1-01 [O · high] Contracts:** scaffold `packages/contracts` (`@personal-api/contracts`, Zod 4.6.5, built `dist` + `exports` usable from the CJS API and the ESM extension), a strict envelope schema (`id` accepts any RFC 9562 UUID), an event-type registry (`type@version` → strict Zod schema), the v1 browser types from §4 (`path` without `?`/`#`, lowercase `domain`, `focus_segment` bounds ≤ 30 min, `transition` optional), the ingest batch request (≤ 100) and per-item result schemas, and stable error codes (`ingest.envelope_invalid`, `ingest.type_unknown`, `ingest.type_version_unknown`, `ingest.payload_invalid`) returned by a non-throwing `parseEvent()`. *Done when:* unit tests cover each code, unknown keys (including `userId`/`integrationId`/`receivedAt`) are rejected in the envelope and in `data`, and both `apps/api` and `apps/extension` import the package in a test that passes under `pnpm build && pnpm typecheck && pnpm test`.
+- [ ] **M1-02 [S · medium] Schema:** `integrations`, `api_keys`, `events` (unique dedupe key + indexes from §4, plus where the future-timestamp flag is stored) and `ingestion_log` migrations. *Done when:* an integration test migrates and shows a duplicate `(user_id, integration_id, client_event_id)` insert is a no-op under `ON CONFLICT DO NOTHING`.
+- [ ] **M1-03 [O · xhigh] API keys and tenant scoping:** key generation (prefix + 32 random bytes), SHA-256 at rest, constant-time lookup, `IngestKeyGuard`, an `AuthContext` that carries `userId` + `integrationId`, a tenant-scoped repository helper that won't run a query without `userId`, and throttled `last_used_at`, plus the two-user test fixture reused by every later milestone. *Done when:* revoked or unknown keys get 401 and no repository method can be called without a user scope.
 - [ ] **M1-04 [S · medium] Integrations module:** session CRUD, creating an `http` integration with a key shown once, and revoke.
-- [ ] **M1-05 [O · xhigh] `POST /v1/ingest/events`:** batch limits (100 events / 256 KB), envelope and payload validation, future-timestamp clamping, one transaction with `INSERT … ON CONFLICT DO NOTHING`, per-item results, and the hourly `ingestion_log` upsert. *Done when:* the M1-07 tests pass.
+- [ ] **M1-05 [O · xhigh] `POST /v1/ingest/events`:** batch limits (100 events / 256 KB), envelope and payload validation, future-timestamp clamping, one transaction with `INSERT … ON CONFLICT DO NOTHING`, per-item results, the hourly `ingestion_log` upsert, and rejection of events older than a fixed 90-day window until M6. *Done when:* the same batch sent 3 times gives 1 row, and malformed, oversized and partly-invalid batches return the M1-01 codes per item.
 - [ ] **M1-06 [S · low] Heartbeat:** `POST /v1/ingest/heartbeat`, plus `last_seen_at` and `last_heartbeat` on the integration.
-- [ ] **M1-07 [S · high] Test suite:** the same batch sent 3 times gives 1 row; concurrent duplicate posts give 1 row; malformed, oversized and partly-invalid batches; revoked keys; cross-tenant isolation (a two-user fixture reused by every later milestone).
+- [ ] **M1-07 [S · high] Test suite:** concurrent duplicate posts give 1 row; revoked keys; cross-tenant isolation across all M1 routes, using the M1-03 two-user fixture.
 - [ ] **M1-08 [H · low] Docs:** `docs/event-types.md` and `curl` examples in `docs/api.md`.
 - [ ] **M1-R [O · high] Milestone review** (`/code-review` + `/security-review`).
 
