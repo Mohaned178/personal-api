@@ -3,11 +3,41 @@
   "version": "0.0.0",
   "private": true,
   "description": "Zod schemas shared by the API, the extension and the dashboard.",
+  "type": "module",
+  "main": "./dist/cjs/index.js",
+  "module": "./dist/esm/index.js",
+  "types": "./dist/esm/index.d.ts",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/esm/index.d.ts",
+        "default": "./dist/esm/index.js"
+      },
+      "require": {
+        "types": "./dist/cjs/index.d.ts",
+        "default": "./dist/cjs/index.js"
+      },
+      "default": "./dist/esm/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist"
+  ],
+  "sideEffects": false,
   "scripts": {
+    "build": "tsc -p tsconfig.build.json && tsc -p tsconfig.build.cjs.json && node scripts/mark-cjs.mjs",
+    "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },
+  "dependencies": {
+    "zod": "4.6.5"
+  },
   "devDependencies": {
+    "@personal-api/tsconfig": "workspace:*",
+    "@types/node": "24.19.0",
     "fast-check": "4.10.2",
+    "typescript": "6.0.3",
     "vitest": "5.0.2"
   }
 }
