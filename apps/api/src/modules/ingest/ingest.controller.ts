@@ -34,7 +34,7 @@ export class IngestController {
     @CurrentAuth("ingest") auth: IngestAuthContext,
     @Body() body: unknown,
   ): Promise<IngestBatchResponse> {
-    return this.ingest.ingestBatch(auth.userId, auth.integrationId, body);
+    return this.ingest.ingestBatch(auth.userId, auth.integrationId, auth.keyId, body);
   }
 
   /**

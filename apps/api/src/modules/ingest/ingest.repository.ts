@@ -3,8 +3,9 @@ import type { IngestErrorCode } from "@personal-api/contracts";
 import { and, eq, isNull, lte, or, sql } from "drizzle-orm";
 import type { Database } from "../../platform/db/db";
 import { DB } from "../../platform/db/db.tokens";
-import { events, ingestionLog, integrations } from "../../platform/db/schema";
+import { apiKeys, events, ingestionLog, integrations } from "../../platform/db/schema";
 import {
+  scopeCondition,
   type TenantDb,
   TenantScopeViolationError,
   tenantScope,
@@ -58,6 +59,14 @@ export class IngestRepository {
    * so the log always matches what the caller is told. If either write fails, neither is kept.
    * Returns the stored ids.
    *
+   * The transaction starts by locking the caller's integration and then its key FOR SHARE, each
+   * only while still live (`status = 'active'`, `revoked_at IS NULL`). A revoke that committed
+   * after the guard ran (or commits while this waits: READ COMMITTED re-checks the predicate once
+   * the lock is granted) leaves no row, and this returns null with nothing written. A revoke that
+   * arrives later waits for this transaction, so the batch is ordered before it. The lock order
+   * (integration, then key) is the one `IntegrationsRepository.revoke` uses, so they cannot
+   * deadlock. Null means "the key is no longer valid": the caller answers 401.
+   *
    * `userId` and `integrationId` come from the ingest AuthContext only (invariant 4). Neither
    * insert can go through `scope.insert` (it has no ON CONFLICT option), so both stamp
    * `scope.userId` on their row themselves, the way `scope.insert` does. The conflict targets
@@ -66,16 +75,19 @@ export class IngestRepository {
   async storeBatch(
     userId: string,
     integrationId: string,
+    keyId: string,
     batch: StoreBatchInput,
     summarize: (stored: ReadonlySet<string>) => IngestionCounts,
-  ): Promise<ReadonlySet<string>> {
+  ): Promise<ReadonlySet<string> | null> {
     // Built first, so a missing userId rejects before the database is touched.
     tenantScope(this.db, userId);
-    if (!isUuid(integrationId)) {
-      throw new TenantScopeViolationError("an integration id from the auth context is required");
+    assertIntegrationId(integrationId);
+    if (!isUuid(keyId)) {
+      throw new TenantScopeViolationError("a key id from the auth context is required");
     }
     return this.db.transaction(async (tx) => {
       const scope = tenantScope(tx, userId);
+      if (!(await lockLiveCaller(tx, scope.userId, integrationId, keyId))) return null;
       const stored = await insertNewEvents(tx, scope.userId, integrationId, batch.events);
       await addCounts(tx, scope.userId, integrationId, batch.bucket, summarize(stored));
       return stored;
@@ -140,6 +152,48 @@ function assertIntegrationId(integrationId: string): void {
   if (!isUuid(integrationId)) {
     throw new TenantScopeViolationError("an integration id from the auth context is required");
   }
+}
+
+/**
+ * Locks the caller's active integration, then its live key, FOR SHARE until the transaction ends.
+ * Two statements, in the order `IntegrationsRepository.revoke` takes its row locks. False when
+ * either is gone or revoked. Neither select can use `scope.select` (it has no lock option); both
+ * AND the user scope through `scopeCondition`, the way `ApiKeysRepository.insertIngestKey` does.
+ */
+async function lockLiveCaller(
+  tx: TenantDb,
+  userId: string,
+  integrationId: string,
+  keyId: string,
+): Promise<boolean> {
+  const [integration] = await tx
+    .select({ id: integrations.id })
+    .from(integrations)
+    .where(
+      scopeCondition(
+        integrations,
+        userId,
+        and(eq(integrations.id, integrationId), eq(integrations.status, "active")),
+      ),
+    )
+    .for("share");
+  if (!integration) return false;
+  const [key] = await tx
+    .select({ id: apiKeys.id })
+    .from(apiKeys)
+    .where(
+      scopeCondition(
+        apiKeys,
+        userId,
+        and(
+          eq(apiKeys.id, keyId),
+          eq(apiKeys.integrationId, integrationId),
+          isNull(apiKeys.revokedAt),
+        ),
+      ),
+    )
+    .for("share");
+  return key !== undefined;
 }
 
 /**

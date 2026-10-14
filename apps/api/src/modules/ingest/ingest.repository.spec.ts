@@ -18,6 +18,7 @@ const untouchedDb = new Proxy(
 ) as unknown as Database;
 
 const INTEGRATION = "0192f1c2-7c1e-7a3b-9f00-1c2d3e4f5a6b";
+const KEY = "0192f1c2-7c1e-7a3b-9f00-2d3e4f5a6b7c";
 const batch = { events: [], bucket: new Date("2026-10-14T12:00:00.000Z") };
 const summarize = () => ({ accepted: 0, duplicate: 0, dropped: 0, rejected: 0, byReason: {} });
 
@@ -56,7 +57,17 @@ describe("IngestRepository tenant scoping", () => {
     async (bad) => {
       const repo = new IngestRepository(untouchedDb);
       await expect(
-        repo.storeBatch("user-1", bad as unknown as string, batch, summarize),
+        repo.storeBatch("user-1", bad as unknown as string, KEY, batch, summarize),
+      ).rejects.toBeInstanceOf(TenantScopeViolationError);
+    },
+  );
+
+  it.each([undefined, null, "", "not-a-uuid"])(
+    "refuses to store without a key id from the auth context (%j)",
+    async (bad) => {
+      const repo = new IngestRepository(untouchedDb);
+      await expect(
+        repo.storeBatch("user-1", INTEGRATION, bad as unknown as string, batch, summarize),
       ).rejects.toBeInstanceOf(TenantScopeViolationError);
     },
   );

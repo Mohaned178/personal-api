@@ -15,6 +15,7 @@ import type { z } from "zod";
 import { CLOCK, type Clock } from "../../platform/clock/clock";
 import { assertUserScope } from "../../platform/db/tenant-scope";
 import { AppException } from "../../platform/errors/problem";
+import { INVALID_KEY_CODE } from "../keys/ingest-key.guard";
 import { type IngestionCounts, IngestRepository, type NewEvent } from "./ingest.repository";
 
 const MINUTE_MS = 60 * 1000;
@@ -136,11 +137,14 @@ export class IngestService {
    * `POST /v1/ingest/events`. A body that fails the batch shape is one 400 problem+json
    * (`ingest.batch_invalid`) and stores nothing. Otherwise each item gets its own result, valid
    * events are stored, and the hourly counters are updated, all in one transaction. `userId` and
-   * `integrationId` come from the ingest AuthContext only (invariant 4). Nothing here logs.
+   * `integrationId` and `keyId` come from the ingest AuthContext only (invariant 4). If the key was
+   * revoked since the guard ran, nothing is stored and the answer is the guard's 401. Nothing here
+   * logs.
    */
   async ingestBatch(
     userId: string,
     integrationId: string,
+    keyId: string,
     body: unknown,
   ): Promise<IngestBatchResponse> {
     assertUserScope(userId);
@@ -153,9 +157,12 @@ export class IngestService {
     const stored = await this.repository.storeBatch(
       userId,
       integrationId,
+      keyId,
       { events, bucket: hourBucket(receivedAt) },
       (ids) => countResults(toResults(plan, ids)),
     );
+    // The key or its integration was revoked after the guard let this request through.
+    if (stored === null) throw new AppException(401, INVALID_KEY_CODE, "Invalid API key");
     await this.repository.touchLastSeen(
       userId,
       integrationId,
