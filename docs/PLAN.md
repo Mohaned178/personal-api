@@ -236,7 +236,7 @@ Each milestone ends with something demoable, green CI and a short demo note in t
 **Legend:** each tag is `[model · effort]`. You never pick these yourself: `/task` and `/milestone` read the tag and launch the right model at the right effort (see §12).
 
 - **Model:** `H` Haiku: setup, config, docs, simple tasks. `S` Sonnet: implementation and **all tests**. `O` Opus: complex or security-critical implementation, plus **every review**.
-- **Effort:** `low` is mechanical work with an obvious answer. `medium` is normal feature work. `high` covers tricky edge cases, concurrency, security-adjacent work or fiddly tooling. `xhigh` is reserved for core correctness and security (keys, tenant scoping, the ingest transaction, the offline queue, the rule engine, the query compiler, privacy-critical reviews). `max` isn't used by default. It's the retry level when an `xhigh` task fails twice.
+- **Effort:** `low` is mechanical work with an obvious answer. `medium` is normal feature work. `high` covers tricky edge cases, concurrency, security-adjacent work or fiddly tooling. Implementation never uses `xhigh`: Opus builds at `high` at most. `xhigh` is for reviews only (privacy-critical milestone reviews and the security pass). `max` isn't used by default. It's not used by default.
 
 - On an `[O]` task, **Sonnet writes the tests first** from the "done when" criteria, then Opus implements until they pass. The tests stay independent of the code they check.
 - Tasks are numbered `Mx-NN`, with one branch per task (`mx-nn-short-name`).
@@ -281,7 +281,7 @@ Targets changed on 2026-10-14: Firefox + Edge (free stores only) instead of Chro
 - [ ] **M2-02 [S · medium] Connect UI (extension):** server URL input, `browser.permissions.request` for that origin (inside the click handler: Firefox requires a user gesture), pairing, key stored in `browser.storage.local`, and a disconnect button.
 - [ ] **M2-03 [S · high] URL sanitizer:** keep domain + path, strip query and fragment, normalize IDN and case, and ignore non-http(s) schemes (`chrome://`, `edge://`, `moz-extension://`, `chrome-extension://`, `file://`, `about:`). *Done when:* property tests show the output never contains `?` or `#`.
 - [ ] **M2-04 [O · high] Capture engine:** listeners → `page_visited`, `tab_opened/closed`, a `focus_segment` state machine, session start and end, incognito ignored, state persisted following ADR 0002 (Spike A + Spike C). *Done when:* unit tests with mocked `browser.*` APIs and fake timers pass, covering the idle, lock and blur cases, including Firefox's differences recorded by Spike C.
-- [ ] **M2-05 [O · xhigh] Persistent queue and sync:** IndexedDB store, alarm-driven batch flush, backoff + jitter, per-item result handling, the 50k / 14-day cap with a reported drop counter, and 401 → disconnected. *Done when:* tests cover network failure, partial batch failure and a background restart mid-flush (service worker on Edge, event page on Firefox) with no loss and no duplicates.
+- [ ] **M2-05 [O · high] Persistent queue and sync:** IndexedDB store, alarm-driven batch flush, backoff + jitter, per-item result handling, the 50k / 14-day cap with a reported drop counter, and 401 → disconnected. *Done when:* tests cover network failure, partial batch failure and a background restart mid-flush (service worker on Edge, event page on Firefox) with no loss and no duplicates.
 - [ ] **M2-06 [S · medium] Popup v1 and heartbeat:** connection state, pause/resume, queue depth, last sync, dropped count, and a heartbeat on an alarm.
 - [ ] **M2-07 [S · low] Temporary allow list** in extension storage (replaced in M4).
 - [ ] **M2-08 [S · high] e2e:** Playwright/Chromium: pair → visit fixture → events in the DB; go offline → reconnect → nothing lost or duplicated. Firefox smoke (M2-00c harness): pair → visit fixture → events in the DB.
@@ -301,10 +301,10 @@ Targets changed on 2026-10-14: Firefox + Edge (free stores only) instead of Chro
 ### M4: Rules
 
 - [ ] **M4-01 [O · high] Rule format:** the Zod schema in `contracts`, a per-type field registry (which fields conditions may use), and a draft of `docs/rule-format.md`.
-- [ ] **M4-02 [O · xhigh] Engine (`packages/rules`):** `evaluate(event, rules, policy) → {decision, event, trace}` with the ops, actions, priority and drop-beats-allow semantics from §5. Pure, with no I/O.
+- [ ] **M4-02 [O · high] Engine (`packages/rules`):** `evaluate(event, rules, policy) → {decision, event, trace}` with the ops, actions, priority and drop-beats-allow semantics from §5. Pure, with no I/O.
 - [ ] **M4-03 [S · high] Engine tests:** table tests per op and action, plus fast-check properties (drop dominance, determinism, idempotent transforms, invalid input → fail closed).
 - [ ] **M4-04 [S · medium] Rules API:** CRUD, rule-set versioning, `rule_history` snapshots, validation on save, and `POST /v1/rules/test`.
-- [ ] **M4-05 [O · xhigh] Server enforcement:** per-user rule-set cache invalidated by version, collect then process stages at ingest, stored traces, per-rule drop counters, and engine errors → `rejected(rule_error)`.
+- [ ] **M4-05 [O · high] Server enforcement:** per-user rule-set cache invalidated by version, collect then process stages at ingest, stored traces, per-rule drop counters, and engine errors → `rejected(rule_error)`.
 - [ ] **M4-06 [S · high] Extension rule sync:** `GET /v1/ingest/config` with ETag, alarm-based sync, fail closed when rules are missing or invalid, removal of the M2-07 list, and the current-tab verdict in the popup.
 - [ ] **M4-07 [S · medium] Rules UI:** list with priority ordering, form builder, JSON toggle with inline errors, test against a sample event, and drop counts.
 - [ ] **M4-08 [S · medium] Explainability:** the "why is this here" view on events, and onboarding starter templates.
@@ -316,7 +316,7 @@ Targets changed on 2026-10-14: Firefox + Edge (free stores only) instead of Chro
 - [ ] **M5-01 [S · high] Read keys:** scopes (`events:read`, `activity:read`, `endpoint:<id>`), optional source/type restriction, `ReadKeyGuard`, and a keys UI.
 - [ ] **M5-02 [S · medium] `GET /v1/events`** for a session or read key, with scope filtering applied.
 - [ ] **M5-03 [S · medium] Aggregates:** `/v1/activity/daily` and `/v1/activity/domains` (time from focus segments), plus a user time zone setting.
-- [ ] **M5-04 [O · xhigh] Saved-query compiler:** definition schema → parameterized Drizzle query, a field-allowlist projection, aggregate modes, row limits, `statement_timeout`, and aggregate-only enforcement.
+- [ ] **M5-04 [O · high] Saved-query compiler:** definition schema → parameterized Drizzle query, a field-allowlist projection, aggregate modes, row limits, `statement_timeout`, and aggregate-only enforcement.
 - [ ] **M5-05 [S · medium] Endpoints:** CRUD, `GET /v1/me/:slug`, and a UI with live preview + a copyable `curl`.
 - [ ] **M5-06 [S · high] Tests:** injection attempts through field names and values, limit and timeout, scope escalation (endpoint A's key calling B or `/events`), and cross-tenant.
 - [ ] **M5-07 [H · low] OpenAPI** at `/docs`, and `docs/api.md`.
@@ -407,7 +407,7 @@ Around every task, the coordinator:
 3. Commits, pushes, opens a PR and waits for CI.
 4. Ticks the task's box in this file on the branch, then merges only when you approve (or in `auto-merge` mode).
 
-**Escalation (automatic):** if a builder fails the checks twice, the coordinator retries once more one level up (Haiku → Sonnet, Sonnet → Opus, Opus `xhigh` → `max`). If that fails too, or a subagent reports a design question or anything touching auth, tenant scoping or the privacy invariants, the coordinator stops and asks you.
+**Escalation (automatic):** if a builder fails the checks twice, the coordinator retries once more one level up (Haiku → Sonnet, Sonnet → Opus, Opus `high` → `xhigh`). If that fails too, or a subagent reports a design question or anything touching auth, tenant scoping or the privacy invariants, the coordinator stops and asks you.
 
 Record every reversed decision as an ADR in `docs/adr/`.
 

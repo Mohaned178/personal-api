@@ -47,7 +47,7 @@ Add `pnpm test:int` if the task touched the DB and Docker is running, and `pnpm 
 
 **Escalation ladder.** Apply it when checks fail or the builder reports `blocked`:
 1. Send the failure output back to the same builder (SendMessage), for one fix attempt.
-2. If it still fails, start a new `builder` one level up (`haiku` → `sonnet`, `sonnet` → `opus` at `high`, `opus xhigh` → `opus max`) with the failure output and the diff so far.
+2. If it still fails, start a new `builder` one level up (`haiku` → `sonnet`, `sonnet` → `opus` at `high`, `opus high` → `opus xhigh`) with the failure output and the diff so far.
 3. If that fails too, or a subagent reports `needs-opus` on a design, auth, tenant-scoping or invariant question that the next level can't settle, **stop and ask the user**. Include the evidence.
 
 A builder status of `needs-opus` from Haiku or Sonnet goes straight to step 2.
