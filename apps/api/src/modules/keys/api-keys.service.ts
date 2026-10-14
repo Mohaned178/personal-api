@@ -1,6 +1,8 @@
 import { Inject, Injectable } from "@nestjs/common";
+import { INTEGRATION_NOT_FOUND_CODE } from "@personal-api/contracts";
 import { CLOCK, type Clock } from "../../platform/clock/clock";
 import { assertUserScope } from "../../platform/db/tenant-scope";
+import { isUuid } from "../../platform/db/uuid";
 import { AppException } from "../../platform/errors/problem";
 import type { IngestAuthContext } from "../auth/auth-context";
 import { ApiKeysRepository } from "./api-keys.repository";
@@ -8,14 +10,6 @@ import { generateApiKey, hashApiKey, INGEST_KEY_PATTERN } from "./key-generation
 
 /** last_used_at is written at most once per this interval per key. */
 export const LAST_USED_UPDATE_INTERVAL_MS = 60_000;
-
-export const INTEGRATION_NOT_FOUND_CODE = "integration.not_found";
-
-/** Any UUID Postgres accepts. Ids that do not look like one are refused before a query. */
-const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-const isUuid = (value: unknown): value is string =>
-  typeof value === "string" && UUID_PATTERN.test(value);
 
 export interface CreatedApiKey {
   id: string;
