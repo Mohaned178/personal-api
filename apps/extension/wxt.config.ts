@@ -9,5 +9,7 @@ export default defineConfig({
       "Sends browsing events to your self-hosted Personal API, only for sites you allow.",
     permissions: ["tabs", "idle", "storage", "alarms"],
     optional_host_permissions: ["https://*/*", "http://*/*"],
+    // Never run in incognito windows, even if the user allows it (invariant 3).
+    incognito: "not_allowed",
   },
 });

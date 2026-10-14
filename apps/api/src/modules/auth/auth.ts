@@ -58,6 +58,11 @@ export function createAuth({ config, db, canCreateUser }: CreateAuthOptions) {
       // HttpOnly + SameSite=Lax are Better Auth's defaults; Secure follows the public URL.
       useSecureCookies: config.BETTER_AUTH_URL.startsWith("https://"),
     },
+    // Set explicitly from the validated config rather than left to Better Auth's own
+    // process.env.NODE_ENV default, so tests and a misconfigured env can't silently flip it.
+    // TODO(M7-03): configure trusted proxies / the client-IP header (advanced.ipAddress) for
+    // deployments behind a reverse proxy; until then every client may share one rate-limit bucket.
+    rateLimit: { enabled: config.NODE_ENV === "production" },
     telemetry: { enabled: false },
     logger: { log: logSafely },
     // Without this, better-call answers an unexpected (non-APIError) failure itself with a bare
