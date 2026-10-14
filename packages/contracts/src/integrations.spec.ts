@@ -19,7 +19,7 @@ describe("createIntegrationRequestSchema", () => {
     ["userId", { kind: "http", name: "a", userId: "u" }],
     ["defaultPolicy", { kind: "http", name: "a", defaultPolicy: "allow" }],
     ["status", { kind: "http", name: "a", status: "revoked" }],
-    ["chrome-extension kind", { kind: "chrome-extension", name: "a" }],
+    ["browser-extension kind", { kind: "browser-extension", name: "a" }],
     ["missing kind", { name: "a" }],
     ["blank name", { kind: "http", name: "   " }],
     ["long name", { kind: "http", name: "x".repeat(81) }],

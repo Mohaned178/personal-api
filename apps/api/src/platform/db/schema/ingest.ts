@@ -36,7 +36,7 @@ export const integrations = pgTable(
   },
   (table) => [
     index("integrations_user_id_idx").on(table.userId),
-    check("integrations_kind_check", sql`${table.kind} IN ('chrome-extension', 'http')`),
+    check("integrations_kind_check", sql`${table.kind} IN ('browser-extension', 'http')`),
     check("integrations_default_policy_check", sql`${table.defaultPolicy} IN ('deny', 'allow')`),
     check("integrations_status_check", sql`${table.status} IN ('active', 'revoked')`),
   ],
