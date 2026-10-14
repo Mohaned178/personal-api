@@ -52,3 +52,23 @@ export const ingestBatchResponseSchema = z.strictObject({
   results: z.array(ingestItemResultSchema).max(INGEST_MAX_BATCH_EVENTS),
 });
 export type IngestBatchResponse = z.output<typeof ingestBatchResponseSchema>;
+
+/** Longest `clientVersion` in a heartbeat, in UTF-16 code units. */
+export const HEARTBEAT_CLIENT_VERSION_MAX = 64;
+
+/**
+ * Body of `POST /v1/ingest/heartbeat`: queue health the client reports about itself. Strict, so
+ * tenancy never comes from the body. Counts are non-negative safe integers. `clientVersion` is
+ * bounded and has no control characters or lone surrogates (Postgres `jsonb` refuses the latter).
+ */
+export const heartbeatRequestSchema = z.strictObject({
+  queueDepth: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER),
+  oldestQueuedAgeMs: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER),
+  droppedCount: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER),
+  clientVersion: z
+    .string()
+    .min(1)
+    .max(HEARTBEAT_CLIENT_VERSION_MAX)
+    .regex(/^[^\p{Cc}\p{Cs}]*$/u, "must not contain control characters"),
+});
+export type HeartbeatRequest = z.output<typeof heartbeatRequestSchema>;

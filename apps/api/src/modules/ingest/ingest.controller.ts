@@ -2,6 +2,7 @@ import { Body, Controller, HttpCode, Post, UseGuards } from "@nestjs/common";
 import type { IngestBatchResponse } from "@personal-api/contracts";
 import { CurrentAuth, type IngestAuthContext } from "../auth/auth-context";
 import { IngestKeyGuard } from "../keys/ingest-key.guard";
+import { HeartbeatDto } from "./heartbeat.dto";
 import { IngestService } from "./ingest.service";
 
 /**
@@ -34,5 +35,18 @@ export class IngestController {
     @Body() body: unknown,
   ): Promise<IngestBatchResponse> {
     return this.ingest.ingestBatch(auth.userId, auth.integrationId, body);
+  }
+
+  /**
+   * Queue health from the client. The body is validated by the global pipe (after the guard), so
+   * a bad body is 400 `request.invalid`. 204: nothing to return.
+   */
+  @Post("heartbeat")
+  @HttpCode(204)
+  async heartbeat(
+    @CurrentAuth("ingest") auth: IngestAuthContext,
+    @Body() body: HeartbeatDto,
+  ): Promise<void> {
+    await this.ingest.recordHeartbeat(auth.userId, auth.integrationId, body);
   }
 }

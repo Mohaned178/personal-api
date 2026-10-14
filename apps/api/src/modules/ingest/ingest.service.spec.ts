@@ -230,6 +230,9 @@ describe("IngestService", () => {
         calls.push({ userId, integrationId, batch, counts: summarize(stored) });
         return stored;
       },
+      async touchLastSeen() {
+        return true;
+      },
     };
     return { repository: repository as unknown as IngestRepository, calls };
   }
