@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { ingestBatchRequestSchema, ingestItemResultSchema } from "./index.js";
+import {
+  INGEST_BATCH_INVALID_CODE,
+  INGEST_ERROR_CODES,
+  ingestBatchRequestSchema,
+  ingestErrorCodeSchema,
+  ingestItemResultSchema,
+} from "./index.js";
 import { pageVisited, UUID_V7 } from "./test-helpers.js";
 
 function batchOf(count: number): { events: Record<string, unknown>[] } {
@@ -119,6 +125,24 @@ describe("ingestItemResultSchema", () => {
         id: UUID_V7,
         status: "dropped",
         data: { domain: "github.com", path: "/a" },
+      }).success,
+    ).toBe(false);
+  });
+});
+
+describe("INGEST_BATCH_INVALID_CODE", () => {
+  it("is the stable whole-request code ingest.batch_invalid", () => {
+    expect(INGEST_BATCH_INVALID_CODE).toBe("ingest.batch_invalid");
+  });
+
+  it("is not a per-item code: a rejected item can never carry it", () => {
+    expect(INGEST_ERROR_CODES as readonly string[]).not.toContain(INGEST_BATCH_INVALID_CODE);
+    expect(ingestErrorCodeSchema.safeParse(INGEST_BATCH_INVALID_CODE).success).toBe(false);
+    expect(
+      ingestItemResultSchema.safeParse({
+        id: UUID_V7,
+        status: "rejected",
+        code: INGEST_BATCH_INVALID_CODE,
       }).success,
     ).toBe(false);
   });

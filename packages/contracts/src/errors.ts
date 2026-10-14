@@ -1,11 +1,18 @@
 import { z } from "zod";
 
-/** Stable error codes for a rejected event. Clients and the ingestion log key on these. */
+/**
+ * Stable error codes for a rejected event. Clients and the ingestion log key on these.
+ *
+ * `parseEvent()` returns the first four. `ingest.occurred_at_too_old` needs the server clock
+ * (an event older than the accepted window), so only the ingest route returns it, and only for
+ * an event that `parseEvent()` accepted.
+ */
 export const INGEST_ERROR_CODES = [
   "ingest.envelope_invalid",
   "ingest.type_unknown",
   "ingest.type_version_unknown",
   "ingest.payload_invalid",
+  "ingest.occurred_at_too_old",
 ] as const;
 
 export const ingestErrorCodeSchema = z.enum(INGEST_ERROR_CODES);

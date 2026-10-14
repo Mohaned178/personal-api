@@ -1,10 +1,13 @@
 import { Module } from "@nestjs/common";
 import { APP_FILTER, APP_PIPE } from "@nestjs/core";
+import { INGEST_MAX_BATCH_BYTES } from "@personal-api/contracts";
 import { LoggerModule } from "nestjs-pino";
 import type { AppConfig } from "./config/config";
 import { APP_CONFIG, ConfigModule } from "./config/config.module";
 import { isAuthPath } from "./modules/auth/auth.http";
 import { AuthModule } from "./modules/auth/auth.module";
+import { INGEST_EVENTS_PATH } from "./modules/ingest/ingest.controller";
+import { IngestModule } from "./modules/ingest/ingest.module";
 import { IntegrationsModule } from "./modules/integrations/integrations.module";
 import { KeysModule } from "./modules/keys/keys.module";
 import { ClockModule } from "./platform/clock/clock.module";
@@ -21,8 +24,14 @@ import { buildPinoHttpOptions } from "./platform/logging/logging";
     ConfigModule,
     ClockModule,
     // The app is created with `bodyParser: false`; this parses bodies for every route except
-    // Better Auth's, which needs the raw stream.
-    BodyParserModule.forRoot({ skip: isAuthPath }),
+    // Better Auth's, which needs the raw stream. Every route keeps the 100 KB default except the
+    // ingest events route, which takes batches of up to 256 KB.
+    BodyParserModule.forRoot({
+      skip: isAuthPath,
+      largeJsonRoutes: [
+        { method: "POST", path: INGEST_EVENTS_PATH, limitBytes: INGEST_MAX_BATCH_BYTES },
+      ],
+    }),
     LoggerModule.forRootAsync({
       inject: [APP_CONFIG],
       useFactory: (config: AppConfig) => ({ pinoHttp: buildPinoHttpOptions(config.LOG_LEVEL) }),
@@ -34,6 +43,7 @@ import { buildPinoHttpOptions } from "./platform/logging/logging";
     AuthModule,
     KeysModule,
     IntegrationsModule,
+    IngestModule,
   ],
   providers: [
     { provide: APP_FILTER, useClass: ProblemFilter },

@@ -13,7 +13,8 @@ const BODY_PARSER_OPTIONS = Symbol("BODY_PARSER_OPTIONS");
 
 /**
  * Body parsing for an app created with `bodyParser: false` (see main.ts). Import it once, in
- * AppModule, with the paths that must keep their raw body.
+ * AppModule, with the paths that must keep their raw body and the few exact routes allowed a JSON
+ * body above the 100 KB default.
  *
  * It is `@Global()` for ordering only: Nest registers global modules' middleware before any other
  * module's, so every controller and every other middleware sees a parsed `req.body` no matter
