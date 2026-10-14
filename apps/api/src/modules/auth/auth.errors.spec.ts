@@ -34,6 +34,7 @@ const admitAll: SignupAdmission = {
 function app() {
   const auth = createAuth({
     config: {
+      NODE_ENV: "test",
       BETTER_AUTH_SECRET: "test-secret-0123456789abcdef0123456789abcdef",
       BETTER_AUTH_URL: TEST_ORIGIN,
     },

@@ -13,7 +13,7 @@ export const SIGNUP_DISABLED_CODE = "auth.signup_disabled";
 export const SIGNUP_DISABLED_TITLE = "Signups are disabled";
 
 export interface CreateAuthOptions {
-  config: Pick<AppConfig, "BETTER_AUTH_SECRET" | "BETTER_AUTH_URL">;
+  config: Pick<AppConfig, "NODE_ENV" | "BETTER_AUTH_SECRET" | "BETTER_AUTH_URL">;
   db: Database;
   /** Asked before every user row is created. Defense in depth behind the HTTP signup gate. */
   canCreateUser: () => Promise<boolean>;

@@ -10,6 +10,7 @@
  *   unless no account exists yet (the first account can always sign up).
  */
 import type { INestApplication } from "@nestjs/common";
+import request from "supertest";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import {
   buildAuthTestApp,
@@ -108,6 +109,20 @@ describe("dashboard auth with ALLOW_SIGNUP=true", () => {
       const cleared = setCookieHeaders(out).find((line) => line.startsWith(`${cookie.name}=`));
       expect(cleared, "sign-out sends a Set-Cookie for the session cookie").toBeDefined();
       expect(cleared).toMatch(/max-age=0|expires=thu, 01 jan 1970/i);
+    });
+
+    it("sign-out with a valid session cookie but a foreign Origin is 403 and keeps the session alive", async () => {
+      const { cookie } = await registerAndLogin(app, "csrf");
+
+      const res = await request(app.getHttpServer())
+        .post("/api/auth/sign-out")
+        .set("Origin", "https://evil.example")
+        .set("Cookie", cookie.pair)
+        .send({});
+
+      expect(res.status).toBe(403);
+      // The cross-site request did not revoke anything.
+      expect((await getMe(app, cookie.pair)).status).toBe(200);
     });
 
     it("a second login creates a working session without invalidating the first", async () => {
