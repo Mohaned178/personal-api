@@ -19,6 +19,13 @@ export const ingestBatchRequestSchema = z.strictObject({
 });
 export type IngestBatchRequest = z.output<typeof ingestBatchRequestSchema>;
 
+/**
+ * Whole-request code (problem+json, 400) for a body that fails `ingestBatchRequestSchema`: no
+ * `events` array, an empty one, more than `INGEST_MAX_BATCH_EVENTS`, or an unknown top-level key.
+ * Not a per-item code: no item is looked at, and nothing is stored.
+ */
+export const INGEST_BATCH_INVALID_CODE = "ingest.batch_invalid";
+
 export const INGEST_ITEM_STATUSES = ["accepted", "duplicate", "dropped", "rejected"] as const;
 export type IngestItemStatus = (typeof INGEST_ITEM_STATUSES)[number];
 
