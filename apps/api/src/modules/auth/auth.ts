@@ -57,6 +57,9 @@ export function createAuth({ config, db, canCreateUser }: CreateAuthOptions) {
     advanced: {
       // HttpOnly + SameSite=Lax are Better Auth's defaults; Secure follows the public URL.
       useSecureCookies: config.BETTER_AUTH_URL.startsWith("https://"),
+      // Better Auth defaults this to true under NODE_ENV=test, which also disables its CSRF
+      // check. Pin it off everywhere so foreign-origin requests are refused in every env.
+      disableOriginCheck: false,
     },
     // Set explicitly from the validated config rather than left to Better Auth's own
     // process.env.NODE_ENV default, so tests and a misconfigured env can't silently flip it.
