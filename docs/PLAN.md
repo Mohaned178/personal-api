@@ -236,7 +236,7 @@ Each milestone ends with something demoable, green CI and a short demo note in t
 **Legend:** each tag is `[model · effort]`. You never pick these yourself: `/task` and `/milestone` read the tag and launch the right model at the right effort (see §12).
 
 - **Model:** `H` Haiku: setup, config, docs, simple tasks. `S` Sonnet: implementation and **all tests**. `O` Opus: complex or security-critical implementation, plus **every review**.
-- **Effort:** `low` is mechanical work with an obvious answer. `medium` is normal feature work. `high` covers tricky edge cases, concurrency, security-adjacent work or fiddly tooling. Implementation never uses `xhigh`: Opus builds at `high` at most. `xhigh` is for reviews only (privacy-critical milestone reviews and the security pass). `max` isn't used by default. It's not used by default.
+- **Effort:** `low` is mechanical work with an obvious answer. `medium` is normal feature work. `high` covers tricky edge cases, concurrency, security-adjacent work or fiddly tooling. Implementation never uses `xhigh`: Opus builds at `high` at most. `xhigh` is for reviews only (privacy-critical milestone reviews and the security pass). `max` isn't used by default.
 
 - On an `[O]` task, **Sonnet writes the tests first** from the "done when" criteria, then Opus implements until they pass. The tests stay independent of the code they check.
 - Tasks are numbered `Mx-NN`, with one branch per task (`mx-nn-short-name`).
