@@ -1,7 +1,9 @@
-// THROWAWAY Spike A (M0-10) prototype. Contract with the e2e tests: apps/e2e/support/spike.ts.
+// THROWAWAY Spike A (M0-10) / Spike C (M2-00b) prototype. Contract with the e2e tests:
+// apps/e2e/support/spike.ts (Chromium) and apps/e2e/support/spike-firefox.ts (Firefox).
 // Findings and the resulting design: docs/adr/0002-mv3-state-persistence.md.
 //
-// The MV3 service worker can be stopped at any moment, so:
+// The same script runs as a Chromium MV3 service worker and as a Firefox MV3 event page. Either
+// can be stopped at any moment, so:
 //   - every listener is registered synchronously at top level (Chrome only wakes a stopped worker
 //     for listeners registered during the first turn of the script);
 //   - nothing lives in memory between events: every transition reads the persisted state, computes
@@ -11,6 +13,8 @@
 //     serialized behind each other and may lag without delaying capture;
 //   - on every worker start, open tabs are reconciled against the per-tab marks to recover a visit
 //     whose event was delivered to a worker that died before committing it;
+//   - every listener returns the promise of the work it started, which keeps a Firefox event page
+//     alive until that work committed (`keepAliveUntil`; no effect on Chromium);
 //   - the only timer is a chrome.alarms heartbeat, never setTimeout/setInterval. A persisted,
 //     manual-protocol-only switch (`__spike.setHeartbeat`) can turn it off, so idle, lock and
 //     focus events can be checked against a stopped worker.
@@ -65,9 +69,26 @@ const warn = (what: string) => (error: unknown) => {
   console.warn(`spike: ${what} failed`, error instanceof Error ? error.name : typeof error);
 };
 
-function captureVisit(tab: TabInfo): void {
+/**
+ * What a listener returns: a promise that settles once the work it started is committed (or
+ * failed), resolved to undefined. Firefox (Spike C) does not suspend an event page while a
+ * promise returned by one of its listeners is pending: its idle termination declines once and
+ * restarts the idle timer instead (`terminateBackground` / `pendingRunListenerPromisesCount` in
+ * Firefox's ext-backgroundPage.js). So on Firefox the commit, not just the delivery, is inside
+ * the keep-alive. Chromium ignores the return value of these listeners. The value must be
+ * undefined: Firefox structured-clones what a listener's promise resolves to.
+ */
+function keepAliveUntil(work: Promise<void>[]): Promise<void> | undefined {
+  return work.length === 0 ? undefined : Promise.all(work).then(() => undefined);
+}
+
+/**
+ * Commits one visit. The returned promise settles (never rejects, resolves to undefined) once the
+ * transaction committed or failed; listeners return it, see `keepAliveUntil`.
+ */
+function captureVisit(tab: TabInfo): Promise<void> {
   const now = Date.now();
-  browserSession()
+  return browserSession()
     .then((session) => transact((prev) => capture(prev, { now, session, tab }, newId)))
     .catch(warn("capture"));
 }
@@ -118,9 +139,9 @@ function serial<T>(task: () => Promise<T>): Promise<T> {
   return run;
 }
 
-function focusStep(trigger: FocusTrigger): void {
+function focusStep(trigger: FocusTrigger): Promise<void> {
   const now = Date.now();
-  serial(async () => {
+  return serial(async () => {
     const session = await browserSession();
     const listedAt = Date.now();
     const [focused, idle, tabs] = await Promise.all([
@@ -183,20 +204,23 @@ export default defineBackground(() => {
   browserSession().catch(warn("session"));
   browser.idle.setDetectionInterval(IDLE_DETECTION_S);
 
+  // Every listener RETURNS the promise of the work it started (see `keepAliveUntil`).
   browser.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+    const work: Promise<void>[] = [];
     if (changeInfo.status === "complete") {
-      captureVisit({ tabId, url: tab.url, incognito: tab.incognito });
+      work.push(captureVisit({ tabId, url: tab.url, incognito: tab.incognito }));
     }
     // A navigation in the focused tab closes its segment as soon as the URL changes.
-    if (changeInfo.status === "complete" || changeInfo.url !== undefined) focusStep({});
+    if (changeInfo.status === "complete" || changeInfo.url !== undefined) work.push(focusStep({}));
+    return keepAliveUntil(work);
   });
   browser.tabs.onActivated.addListener(() => focusStep({}));
   browser.tabs.onRemoved.addListener(() => focusStep({}));
   browser.windows.onFocusChanged.addListener(() => focusStep({}));
   browser.idle.onStateChanged.addListener((state) => focusStep({ idle: state }));
-  browser.alarms.onAlarm.addListener((alarm) => {
-    if (alarm.name === HEARTBEAT_ALARM) focusStep({});
-  });
+  browser.alarms.onAlarm.addListener((alarm) =>
+    alarm.name === HEARTBEAT_ALARM ? focusStep({}) : undefined,
+  );
   // These two only make Chrome start the worker at browser start / install; the startup step
   // below runs on every worker start anyway.
   browser.runtime.onStartup.addListener(() => {});

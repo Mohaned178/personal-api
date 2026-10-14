@@ -3,12 +3,14 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "THROWAWAY Spike A (M0-10) prototype: capture, IndexedDB queue and focus segments under MV3 service-worker kills. Never shipped; see docs/adr/0002-mv3-state-persistence.md.",
+  "description": "THROWAWAY Spike A (M0-10) and Spike C (M2-00b) prototype: capture, IndexedDB queue and focus segments under MV3 service-worker kills (Chromium) and event page suspensions (Firefox). Never shipped; see docs/adr/0002-mv3-state-persistence.md.",
   "scripts": {
     "postinstall": "wxt prepare",
-    "build": "wxt build",
+    "build": "wxt build && wxt build -b firefox --mv3",
+    "build:chrome": "wxt build",
+    "build:firefox": "wxt build -b firefox --mv3",
     "typecheck": "wxt prepare && tsc --noEmit",
-    "test": "wxt build && vitest run"
+    "test": "wxt build && wxt build -b firefox --mv3 && vitest run"
   },
   "devDependencies": {
     "@types/node": "24.19.0",
