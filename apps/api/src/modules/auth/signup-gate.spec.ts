@@ -59,14 +59,79 @@ describe("SignupGate", () => {
   });
 
   it("with ALLOW_SIGNUP=false refuses once an account exists, without running the signup", async () => {
-    const { pool, calls } = fakePool({ usersExist: true });
+    const { pool } = fakePool({ usersExist: true });
     const gate = new SignupGate(closed, pool);
     const signup = vi.fn(async () => {});
 
     await expect(gate.admit(signup)).resolves.toBe(false);
     expect(signup).not.toHaveBeenCalled();
-    expect(calls).toEqual(["lock", "check", "unlock", "release"]);
     await expect(gate.isOpen()).resolves.toBe(false);
+  });
+
+  it("with ALLOW_SIGNUP=false refuses via a cheap pool check, without connecting, locking or queuing", async () => {
+    const { pool, raw, client, calls } = fakePool({ usersExist: true });
+    const gate = new SignupGate(closed, pool);
+    const signup = vi.fn(async () => {});
+
+    await expect(gate.admit(signup)).resolves.toBe(false);
+    expect(signup).not.toHaveBeenCalled();
+    expect(raw.query).toHaveBeenCalled(); // the cheap check ran on the pool...
+    expect(raw.connect).not.toHaveBeenCalled(); // ...so no connection was held,
+    expect(client.query).not.toHaveBeenCalled(); // ...no advisory lock was taken,
+    expect(calls).toEqual([]);
+  });
+
+  it("refuses signups while a first signup holds the queue, without waiting behind it", async () => {
+    // The first account is being created (slow) and, once done, an account exists. A signup
+    // that arrives meanwhile must not wait for the lock/queue if the cheap check already says no.
+    const state = { usersExist: false };
+    const { pool, raw } = fakePool({ usersExist: false });
+    raw.query.mockImplementation(async () => ({ rows: [{ exists: state.usersExist }] }));
+    const gate = new SignupGate(closed, pool);
+
+    let release: () => void = () => {};
+    const gateOpen = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const first = gate.admit(async () => {
+      state.usersExist = true;
+      await gateOpen; // slow signup still in flight
+    });
+    await new Promise((resolve) => setImmediate(resolve));
+
+    const lateSignup = vi.fn(async () => {});
+    const late = await Promise.race([
+      gate.admit(lateSignup),
+      new Promise<"waiting">((resolve) => setTimeout(() => resolve("waiting"), 100)),
+    ]);
+    release();
+    await first;
+
+    expect(late, "a refused signup must not queue behind the in-flight one").toBe(false);
+    expect(lateSignup).not.toHaveBeenCalled();
+  });
+
+  it("with no accounts the cheap check lets the signup through to the locked path", async () => {
+    const { pool, calls } = fakePool({ usersExist: false });
+    const gate = new SignupGate(closed, pool);
+    await expect(gate.admit(async () => {})).resolves.toBe(true);
+    expect(calls).toEqual(["lock", "check", "unlock", "release"]);
+  });
+
+  it("fails closed when the cheap check errors: the signup is refused or rejected, never run", async () => {
+    const { pool, raw } = fakePool({ usersExist: false });
+    raw.query.mockImplementation(async () => {
+      throw new Error("db down");
+    });
+    const gate = new SignupGate(closed, pool);
+    const signup = vi.fn(async () => {});
+
+    const outcome = await gate.admit(signup).then(
+      (admitted) => admitted,
+      () => "threw",
+    );
+    expect(outcome === false || outcome === "threw").toBe(true);
+    expect(signup).not.toHaveBeenCalled();
   });
 
   it("fails closed when the user check returns something unexpected", async () => {

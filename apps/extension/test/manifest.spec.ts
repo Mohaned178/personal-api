@@ -15,6 +15,10 @@ describe("built MV3 manifest", () => {
     expect(manifest.optional_host_permissions).toEqual(["https://*/*", "http://*/*"]);
   });
 
+  it("is not allowed in incognito windows (invariant 3: never collect incognito tabs)", () => {
+    expect(manifest.incognito).toBe("not_allowed");
+  });
+
   it("has no host_permissions", () => {
     expect(manifest).not.toHaveProperty("host_permissions");
   });

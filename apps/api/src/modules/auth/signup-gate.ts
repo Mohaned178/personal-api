@@ -22,7 +22,8 @@ async function anyUserExists(db: Pick<Pool | PoolClient, "query">): Promise<bool
  * Decides whether a new account may be created: always when ALLOW_SIGNUP=true, otherwise only
  * while no account exists (the first account can always sign up).
  *
- * `admit` makes that check atomic with the signup itself. With signups closed it queues signups
+ * `admit` makes that check atomic with the signup itself. With signups closed it first refuses
+ * cheaply if any account already exists. Otherwise it queues signups
  * in this process (so at most one pool connection waits on the lock), takes the advisory lock,
  * re-checks for users and only then runs the signup, holding the lock until the signup has
  * finished and committed. Concurrent first signups therefore admit exactly one.
@@ -48,6 +49,11 @@ export class SignupGate {
       await signup();
       return true;
     }
+    // Cheap pre-check on the pool: once an account exists (the normal state), refuse without
+    // holding a connection, taking the lock or queuing behind an in-flight signup. If it throws,
+    // the error propagates and the signup never runs. A "no users" answer is not trusted on its
+    // own: the locked path below re-checks.
+    if (await anyUserExists(this.pool)) return false;
     return this.serialize(() => this.admitLocked(signup));
   }
 

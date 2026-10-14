@@ -165,6 +165,8 @@ Page titles, full URLs, form contents, keystrokes and incognito activity are **n
 
 Errors use RFC 9457 `application/problem+json`. Lists use keyset cursors on `(occurred_at, id)`. OpenAPI is served at `/docs`.
 
+**Known exception:** the routes Better Auth serves itself under `/api/auth/*` return Better Auth's own JSON error body, not problem+json. The responses we add in front of it (refused signup `auth.signup_disabled`, oversized body `http.payload_too_large`, unexpected 500) are still problem+json. See `docs/self-hosting.md`.
+
 | Auth | Endpoint | Purpose |
 | --- | --- | --- |
 | none | `GET /healthz`, `GET /readyz` | Liveness, and DB + queue readiness |
@@ -253,7 +255,7 @@ Each milestone ends with something demoable, green CI and a short demo note in t
 - [x] **M0-09 [S · high] Spike B, e2e harness:** Playwright (bundled Chromium, because branded Chrome 137+ ignores `--load-extension`) loads the unpacked extension against a local fixture site (`apps/e2e`), plus `pnpm test:e2e` and a CI e2e job. *Done when:* it runs headless in CI, reads the extension's state from its service worker, and can stop/restart the service worker through CDP.
 - [x] **M0-10 [O · high] Spike A, MV3 lifecycle:** a throwaway prototype of capture, an IndexedDB queue and focus segments under forced service-worker termination, idle, lock, window blur and browser restart, using the M0-09 harness. *Done when:* a Playwright test kills the service worker 20× during capture with zero lost events, scripted blur/tab-switch segments are off by less than 2 s, browser restart is covered by a persistent-context relaunch, idle and lock follow a written manual protocol, and `docs/adr/0002-mv3-state-persistence.md` records the results and the go/no-go.
 - [x] **M0-11 [H · low] Docs:** every command in `CLAUDE.md` either runs or is marked "(from Mx-NN)" (for example web in `pnpm dev` until M3-01), and `docs/adr/0001-stack.md` records the pinned versions and the deviations (Nest 11 over 12, TS 6 over 7, Node 24 now Maintenance LTS, revisit Node 26 at M7).
-- [ ] **M0-R [O · high] Milestone review** (`/code-review` + `/security-review`). Auth, cookies and log redaction land in M0.
+- [x] **M0-R [O · high] Milestone review** (`/code-review` + `/security-review`). Auth, cookies and log redaction land in M0.
 
 ### M1: Ingestion API
 
