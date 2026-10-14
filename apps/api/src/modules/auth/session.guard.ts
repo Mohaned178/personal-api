@@ -33,6 +33,7 @@ export class SessionGuard implements CanActivate {
       throw new AppException(401, "auth.unauthenticated", "Authentication required");
     }
     req.auth = {
+      kind: "session",
       userId: found.user.id,
       sessionId: found.session.id,
       user: { id: found.user.id, email: found.user.email, name: found.user.name },

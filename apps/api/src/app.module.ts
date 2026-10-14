@@ -5,6 +5,8 @@ import type { AppConfig } from "./config/config";
 import { APP_CONFIG, ConfigModule } from "./config/config.module";
 import { isAuthPath } from "./modules/auth/auth.http";
 import { AuthModule } from "./modules/auth/auth.module";
+import { KeysModule } from "./modules/keys/keys.module";
+import { ClockModule } from "./platform/clock/clock.module";
 import { DbModule } from "./platform/db/db.module";
 import { ProblemFilter } from "./platform/errors/problem.filter";
 import { HealthModule } from "./platform/health/health.module";
@@ -15,6 +17,7 @@ import { buildPinoHttpOptions } from "./platform/logging/logging";
 @Module({
   imports: [
     ConfigModule,
+    ClockModule,
     // The app is created with `bodyParser: false`; this parses bodies for every route except
     // Better Auth's, which needs the raw stream.
     BodyParserModule.forRoot({ skip: isAuthPath }),
@@ -27,6 +30,7 @@ import { buildPinoHttpOptions } from "./platform/logging/logging";
     // The API only enqueues; the worker process (src/worker.ts) runs the handlers.
     JobsModule.forRoot({ work: false }),
     AuthModule,
+    KeysModule,
   ],
   providers: [{ provide: APP_FILTER, useClass: ProblemFilter }],
 })

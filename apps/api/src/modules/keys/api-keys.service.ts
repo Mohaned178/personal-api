@@ -1,0 +1,93 @@
+import { Inject, Injectable } from "@nestjs/common";
+import { CLOCK, type Clock } from "../../platform/clock/clock";
+import { assertUserScope } from "../../platform/db/tenant-scope";
+import { AppException } from "../../platform/errors/problem";
+import type { IngestAuthContext } from "../auth/auth-context";
+import { ApiKeysRepository } from "./api-keys.repository";
+import { generateApiKey, hashApiKey, INGEST_KEY_PATTERN } from "./key-generation";
+
+/** last_used_at is written at most once per this interval per key. */
+export const LAST_USED_UPDATE_INTERVAL_MS = 60_000;
+
+export const INTEGRATION_NOT_FOUND_CODE = "integration.not_found";
+
+/** Any UUID Postgres accepts. Ids that do not look like one are refused before a query. */
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+const isUuid = (value: unknown): value is string =>
+  typeof value === "string" && UUID_PATTERN.test(value);
+
+export interface CreatedApiKey {
+  id: string;
+  /** The plaintext key. Returned here once and never stored. */
+  key: string;
+  prefix: string;
+}
+
+@Injectable()
+export class ApiKeysService {
+  constructor(
+    private readonly repository: ApiKeysRepository,
+    @Inject(CLOCK) private readonly clock: Clock,
+  ) {}
+
+  /**
+   * Creates an ingest key for an active integration the user owns. Rejects (and stores nothing)
+   * when the integration does not exist, is revoked or belongs to another user. Only the hash and
+   * the display prefix are stored; the plaintext is returned once.
+   */
+  async createIngestKey(userId: string, integrationId: string): Promise<CreatedApiKey> {
+    assertUserScope(userId);
+    if (!isUuid(integrationId)) throw integrationNotFound();
+    const key = generateApiKey("ingest");
+    const row = await this.repository.insertIngestKey(userId, {
+      integrationId,
+      prefix: key.prefix,
+      hash: key.hash,
+    });
+    if (!row) throw integrationNotFound();
+    return { id: row.id, key: key.plaintext, prefix: key.prefix };
+  }
+
+  /**
+   * Sets revoked_at (clock time; a second revoke keeps the first time). Returns false when the key
+   * is not the user's, or unknown.
+   */
+  async revokeKey(userId: string, keyId: string): Promise<boolean> {
+    assertUserScope(userId);
+    if (!isUuid(keyId)) return false;
+    return this.repository.revoke(userId, keyId, this.clock.now());
+  }
+
+  /**
+   * Resolves a presented bearer token to an ingest AuthContext, or null for anything else:
+   * unknown, malformed, revoked, revoked integration, or a pa_read_ key. Never throws for bad
+   * input (a database failure still throws, so it surfaces as a 500, not as a bad key). Bumps
+   * last_used_at (throttled) on success only.
+   */
+  async authenticateIngestKey(presented: string | undefined): Promise<IngestAuthContext | null> {
+    if (typeof presented !== "string" || !INGEST_KEY_PATTERN.test(presented)) return null;
+    const row = await this.repository.findByHash(hashApiKey(presented));
+    if (
+      row?.kind !== "ingest" ||
+      row.revokedAt !== null ||
+      row.integrationId === null ||
+      row.integrationStatus !== "active"
+    ) {
+      return null;
+    }
+
+    const now = this.clock.now();
+    if (
+      row.lastUsedAt === null ||
+      now.getTime() - row.lastUsedAt.getTime() >= LAST_USED_UPDATE_INTERVAL_MS
+    ) {
+      await this.repository.touchLastUsed(row.userId, row.id, now, LAST_USED_UPDATE_INTERVAL_MS);
+    }
+    return { kind: "ingest", userId: row.userId, integrationId: row.integrationId, keyId: row.id };
+  }
+}
+
+function integrationNotFound(): AppException {
+  return new AppException(404, INTEGRATION_NOT_FOUND_CODE, "Integration not found");
+}
