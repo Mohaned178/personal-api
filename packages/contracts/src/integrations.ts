@@ -12,7 +12,7 @@ export const INTEGRATION_NAME_MAX_LENGTH = 80;
 /** What the user calls the source ("Work laptop"). Trimmed, 1 to 80 characters. */
 export const integrationNameSchema = z.string().trim().min(1).max(INTEGRATION_NAME_MAX_LENGTH);
 
-/** `chrome-extension` is created through the pairing flow (M2-01), so only `http` is accepted here. */
+/** `browser-extension` is created through the pairing flow (M2-01), so only `http` is accepted here. */
 export const createIntegrationRequestSchema = z.strictObject({
   kind: z.literal("http"),
   name: integrationNameSchema,
@@ -30,7 +30,7 @@ export type RenameIntegrationRequest = z.output<typeof renameIntegrationRequestS
  */
 export const integrationSchema = z.strictObject({
   id: z.uuid(),
-  kind: z.enum(["chrome-extension", "http"]),
+  kind: z.enum(["browser-extension", "http"]),
   name: z.string(),
   defaultPolicy: z.enum(["deny", "allow"]),
   status: z.enum(["active", "revoked"]),

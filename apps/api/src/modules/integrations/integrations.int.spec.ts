@@ -181,7 +181,7 @@ describe("create", () => {
     ["defaultPolicy", { kind: "http", name: "x", defaultPolicy: "allow" }],
     ["status", { kind: "http", name: "x", status: "revoked" }],
     ["integrationId", { kind: "http", name: "x", integrationId: "i" }],
-    ["the chrome-extension kind", { kind: "chrome-extension", name: "x" }],
+    ["the browser-extension kind", { kind: "browser-extension", name: "x" }],
     ["a blank name", { kind: "http", name: "   " }],
     ["a missing kind", { name: "x" }],
     ["a non-object body", ["x"]],

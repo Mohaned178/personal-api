@@ -2,11 +2,20 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
-// Reads the manifest produced by `wxt build` (run by the package's test script).
-const manifestPath = fileURLToPath(new URL("../.output/chrome-mv3/manifest.json", import.meta.url));
-const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as Record<string, unknown>;
+// Reads the manifests produced by `wxt build` for both targets (run by the package's test script).
+// Edge loads the chrome-mv3 build.
+function readManifest(target: string): Record<string, unknown> {
+  const path = fileURLToPath(new URL(`../.output/${target}/manifest.json`, import.meta.url));
+  return JSON.parse(readFileSync(path, "utf8")) as Record<string, unknown>;
+}
 
-describe("built MV3 manifest", () => {
+describe.each(["chrome-mv3", "firefox-mv3"])("built %s manifest", (target) => {
+  const manifest = readManifest(target);
+
+  it("is manifest version 3", () => {
+    expect(manifest.manifest_version).toBe(3);
+  });
+
   it("requests exactly the planned permissions", () => {
     expect(manifest.permissions).toEqual(["tabs", "idle", "storage", "alarms"]);
   });
@@ -29,5 +38,19 @@ describe("built MV3 manifest", () => {
 
   it("has no web_accessible_resources", () => {
     expect(manifest).not.toHaveProperty("web_accessible_resources");
+  });
+});
+
+describe("firefox-only manifest settings", () => {
+  it("declares the gecko id, minimum version and data collection", () => {
+    const gecko = (readManifest("firefox-mv3").browser_specific_settings as Record<string, unknown>)
+      ?.gecko as Record<string, unknown>;
+    expect(gecko.id).toMatch(/^[a-z0-9-]+@[a-z0-9.-]+$/);
+    expect(gecko.strict_min_version).toBe("140.0");
+    expect(gecko.data_collection_permissions).toEqual({ required: ["browsingActivity"] });
+  });
+
+  it("keeps the Chrome-family build free of browser_specific_settings", () => {
+    expect(readManifest("chrome-mv3")).not.toHaveProperty("browser_specific_settings");
   });
 });
