@@ -24,6 +24,7 @@
     "drizzle-orm": "0.45.3",
     "express": "5.2.1",
     "nestjs-pino": "5.2.1",
+    "nestjs-zod": "5.5.0",
     "pg": "8.23.0",
     "pg-boss": "12.35.0",
     "pino": "10.3.1",

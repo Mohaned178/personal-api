@@ -3,7 +3,7 @@ import { and, eq, isNull, lte, or, sql } from "drizzle-orm";
 import type { Database } from "../../platform/db/db";
 import { DB } from "../../platform/db/db.tokens";
 import { apiKeys, integrations } from "../../platform/db/schema";
-import { tenantScope } from "../../platform/db/tenant-scope";
+import { scopeCondition, tenantScope } from "../../platform/db/tenant-scope";
 import type { ApiKeyKind } from "./key-generation";
 
 /** What the pre-auth lookup returns: enough for the guard to decide, joined with the integration's status. */
@@ -64,21 +64,38 @@ export class ApiKeysRepository {
   /**
    * Stores an ingest key for one of the user's active integrations. Returns null (and stores
    * nothing) when the integration is unknown, revoked or someone else's.
+   *
+   * The integration row is read FOR SHARE inside a transaction, so a concurrent revoke (which
+   * UPDATEs that row first, see IntegrationsRepository.revoke) either waits for this insert and
+   * then revokes the new key too, or commits first and makes this return null. A key can never be
+   * added to an integration after its revocation. This select is the one query here that does not
+   * go through `scope.select` (it has no lock option); it still ANDs the user scope via
+   * `scopeCondition`.
    */
   async insertIngestKey(userId: string, values: NewIngestKey): Promise<{ id: string } | null> {
-    const scope = tenantScope(this.db, userId);
-    const [integration] = await scope.select(
-      integrations,
-      and(eq(integrations.id, values.integrationId), eq(integrations.status, "active")),
-    );
-    if (!integration) return null;
-    const [row] = await scope.insert(apiKeys, {
-      kind: "ingest",
-      integrationId: integration.id,
-      prefix: values.prefix,
-      hash: values.hash,
+    // Built first, so a missing userId rejects before the database is touched.
+    tenantScope(this.db, userId);
+    return this.db.transaction(async (tx) => {
+      const [integration] = await tx
+        .select({ id: integrations.id })
+        .from(integrations)
+        .where(
+          scopeCondition(
+            integrations,
+            userId,
+            and(eq(integrations.id, values.integrationId), eq(integrations.status, "active")),
+          ),
+        )
+        .for("share");
+      if (!integration) return null;
+      const [row] = await tenantScope(tx, userId).insert(apiKeys, {
+        kind: "ingest",
+        integrationId: integration.id,
+        prefix: values.prefix,
+        hash: values.hash,
+      });
+      return row ? { id: row.id } : null;
     });
-    return row ? { id: row.id } : null;
   }
 
   /**

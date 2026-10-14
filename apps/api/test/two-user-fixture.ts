@@ -8,23 +8,18 @@
  *    `CLOCK` provider with `options.clock` when given.
  *  - `seedTwoUsers` first empties every table (like `resetAuthTables`), then creates users "a" and
  *    "b". Each gets: a real Better Auth account and session cookie (sign-up + sign-in over HTTP),
- *    one `http` integration named "fixture-a" / "fixture-b" with default_policy 'deny' (created
- *    through `tenantScope(db, userId).insert(integrations, ...)`), and one ingest key for that
- *    integration created through `ApiKeysService.createIngestKey` (so only the hash is stored).
- *    M1-04 may switch the integration step to its IntegrationsService; the shape stays the same.
+ *    one `http` integration named "fixture-a" / "fixture-b" with default_policy 'deny', and its
+ *    one ingest key, both created through `IntegrationsService.create` (M1-04), so only the key's
+ *    hash is stored and the fixture exercises the same path as `POST /v1/integrations`.
  */
 import type { INestApplication } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import { AppModule } from "../src/app.module";
 import { APP_CONFIG } from "../src/config/config.module";
 import { AuthModule } from "../src/modules/auth/auth.module";
-import { ApiKeysService } from "../src/modules/keys/api-keys.service";
+import { IntegrationsService } from "../src/modules/integrations/integrations.service";
 import { KeysModule } from "../src/modules/keys/keys.module";
 import { CLOCK, type Clock } from "../src/platform/clock/clock";
-import type { Database } from "../src/platform/db/db";
-import { DB } from "../src/platform/db/db.tokens";
-import { integrations } from "../src/platform/db/schema";
-import { tenantScope } from "../src/platform/db/tenant-scope";
 import {
   authTestConfig,
   type Credentials,
@@ -81,7 +76,7 @@ export async function seedTwoUsers(
   return { a, b };
 }
 
-/** One user, end to end through the real sign-up, the scoped helper and the key service. */
+/** One user, end to end through the real sign-up and the integrations service. */
 async function seedUser(app: INestApplication, label: "a" | "b"): Promise<FixtureUser> {
   const credentials = newCredentials(`fixture-${label}`);
   const up = await signUp(app, credentials);
@@ -95,20 +90,15 @@ async function seedUser(app: INestApplication, label: "a" | "b"): Promise<Fixtur
   const userId = meUser(me.body).id;
   if (me.status !== 200 || !userId) throw new Error(`fixture: /v1/me for ${label} failed`);
 
-  const [integration] = await tenantScope(app.get<Database>(DB), userId).insert(integrations, {
-    kind: "http",
-    name: `fixture-${label}`,
-    defaultPolicy: "deny",
-  });
-  if (!integration) throw new Error(`fixture: integration for ${label} not created`);
-
-  const key = await app.get(ApiKeysService).createIngestKey(userId, integration.id);
+  const { integration, ingestKey } = await app
+    .get(IntegrationsService)
+    .create(userId, { kind: "http", name: `fixture-${label}` });
   return {
     userId,
     credentials,
     cookie,
     integrationId: integration.id,
-    ingestKey: key.key,
-    ingestKeyId: key.id,
+    ingestKey: ingestKey.key,
+    ingestKeyId: ingestKey.id,
   };
 }
