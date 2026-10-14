@@ -6,6 +6,8 @@ import { defineConfig } from "@playwright/test";
 // timing assertions (M0-10) stable.
 export default defineConfig({
   testDir: "./tests",
+  // Firefox specs run through playwright.firefox.config.ts (Selenium, not a Playwright browser).
+  testIgnore: "**/*-firefox.spec.ts",
   fullyParallel: false,
   workers: 1,
   forbidOnly: !!process.env.CI,

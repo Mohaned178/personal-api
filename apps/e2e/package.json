@@ -3,10 +3,11 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "Playwright end-to-end tests: load the built extension (and the Spike A prototype) in bundled Chromium.",
+  "description": "Playwright end-to-end tests: load the built extension (and the Spike A prototype) in bundled Chromium; Spike C runs on Firefox through Selenium + geckodriver.",
   "scripts": {
     "typecheck": "tsc --noEmit",
     "e2e:install": "playwright install chromium",
+    "test:e2e:firefox": "pnpm --filter @personal-api/spike-mv3-lifecycle build && playwright test --config playwright.firefox.config.ts",
     "test:e2e": "pnpm --filter extension build && pnpm --filter @personal-api/spike-mv3-lifecycle build && playwright test"
   },
   "devDependencies": {
@@ -14,6 +15,8 @@
     "@playwright/test": "1.63.0",
     "@types/chrome": "0.3.4",
     "@types/node": "24.19.0",
+    "@types/selenium-webdriver": "4.35.7",
+    "selenium-webdriver": "4.49.0",
     "typescript": "6.0.3"
   }
 }

@@ -8,6 +8,10 @@
 - **Prototype:** `spikes/mv3-lifecycle` (throwaway WXT package, never shipped).
 - **Tests:** `apps/e2e/tests/spike-mv3.spec.ts`, contract in `apps/e2e/support/spike.ts`.
 - **Affects:** M2-04 (capture engine), M2-05 (persistent queue and sync).
+- **Firefox (Spike C, M2-00b):** see [Firefox (Spike C)](#firefox-spike-c). Go on Firefox as
+  well, with one required change (listeners return their work promise, required by Firefox's
+  documented keep-alive semantics; the loss it prevents was not reproduced), conditional on the
+  Firefox manual protocol.
 
 ## Context
 
@@ -303,3 +307,175 @@ affected part; a rule-level failure is fixed in M2-04.
   period on purpose. It also means a worker that "never stops" in everyday testing hides the wake
   path, so wake-path tests must stop the worker explicitly (CDP kill, or the alarm switched off as
   in this spike's manual protocol).
+
+## Firefox (Spike C)
+
+M2-00b re-ran the design above (option B) on a **Firefox MV3 event page**, using the same
+throwaway prototype built with `wxt build -b firefox --mv3`. Firefox does not use a service worker
+for MV3 backgrounds. The background is a non-persistent page that Firefox suspends after
+`extensions.background.idle.timeout` (30 s by default) without an event, and wakes for primed
+(top-level) listeners.
+
+- **Tests:** `apps/e2e/tests/spike-mv3-firefox.spec.ts` (7 tests, mirroring the Chromium spec's
+  scenarios one for one), run with `pnpm --filter @personal-api/e2e test:e2e:firefox`
+  (`playwright.firefox.config.ts`; Playwright is only the test runner there).
+- **Harness:** `apps/e2e/support/spike-firefox.ts`, Selenium (`selenium-webdriver` 4.49.0) +
+  geckodriver, because Playwright's Firefox cannot load WebExtensions. selenium-manager downloads
+  geckodriver when it is not on `PATH`. The build is installed as a temporary add-on (release
+  Firefox refuses unsigned add-ons otherwise) with a stable gecko id and a pinned moz-extension
+  UUID, so a relaunch on the same profile sees the same IndexedDB.
+- **Manual protocol:** `docs/spikes/mv3-lifecycle-firefox-manual-protocol.md` (idle, lock, real OS
+  blur, real quit and crash).
+
+### How suspension is forced
+
+Firefox has no equivalent of CDP `stopWorker`. In Marionette's chrome context, the harness calls
+`extension.terminateBackground()` on demand with its default options: the same function Firefox's
+idle timer calls after 30 s. It tears the page down (`backgroundState` "stopped", all in-memory
+state gone) and re-primes the persistent listeners. Reads of the queue run inside the event page
+through Marionette's window actor, so observing opens no tab and fires no event.
+
+Firefox's termination **declines once** while a promise returned by one of the page's listeners is
+pending (`pendingRunListenerPromisesCount` in `ext-backgroundPage.js`; the parent process tracks
+the promise from the moment it dispatches the event). It then clears that set and restarts the 30 s
+timer. The harness honours that rule but compresses the wait: after a decline it waits only until
+the promises it declined for have settled, then asks again. What it skips is the 30 s without
+events that precedes a real termination. So the page is terminated far more often, and at far
+worse moments, than Firefox ever would on its own: between the events of one navigation,
+milliseconds after a commit, or while a page is loading.
+
+### Requirement: listeners must return their work promise
+
+**Basis: Firefox's documented semantics and a reading of its source, not a reproduced loss.** If a
+listener runs synchronously and returns nothing (as in the Spike A prototype), the promise Firefox
+tracks for it resolves as soon as the listener returns, so Firefox counts the event as handled at
+once. A termination right after that could cut the IndexedDB transaction off before it commits:
+atomicity would hold (no half-written state), but the visit would be gone, the same failure mode as
+option A on Chromium.
+
+**The loss was not reproduced.** The review ran the spike in harsh mode
+(`suspendBackground({ harsh: true })` in `apps/e2e/support/spike-firefox.ts`, which ignores
+Firefox's listener keep-alive and terminates even while a listener promise is pending, i.e. the
+behaviour without the fix): 3 runs, 108 navigations, 60 terminations, **0 lost, 0 duplicated**,
+`recoveredVisits` 0. The Selenium round trip between a navigation and the next termination is
+longer than the IndexedDB commit, so the commit always landed first. The committed test therefore
+**cannot distinguish the fix from no fix**: it passes either way. The `harsh` hook is kept (outside
+the test contract) for that kind of measurement.
+
+The fix is in `spikes/mv3-lifecycle/entrypoints/background.ts` (`keepAliveUntil`): **every
+listener returns a promise that settles once the work it started has committed or failed.** The
+promise resolves to `undefined` and never rejects. By Firefox's semantics the page is then kept
+alive until the commit, not just until the event is delivered. Chromium ignores the return value of
+these listeners, so the same code is correct on both browsers. The value must be `undefined`
+because Firefox structured-clones whatever a listener's promise resolves to.
+
+The keep-alive is bounded: Firefox's termination declines **once** while listener promises are
+pending, then clears that set and restarts the idle timer. A pending promise therefore buys at most
+one more idle period (30 s), not an unlimited lifetime. A slow piece of work (an M2-05 flush over a
+slow network, for example) can still be cut off on the next termination, so it must be idempotent
+and resumable regardless of the returned promise.
+
+### Measured results (Firefox)
+
+Environment: Windows 11 Pro, Node 24.21, Firefox 158.0 (release) headless, geckodriver 0.37.1,
+selenium-webdriver 4.49.0, one worker.
+
+| Criterion | Target | Result | |
+| --- | --- | --- | --- |
+| Events lost or duplicated across forced suspensions | 0 in 20 | **0 lost, 0 duplicated in 340 suspensions**: 7 runs of the committed 20-suspension test (140 suspensions) plus an ad-hoc 10 × 20 measurement (200 suspensions, 360 navigations, `recoveredVisits` 0, so capture always committed first). Every suspension really restarted the page (21 distinct boot ids per test). Query strings and fragments were never stored. | pass |
+| Tab-switch / blur segment error | < 2 s | Within the spec's 1.5 s tolerance in all 7 runs of both segment tests. The review measured the error (4 runs each, table below): **max 103 ms**, gap 0. | pass |
+| Browser restart | covered by relaunch | 7 of 7 runs: queue intact, nothing duplicated, no visit added, and the open segment was closed without counting the 4 s the browser was down. | pass |
+| Idle (60 s), lock, real OS blur, real quit and crash | manual protocol | Protocol written; **not yet run**. | pending |
+
+Provenance: the 7 runs are two single `test:e2e:firefox` runs plus one with `--repeat-each 5`
+(49 of 49 tests passed, no flaky result). The 10 × 20 measurement came from an ad-hoc spec that was deleted
+before commit.
+
+Segment error on Firefox (measured by the review, 4 runs per scenario, |measured − scripted|
+duration; not part of the committed test's output):
+
+| Scenario | Segment | Error |
+| --- | --- | --- |
+| Page suspended and restarted inside the open segment, then blur | /a | ≤ 3 ms |
+| | /b | 46–80 ms |
+| Tab switch arrives while the page is suspended (the event wakes it), then blur | /a | 19–26 ms |
+| | /b | 83–103 ms |
+
+Segment /a always ended exactly where /b started (gap 0 ms). Every figure is under ~0.1 s against
+the 2 s budget.
+
+### Per-browser differences M2-04 and M2-05 must handle
+
+1. **Return the work promise from every listener** (see the requirement above). By Firefox's
+   documented semantics this keeps the commit inside the event page's lifetime; on Chromium it is
+   harmless. The loss it prevents was not reproduced (harsh mode, 0 of 108 navigations lost), so
+   the requirement rests on the documented semantics, not on a measurement. It applies to M2-04's
+   listeners and to M2-05's flush alarm handler. A unit test that each listener returns the
+   promise of its commit is cheap insurance, since no e2e test can tell the difference. For M2-05:
+   the keep-alive lasts at most one more idle period (Firefox clears the pending set after
+   declining once), so a slow flush can still be cut off and must be idempotent and resumable
+   regardless (delete sent items only after the server's per-item result, resend the same ids).
+2. **Firefox has no `locked` state.** `idle.queryState` and `idle.onStateChanged` only report
+   `active` and `idle`. This comes from reading Firefox 158's `ext-idle.js` source and was not
+   measured. A screen lock therefore shows up either as `idle` 60 s after the last input (closed
+   at `now − 60 s` by the idle rule, so not over-counted) or as a window focus loss, if the OS takes
+   focus away from Firefox. **A lock shorter than 60 s may not be seen at all** and would count as
+   attention; F2b of the Firefox protocol measures this. The state machine must treat `locked` as
+   optional and never wait for it.
+3. **How the page starts at browser launch.** At app startup Firefox starts an event page only if
+   a `runtime.onStartup` listener was registered and persisted with the other primed listeners.
+   Otherwise only the first primed event starts it. This comes from the source and was not
+   measured. Keep the empty top-level `onStartup` listener so restart recovery runs at browser
+   start on both browsers. The automated relaunch re-installs a temporary add-on, which is an
+   install, not `onStartup`. A real quit with a permanently installed add-on is F4 of the manual
+   protocol, and needs Developer Edition, Nightly or an AMO-signed build.
+4. **Focus in headless Firefox.** After the blur window opens, `windows.getLastFocused()` returns
+   that new window with `focused: true`, the same as a user switching to another browser window.
+   The level-triggered check still works because it takes the active tab of the focused window
+   rather than relying on the bare flag. Tests on Firefox must assert that the main window is no
+   longer the focused one.
+5. **What blocks suspension.** `terminateBackground` does nothing while DevTools is attached to
+   the extension, and a pending listener promise postpones it by one idle period. Wake-path tests
+   must keep DevTools closed and force suspension explicitly (the harness's `suspendBackground`).
+6. **Storage and ids.** `storage.session` (the browser-session id) and IndexedDB with
+   `durability: "strict"` behaved as on Chromium: the queue survived every suspension and every
+   relaunch. A temporary add-on keeps its IndexedDB across a relaunch only because the harness pins
+   the moz-extension UUID. A permanently installed add-on should keep its UUID without that; this
+   comes from Firefox's documentation and source and was **not measured** (F4 of the manual
+   protocol exercises it).
+7. **Heartbeat.** Firefox's idle timeout is also 30 s, so the 30 s heartbeat alarm should keep the
+   page alive in practice, as on Chromium. This is inferred from the source (each alarm event resets
+   the idle timer) and was **not measured**. M2-05's choice of flush period, and its measurement of
+   how often the background actually stops, apply to both browsers.
+
+### Manual verification (Firefox)
+
+**Status: pending.** The Firefox manual protocol has not been run yet. Results are recorded in the
+[Results table](../spikes/mv3-lifecycle-firefox-manual-protocol.md#results) of
+`docs/spikes/mv3-lifecycle-firefox-manual-protocol.md`; summarise them here when it is run:
+
+| Scenario | Date | OS / Firefox version | Heartbeat | Background stopped? | Pass? | Notes |
+| --- | --- | --- | --- | --- | --- | --- |
+| F1 idle | | | off | | | |
+| F1b idle with video | | | off | | | |
+| F2 lock / unlock (≥ 90 s) | | | off | | | which signal ended segment 1 |
+| F2b short lock (~30 s) | | | off | | | spans the lock? |
+| F3 blur (Alt+Tab, minimize) | | | off | | | `getLastFocused` while away |
+| F4 restart (quit) | | | on | n/a | | background started by itself? UUID and IndexedDB kept? |
+| F4b restart (crash) | | | on | n/a | | |
+| F5 sleep (optional) | | | on | n/a | | |
+
+### Go / no-go (Firefox)
+
+**Go, conditional on the Firefox manual protocol.** M2-04 and M2-05 can be built on the same
+design for both browsers. Difference 1 (listeners return their work promise) is a hard
+requirement, based on Firefox's documented keep-alive semantics; the loss it guards against was
+not reproduced (harsh mode: 0 of 108 navigations lost), and slow work must be resumable anyway.
+Differences 2 to 5 are handled in M2-04's state machine and tests. The automated criteria pass
+with margin: 0 lost or duplicated in 340 suspensions, segment error at most 103 ms against 2 s.
+
+The protocol's results table has not been filled in yet. These outcomes would change the decision:
+
+- **No-go:** after a real Firefox quit or crash (F4, F4b), queued events are missing or duplicated.
+- **Redesign of the focus or idle source:** a real OS blur does not leave the main window
+  unfocused (F3), or idle events do not wake a suspended page in time (F1).
