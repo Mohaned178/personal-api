@@ -49,9 +49,12 @@ export const domainSchema = z
 
 /**
  * A URL path that starts with `/`. It never contains `?` or `#` (the query string and fragment
- * are stripped before an event is built) or control characters.
+ * are stripped before an event is built), control characters, or lone UTF-16 surrogates. With the
+ * `u` flag a surrogate pair is one astral code point (accepted) while an unpaired surrogate is
+ * `\p{Cs}` (rejected), so the path is well-formed Unicode: Postgres `jsonb` refuses an unpaired
+ * `\uD800`-`\uDFFF` escape, and one such item would otherwise fail the whole batch's insert.
  */
-const PATH_PATTERN = /^\/[^?#\p{Cc}]*$/u;
+const PATH_PATTERN = /^\/[^?#\p{Cc}\p{Cs}]*$/u;
 
 export const pathSchema = z
   .string()

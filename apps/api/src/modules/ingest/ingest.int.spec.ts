@@ -355,6 +355,46 @@ describe("per-item results", () => {
     expect(log.reduce((n, r) => n + r.dropped, 0)).toBe(0);
   });
 
+  it.each([
+    ["a lone high surrogate", "/a\uD800b"],
+    ["a lone low surrogate", "/a\uDC00b"],
+    ["a reversed surrogate pair", "/a\uDC00\uD800b"],
+    ["a trailing high surrogate", "/a\uD800"],
+  ])(
+    "rejects a path with %s per item (jsonb cannot store it) and still accepts its valid sibling",
+    async (_name, path) => {
+      const bad = pageVisit({ data: { path } });
+      const ok = pageVisit();
+      // Sent as JSON text with the \uXXXX escape, so the parsed body really holds the lone surrogate
+      // (a raw UTF-8 body would turn it into U+FFFD before it reached the server).
+      const text = JSON.stringify({ events: [bad, ok] });
+      expect(text).toMatch(/\\ud[89a-f][0-9a-f]{2}/);
+      const results = expectResults(await post(h.app, h.a.ingestKey, text));
+
+      expect(results).toEqual([
+        { id: bad.id, status: "rejected", code: "ingest.payload_invalid" },
+        { id: ok.id, status: "accepted" },
+      ]);
+      const rows = await eventRows(h.testDb.pool);
+      expect(rows.map((r) => r.client_event_id)).toEqual([ok.id]);
+      const log = await logRows(h.testDb.pool, h.a.userId);
+      expect(log.map((r) => [r.accepted, r.rejected, r.by_reason])).toEqual([
+        [1, 1, { "ingest.payload_invalid": 1 }],
+      ]);
+    },
+  );
+
+  it("accepts and stores a path whose non-ASCII characters are well-formed (an astral character as a surrogate pair)", async () => {
+    const path = "/café/中/\u{1F600}";
+    const event = pageVisit({ data: { path } });
+    const results = expectResults(
+      await post(h.app, h.a.ingestKey, JSON.stringify({ events: [event] })),
+    );
+    expect(statuses(results)).toEqual(["accepted"]);
+    const [row] = await eventRows(h.testDb.pool);
+    expect(row?.data.path).toBe(path);
+  });
+
   it("returns only a status, an id and a code: never the payload, domain or path", async () => {
     const res = await postEvents(h.app, h.a.ingestKey, [
       pageVisit({ data: { domain: "leaky-domain.example", path: "/leaky-path" } }),

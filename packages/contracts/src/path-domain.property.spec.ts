@@ -24,6 +24,43 @@ const domainArb = fc
   .tuple(fc.array(labelArb, { minLength: 1, maxLength: 4 }), tldArb)
   .map(([labels, tld]) => [...labels, tld].join("."));
 
+// One UTF-16 surrogate code unit. Inserted into an ASCII path it is always unpaired.
+const surrogateArb = fc
+  .integer({ min: 0xd800, max: 0xdfff })
+  .map((unit) => String.fromCharCode(unit));
+
+// Any code point that is not ?, #, a control character or a surrogate: always fine in a path.
+const wellFormedCharArb = fc
+  .integer({ min: 0xa0, max: 0x10ffff })
+  .filter((cp) => cp < 0xd800 || cp > 0xdfff)
+  .map((cp) => String.fromCodePoint(cp));
+
+// Code units with no ?, # or control character, biased toward surrogates so that proper pairs,
+// lone halves and reversed pairs all come up.
+const unitArb = fc.oneof(
+  fc.integer({ min: 0xd800, max: 0xdbff }), // high surrogate
+  fc.integer({ min: 0xdc00, max: 0xdfff }), // low surrogate
+  fc.constantFrom(0x61, 0x2f, 0x2d, 0xe9, 0x4e2d, 0xfffd), // a / - é 中 U+FFFD
+);
+const unitsArb = fc.array(unitArb, { maxLength: 12 }).map((units) => String.fromCharCode(...units));
+
+/**
+ * `String#isWellFormed()` (ES2024, outside this package's lib), written out as the test oracle:
+ * every surrogate code unit is the high or low half of a high-then-low pair.
+ */
+function isWellFormedUtf16(text: string): boolean {
+  for (let i = 0; i < text.length; i++) {
+    const unit = text.charCodeAt(i);
+    if (unit >= 0xdc00 && unit <= 0xdfff) return false;
+    if (unit >= 0xd800 && unit <= 0xdbff) {
+      const next = text.charCodeAt(i + 1);
+      if (!(next >= 0xdc00 && next <= 0xdfff)) return false;
+      i++;
+    }
+  }
+  return true;
+}
+
 const eventBuilders: [string, (data: Record<string, unknown>) => Record<string, unknown>][] = [
   ["browser.page_visited", (data) => pageVisited(data)],
   ["browser.focus_segment", (data) => focusSegment(data)],
@@ -56,6 +93,40 @@ describe.each(eventBuilders)("%s: path and domain properties", (_type, build) =>
         expect(parseEvent(build({ path: `${path}${mark}${tail}` }))).toMatchObject(PAYLOAD_INVALID);
       }),
       { numRuns: 200 },
+    );
+  });
+
+  // Postgres jsonb refuses an unpaired surrogate escape, so letting one through would fail the
+  // whole batch's insert instead of rejecting one item.
+  it("rejects a valid path once a lone UTF-16 surrogate is inserted anywhere after the leading /", () => {
+    fc.assert(
+      fc.property(pathArb, surrogateArb, fc.nat(), (path, lone, pick) => {
+        const at = 1 + (pick % path.length);
+        const poisoned = `${path.slice(0, at)}${lone}${path.slice(at)}`;
+        expect(parseEvent(build({ path: poisoned }))).toMatchObject(PAYLOAD_INVALID);
+      }),
+      { numRuns: 300 },
+    );
+  });
+
+  it("accepts a path of non-control characters exactly when it is well-formed UTF-16", () => {
+    fc.assert(
+      fc.property(unitsArb, (tail) => {
+        const path = `/${tail}`;
+        expect(parseEvent(build({ path })).ok).toBe(isWellFormedUtf16(path));
+      }),
+      { numRuns: 500 },
+    );
+  });
+
+  it("accepts a valid path with any well-formed non-control code point inserted, astral ones included", () => {
+    fc.assert(
+      fc.property(pathArb, wellFormedCharArb, fc.nat(), (path, char, pick) => {
+        const at = 1 + (pick % path.length);
+        const extended = `${path.slice(0, at)}${char}${path.slice(at)}`;
+        expect(parseEvent(build({ path: extended })).ok).toBe(true);
+      }),
+      { numRuns: 300 },
     );
   });
 

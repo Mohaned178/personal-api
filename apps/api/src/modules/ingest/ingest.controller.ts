@@ -13,7 +13,9 @@ export const INGEST_EVENTS_PATH = "/v1/ingest/events";
 /**
  * Ingest-key routes. The user and the integration come from the key (IngestKeyGuard), never from
  * the body, query or headers. The guard runs before the body is validated, so a caller without a
- * valid key always gets 401, whatever it sent.
+ * valid key gets 401 for any body that parses, never a validation error. Body parsing is
+ * middleware (BodyParserModule) and runs before every guard, so an oversized body (413
+ * `http.payload_too_large`) or malformed JSON (400) is refused before the key is checked.
  */
 @Controller("v1/ingest")
 @UseGuards(IngestKeyGuard)
