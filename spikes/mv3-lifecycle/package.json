@@ -1,0 +1,19 @@
+{
+  "name": "@personal-api/spike-mv3-lifecycle",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "THROWAWAY Spike A (M0-10) prototype: capture, IndexedDB queue and focus segments under MV3 service-worker kills. Never shipped; see docs/adr/0002-mv3-state-persistence.md.",
+  "scripts": {
+    "postinstall": "wxt prepare",
+    "build": "wxt build",
+    "typecheck": "wxt prepare && tsc --noEmit",
+    "test": "wxt build && vitest run"
+  },
+  "devDependencies": {
+    "@types/node": "24.19.0",
+    "typescript": "6.0.3",
+    "vitest": "5.0.2",
+    "wxt": "0.21.4"
+  }
+}

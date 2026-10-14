@@ -1,6 +1,8 @@
 packages:
   - apps/*
   - packages/*
+  # Throwaway spike prototypes, never shipped (for example Spike A, docs/adr/0002).
+  - spikes/*
 
 # Refuse package versions published less than 14 days ago (value is minutes).
 minimumReleaseAge: 20160
