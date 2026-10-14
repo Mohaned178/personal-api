@@ -15,6 +15,13 @@
       "when": 1791930542527,
       "tag": "0001_auth",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1791977814649,
+      "tag": "0002_large_miek",
+      "breakpoints": true
     }
   ]
 }
