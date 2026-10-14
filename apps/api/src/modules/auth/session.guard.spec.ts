@@ -17,7 +17,7 @@ void authFitsGuard;
 @Controller()
 class UnguardedController {
   @Get("unguarded")
-  read(@CurrentAuth() auth: AuthContext) {
+  read(@CurrentAuth("session") auth: AuthContext) {
     return auth;
   }
 }

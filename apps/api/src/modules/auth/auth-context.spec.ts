@@ -122,15 +122,15 @@ describe("IngestKeyGuard", () => {
   it("does not read the key from the query string, other headers, a cookie or the body", async () => {
     const { http } = await start();
     const attempts = [
-      http.get("/probe/ingest").query({ api_key: VALID_KEY }),
-      http.get("/probe/ingest").query({ access_token: VALID_KEY, key: VALID_KEY }),
-      http.get("/probe/ingest").set("X-Api-Key", VALID_KEY),
-      http.get("/probe/ingest").set("X-Authorization", `Bearer ${VALID_KEY}`),
-      http.get("/probe/ingest").set("Cookie", `pa_ing=${VALID_KEY}`),
-      http.post("/probe/ingest").send({ key: VALID_KEY, apiKey: VALID_KEY }),
+      () => http.get("/probe/ingest").query({ api_key: VALID_KEY }),
+      () => http.get("/probe/ingest").query({ access_token: VALID_KEY, key: VALID_KEY }),
+      () => http.get("/probe/ingest").set("X-Api-Key", VALID_KEY),
+      () => http.get("/probe/ingest").set("X-Authorization", `Bearer ${VALID_KEY}`),
+      () => http.get("/probe/ingest").set("Cookie", `pa_ing=${VALID_KEY}`),
+      () => http.post("/probe/ingest").send({ key: VALID_KEY, apiKey: VALID_KEY }),
     ];
     for (const attempt of attempts) {
-      const res = await attempt;
+      const res = await attempt();
       expect(res.status).toBe(401);
       expect(res.body.code).toBe("auth.invalid_key");
     }
