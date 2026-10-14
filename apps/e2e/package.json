@@ -7,6 +7,7 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "e2e:install": "playwright install chromium",
+    "test:e2e:firefox": "playwright test --config playwright.firefox.config.ts",
     "test:e2e": "pnpm --filter extension build && pnpm --filter @personal-api/spike-mv3-lifecycle build && playwright test"
   },
   "devDependencies": {
