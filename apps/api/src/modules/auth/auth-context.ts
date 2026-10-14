@@ -11,6 +11,25 @@ export interface AuthContext {
   user: { id: string; email: string; name: string };
 }
 
+/**
+ * M1-03 (test-writer stub types). The builder turns `AuthContext` into the union
+ * `SessionAuthContext | IngestAuthContext`, discriminated by `kind`, makes SessionGuard set
+ * `kind: "session"`, and makes `CurrentAuth("session" | "ingest")` fail closed (500) when the
+ * request's auth is missing or of a different kind.
+ */
+export type AuthKind = "session" | "ingest";
+
+export interface SessionAuthContext extends AuthContext {
+  kind: "session";
+}
+
+export interface IngestAuthContext {
+  kind: "ingest";
+  userId: string;
+  integrationId: string;
+  keyId: string;
+}
+
 export type AuthenticatedRequest = Request & { auth?: AuthContext };
 
 /** Injects the AuthContext set by SessionGuard. Throws if no guard ran, so it fails closed. */
