@@ -8,7 +8,10 @@ import { domainSchema, pathSchema, tabRefSchema, utcDateTimeSchema } from "./pri
  * (`userId`, `integrationId`, `receivedAt`, `origin`) can never ride along.
  */
 
-/** Chrome's `TransitionType` values (chrome.webNavigation / history). */
+/**
+ * The union of Chrome's `TransitionType` values from `chrome.history` and
+ * `chrome.webNavigation` (`auto_toplevel` is history only, `start_page` is webNavigation only).
+ */
 export const PAGE_TRANSITIONS = [
   "link",
   "typed",
@@ -17,6 +20,7 @@ export const PAGE_TRANSITIONS = [
   "manual_subframe",
   "generated",
   "auto_toplevel",
+  "start_page",
   "form_submit",
   "reload",
   "keyword",

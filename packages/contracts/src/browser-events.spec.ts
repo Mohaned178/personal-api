@@ -20,6 +20,13 @@ describe("browser.page_visited v1", () => {
     expect(parseEvent(pageVisited({ transition: "link" })).ok).toBe(true);
   });
 
+  it.each(["start_page", "auto_toplevel"])(
+    "accepts the webNavigation/history-only transition %s",
+    (transition) => {
+      expect(parseEvent(pageVisited({ transition })).ok).toBe(true);
+    },
+  );
+
   it("accepts an event without transition (transition is optional)", () => {
     const data = withoutKey(pageVisited().data as Record<string, unknown>, "transition");
     expect(data).not.toHaveProperty("transition");
