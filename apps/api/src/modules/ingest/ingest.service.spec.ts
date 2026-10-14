@@ -23,6 +23,7 @@ import {
 const NOW = new Date("2026-10-14T12:00:00.000Z");
 const USER = "user-1";
 const INTEGRATION = "0192f1c2-7c1e-7a3b-9f00-1c2d3e4f5a6b";
+const KEY = "0192f1c2-7c1e-7a3b-9f00-2d3e4f5a6b7c";
 
 const at = (offsetMs: number) => new Date(NOW.getTime() + offsetMs).toISOString();
 
@@ -219,6 +220,7 @@ describe("IngestService", () => {
       async storeBatch(
         userId: string,
         integrationId: string,
+        _keyId: string,
         batch: StoreBatchInput,
         summarize: (stored: ReadonlySet<string>) => IngestionCounts,
       ) {
@@ -253,7 +255,7 @@ describe("IngestService", () => {
     ["an unknown top-level key", { events: [visit()], integrationId: INTEGRATION }],
   ])("refuses %s with one 400 ingest.batch_invalid and stores nothing", async (_name, body) => {
     const { ingest, calls } = service();
-    const error = await ingest.ingestBatch(USER, INTEGRATION, body).catch((e: unknown) => e);
+    const error = await ingest.ingestBatch(USER, INTEGRATION, KEY, body).catch((e: unknown) => e);
     expect(error).toBeInstanceOf(AppException);
     expect((error as AppException).getStatus()).toBe(400);
     expect((error as AppException).code).toBe("ingest.batch_invalid");
@@ -263,7 +265,7 @@ describe("IngestService", () => {
   it("does not echo the input in the batch_invalid problem", async () => {
     const { ingest } = service();
     const error = await ingest
-      .ingestBatch(USER, INTEGRATION, {
+      .ingestBatch(USER, INTEGRATION, KEY, {
         events: [visit({ data: { domain: "echo-check.example" } })],
         "sentinel-key": "sentinel-value",
       })
@@ -275,7 +277,7 @@ describe("IngestService", () => {
     const { ingest, calls, clock } = service();
     clock.set("2026-10-14T15:42:00.000Z");
     const event = visit({ occurredAt: "2026-10-14T15:00:00.000Z" });
-    await ingest.ingestBatch(USER, INTEGRATION, { events: [event, { nope: 1 }] });
+    await ingest.ingestBatch(USER, INTEGRATION, KEY, { events: [event, { nope: 1 }] });
     expect(calls).toHaveLength(1);
     expect(calls[0]?.userId).toBe(USER);
     expect(calls[0]?.integrationId).toBe(INTEGRATION);
@@ -287,10 +289,10 @@ describe("IngestService", () => {
   it("returns results whose counters are exactly what storage records", async () => {
     const { ingest, calls } = service();
     const id = randomUUID();
-    const first = await ingest.ingestBatch(USER, INTEGRATION, {
+    const first = await ingest.ingestBatch(USER, INTEGRATION, KEY, {
       events: [visit({ id }), visit({ id }), visit({ type: "x.y" })],
     });
-    const second = await ingest.ingestBatch(USER, INTEGRATION, { events: [visit({ id })] });
+    const second = await ingest.ingestBatch(USER, INTEGRATION, KEY, { events: [visit({ id })] });
     expect(first.results.map((r) => r.status)).toEqual(["accepted", "duplicate", "rejected"]);
     expect(second.results.map((r) => r.status)).toEqual(["duplicate"]);
     expect(calls.map((call) => call.counts)).toEqual([
@@ -301,8 +303,26 @@ describe("IngestService", () => {
 
   it("still records the counters when every item was rejected", async () => {
     const { ingest, calls } = service();
-    await ingest.ingestBatch(USER, INTEGRATION, { events: [{ nope: 1 }] });
+    await ingest.ingestBatch(USER, INTEGRATION, KEY, { events: [{ nope: 1 }] });
     expect(calls[0]?.batch.events).toEqual([]);
     expect(calls[0]?.counts).toMatchObject({ rejected: 1, accepted: 0 });
+  });
+
+  it("answers the guard's 401 auth.invalid_key when the repository finds the key revoked", async () => {
+    const clock = new FakeClock(NOW);
+    const repository = {
+      async storeBatch() {
+        return null;
+      },
+      async touchLastSeen() {
+        throw new Error("must not touch last_seen_at after a refusal");
+      },
+    } as unknown as IngestRepository;
+    const error = await new IngestService(repository, clock)
+      .ingestBatch(USER, INTEGRATION, KEY, { events: [visit()] })
+      .catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(AppException);
+    expect((error as AppException).getStatus()).toBe(401);
+    expect((error as AppException).code).toBe("auth.invalid_key");
   });
 });
