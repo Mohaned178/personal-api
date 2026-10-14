@@ -51,7 +51,7 @@ mid-write and what `durability` buys; how to dedupe.
 | Option | Measured |
 | --- | --- |
 | A. Every listener enqueues onto one serialized chain; each step first awaits `storage.session`, `windows.getLastFocused`, `tabs.query`, `idle.queryState`, then commits the visit and the focus change together | **Lost events.** 2 lost navigations in ~180 kills. The one that was pinned down (1 in a 6 × 20-kill measurement) happened in the "kill while the next navigation is loading" pattern; the other surfaced as a missing visit a few rounds later and was not attributed to a pattern. |
-| **B. A completed navigation is committed straight from the listener in its own transaction** (database handle and session id opened at worker start; no chrome API awaited first, except that the first capture after a cold start waits for the in-flight `storage.session` read); focus steps stay on the serialized chain | **0 lost, 0 duplicated** in 460 kills (details below). **Chosen.** |
+| **B. A completed navigation is committed straight from the listener in its own transaction** (database handle and session id opened at worker start; no chrome API awaited first, except that the first capture after a cold start waits for the in-flight `storage.session` read (and, on the first worker of a browser session, the write of a new id)); focus steps stay on the serialized chain | **0 lost, 0 duplicated** in 460 kills (details below). **Chosen.** |
 
 Option A's loss is a real MV3 property, not a test artifact: Chrome dispatches the `tabs.onUpdated`
 event to the running worker, the worker is stopped before its transaction commits, the transaction
@@ -77,9 +77,10 @@ For M2-04 and M2-05:
    If the compute throws, the transaction is aborted: nothing is stored (fail closed).
 3. **Capture commits immediately from the listener** (option B). Start opening the database and
    reading the session id at worker start. A capture that arrives right after a cold start still
-   awaits that in-flight `storage.session.get` (and the database open) before its transaction, so
-   the window between delivery and commit is wider for the first event of a worker than for later
-   ones; no other chrome API is awaited on the capture path.
+   awaits that in-flight `storage.session.get` (and, on the first worker of a browser session, the
+   write of a new id) and the database open before its transaction, so the window between delivery
+   and commit is wider for the first event of a worker than for later ones; no other chrome API is
+   awaited on the capture path.
 4. **Focus segments are level-triggered**: on every relevant event (tab activated/updated/removed,
    window focus changed, idle state changed, heartbeat alarm, worker start) a serialized focus step
    reads what *should* be open now (`windows.getLastFocused()` must report `focused`, the active tab
@@ -97,7 +98,8 @@ For M2-04 and M2-05:
    load right after waking cannot hide a gap.
 7. **Heartbeat**: one `chrome.alarms` alarm with a 30 s period (Chrome's minimum), recreated at
    worker start only if missing. Never `setTimeout`/`setInterval`. M2-05's flush alarm can be the
-   same alarm.
+   same alarm. Each tick resets Chrome's ~30 s service-worker idle timer, so with this period the
+   worker is rarely stopped for long (see M2-05 under Consequences).
 8. **Reconciliation backstop**: at every worker start, the open tabs are compared with the per-tab
    marks (last recorded page, the time it was recorded, the session); a completed http(s) page that
    was never recorded is emitted as a recovered visit, and the late event for it, if it still
@@ -223,9 +225,27 @@ the 30 s heartbeat period plus alarm lateness.
 **Status: pending.** The manual protocol has not been run yet. Results are recorded in the
 [Results table](../spikes/mv3-lifecycle-manual-protocol.md#results) of
 `docs/spikes/mv3-lifecycle-manual-protocol.md`; summarise them here (date, OS and Chrome version,
-pass or fail per scenario, and whether the worker was stopped before each scenario). A run with
-DevTools open on the worker, or whose worker never showed as stopped before the scenario, does not
-verify the wake path.
+pass or fail per scenario, the heartbeat state of each run, and whether the worker was seen stopped
+before each key event).
+
+The 30 s heartbeat alarm resets Chrome's ~30 s service-worker idle timer, so with it on the worker
+is usually already running when an idle, lock or focus event arrives, and such a run does not test
+the wake path (the event waking a stopped worker, and the woken worker getting the boundary right).
+The spike therefore has a manual-only switch, persisted in `chrome.storage.local`
+(`spike.heartbeatEnabled`, default on) and set with `__spike.setHeartbeat(enabled)`; every worker
+start creates or clears the alarm to match it, so it stays off across worker restarts until turned
+back on. The pure part of that switch is unit-tested (`spikes/mv3-lifecycle/test/heartbeat.spec.ts`);
+the alarm glue in `background.ts` has **not** been exercised in a real Chrome profile with a stopped
+worker yet and is checked as part of the protocol. The protocol runs M1, M1b, M2 and M3 with the
+heartbeat **off** and triggers each key event (idle, lock, unlock, blur, return to Chrome, minimize,
+restore) only after at least 45 s without any Chrome event or interaction and with
+`chrome://serviceworker-internals` showing the worker **STOPPED** (watched in a separate window and
+never reloaded, since a reload is a `tabs.onUpdated` event that wakes the worker). M4, M4b and M5
+run with the heartbeat **on**, because their recovery closes the open segment at `lastAliveAt`,
+which the heartbeat keeps fresh. A run of M1–M3 with the heartbeat on, with DevTools open on the
+worker, or whose worker was not seen stopped right before a key event, does not verify the wake
+path for that event. (The unlock in M2 cannot be watched while the screen is locked; it is recorded
+as not observable.)
 
 What the outcomes mean for the go:
 
@@ -237,9 +257,10 @@ What the outcomes mean for the go:
   is redesigned and rechecked):
   - `windows.getLastFocused()` does not report `focused: false` on a real OS blur (Alt+Tab to
     another application or minimize, M3), so the level-triggered focus check cannot see blur;
-  - idle or lock events (`idle.onStateChanged`) do not wake a stopped worker, or only on the next
-    heartbeat, so idle and lock boundaries miss the 5 s tolerance (M1, M2);
-  - focus or tab events do not wake a stopped worker in time for the 2 s tolerance (M3);
+  - idle or lock events (`idle.onStateChanged`) do not wake a stopped worker (heartbeat off, worker
+    seen stopped), or wake it too late, so idle and lock boundaries miss the 5 s tolerance (M1, M2);
+  - focus events do not wake a stopped worker (heartbeat off, worker seen stopped) in time for the
+    2 s tolerance (M3);
   - after a real quit, crash or sleep, a segment counts any of the downtime (M4, M4b, M5).
 - **No-go for the persistence architecture**: after a real Chrome quit or crash (M4, M4b), queued
   `page_visited` events or closed segments are missing, or the same visit appears twice; that would
@@ -275,3 +296,10 @@ affected part; a rule-level failure is fixed in M2-04.
   transaction after the server's per-item result, so a worker killed mid-flush resends the same ids
   and the server dedupes them. The "restart mid-flush" test should reuse the M0-09 CDP kill helpers
   and this spike's kill patterns (settled, mid-burst, wake-by-event, in-flight navigation).
+  A 30 s production flush alarm (doubling as the heartbeat) resets Chrome's ~30 s worker idle
+  timer on every tick, so it may keep the service worker almost always alive. That is not
+  necessarily wrong, but it was not measured here: M2-05 should measure it deliberately (how often
+  the worker actually stops with the chosen period, the cost of keeping it alive) and choose the
+  period on purpose. It also means a worker that "never stops" in everyday testing hides the wake
+  path, so wake-path tests must stop the worker explicitly (CDP kill, or the alarm switched off as
+  in this spike's manual protocol).

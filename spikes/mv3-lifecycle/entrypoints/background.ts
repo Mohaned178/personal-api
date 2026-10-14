@@ -11,7 +11,9 @@
 //     serialized behind each other and may lag without delaying capture;
 //   - on every worker start, open tabs are reconciled against the per-tab marks to recover a visit
 //     whose event was delivered to a worker that died before committing it;
-//   - the only timer is a chrome.alarms heartbeat, never setTimeout/setInterval.
+//   - the only timer is a chrome.alarms heartbeat, never setTimeout/setInterval. A persisted,
+//     manual-protocol-only switch (`__spike.setHeartbeat`) can turn it off, so idle, lock and
+//     focus events can be checked against a stopped worker.
 //
 // Privacy: only domain + path of http(s) pages reach storage (lib/core.ts reduceUrl), incognito
 // tabs are ignored, titles are never read, and nothing about pages is logged.
@@ -30,6 +32,7 @@ import {
   type TabInfo,
 } from "../lib/core";
 import { openDb, readQueue, readState, transact } from "../lib/db";
+import { HEARTBEAT_FLAG_KEY, heartbeatAlarmAction, isHeartbeatEnabled } from "../lib/heartbeat";
 
 const HEARTBEAT_ALARM = "spike-heartbeat";
 /** Random id of the current browser session, kept in chrome.storage.session (cleared on restart). */
@@ -130,13 +133,46 @@ function focusStep(trigger: FocusTrigger): void {
   }).catch(warn("focus step"));
 }
 
-async function ensureHeartbeat(): Promise<void> {
+async function readHeartbeatFlag(): Promise<boolean> {
+  const stored = await browser.storage.local.get(HEARTBEAT_FLAG_KEY);
+  return isHeartbeatEnabled(stored[HEARTBEAT_FLAG_KEY]);
+}
+
+async function syncHeartbeatAlarm(): Promise<void> {
   // Alarms usually survive worker restarts but may be cleared on browser restart: recreate only
-  // when missing, so frequent worker restarts do not keep pushing the next tick back.
-  if (!(await browser.alarms.get(HEARTBEAT_ALARM))) {
+  // when missing, so frequent worker restarts do not keep pushing the next tick back. The manual
+  // protocol's switch (persisted, so it holds across worker restarts) clears it instead.
+  const enabled = await readHeartbeatFlag();
+  const exists = (await browser.alarms.get(HEARTBEAT_ALARM)) !== undefined;
+  const action = heartbeatAlarmAction(enabled, exists);
+  if (action === "create") {
     await browser.alarms.create(HEARTBEAT_ALARM, { periodInMinutes: HEARTBEAT_PERIOD_MIN });
+  } else if (action === "clear") {
+    await browser.alarms.clear(HEARTBEAT_ALARM);
   }
 }
+
+// Serializes the worker-start sync and switch changes, so a sync that read the old flag cannot
+// recreate the alarm after a switch-off cleared it.
+let heartbeatChain: Promise<unknown> = Promise.resolve();
+function heartbeatTask(task: () => Promise<void>): Promise<void> {
+  const run = heartbeatChain.then(task, task);
+  heartbeatChain = run.catch(() => {});
+  return run;
+}
+
+const ensureHeartbeat = (): Promise<void> => heartbeatTask(syncHeartbeatAlarm);
+
+/** Manual protocol only: persists the switch, then creates or clears the alarm to match. */
+const setHeartbeat = (enabled: boolean): Promise<void> => {
+  if (typeof enabled !== "boolean") {
+    return Promise.reject(new TypeError("setHeartbeat expects true or false"));
+  }
+  return heartbeatTask(async () => {
+    await browser.storage.local.set({ [HEARTBEAT_FLAG_KEY]: enabled });
+    await syncHeartbeatAlarm();
+  });
+};
 
 const isSegment = (event: QueuedEvent): event is FocusSegmentEvent =>
   event.type === "focus_segment";
@@ -187,5 +223,8 @@ export default defineBackground(() => {
     clear: () => serial(() => transact(cleared, { clearQueue: true })),
     /** Not part of the test contract: counters quoted in the ADR. */
     diagnostics: async () => (await readState()).diag,
+    /** Not part of the test contract: manual-protocol switch for the heartbeat alarm (M1-M3). */
+    setHeartbeat,
+    heartbeatEnabled: readHeartbeatFlag,
   };
 });
