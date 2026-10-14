@@ -23,17 +23,29 @@ TypeScript (strict) everywhere · Node 24 LTS · pnpm workspaces + Turborepo · 
 pnpm install
 pnpm db:up / pnpm db:down     # Postgres in Docker on localhost:5433
 pnpm db:migrate               # apply Drizzle migrations
-pnpm db:generate              # create a migration from schema changes
-pnpm dev                      # api + web + extension in watch mode
-pnpm dev --filter api         # one app
-pnpm worker                   # pg-boss worker
-pnpm lint / pnpm format       # Biome
+pnpm db:generate              # create a migration from schema changes (no-op if none)
+pnpm dev                      # api + web + extension in watch mode (from M3-01; not defined yet)
+pnpm --filter api dev         # api only: tsc watch (compiles to dist/, does not start the server yet)
+pnpm --filter extension dev   # extension only: WXT dev build (load .output/chrome-mv3 unpacked)
+pnpm worker                   # pg-boss worker (needs the env below; fails closed without it)
+pnpm lint / pnpm format       # Biome (format writes files)
 pnpm typecheck
 pnpm test                     # unit tests (no Docker needed)
 pnpm test:int                 # integration tests (Testcontainers, needs Docker)
-pnpm test:e2e                 # Playwright
+pnpm e2e:install              # once per machine: Playwright's bundled Chromium
+pnpm test:e2e                 # Playwright; builds the extension and the spike first
 pnpm --filter extension build # then load apps/extension/.output/chrome-mv3 unpacked
+pnpm build                    # turbo build for all packages
 ```
+
+Env: copy `.env.example` to `.env` (gitignored) before `pnpm db:migrate`, `pnpm worker` or the API.
+Set `BETTER_AUTH_SECRET` (at least 32 characters, `openssl rand -base64 32`), `BETTER_AUTH_URL`
+(http(s) origin) and `ALLOW_SIGNUP` (`true` or `false`). `DATABASE_URL` points at port 5433.
+The API and worker refuse to start if these are missing or invalid.
+
+Layout notes: `spikes/` holds throwaway prototypes that are never shipped (`spikes/mv3-lifecycle`,
+Spike A, see `docs/adr/0002-mv3-state-persistence.md`). `docs/adr/` holds architecture decision
+records (`0001-stack.md` pins the stack versions and deviations from the plan).
 
 Before calling a task done, run `pnpm lint && pnpm typecheck && pnpm test` in the touched packages, plus `test:int` if you touched the DB.
 
