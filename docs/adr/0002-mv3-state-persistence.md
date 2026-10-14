@@ -1,8 +1,10 @@
 # ADR 0002: MV3 extension state persistence (Spike A)
 
-- **Status:** Accepted for the automated part (M0-10, 2026-10-14). Idle, screen lock, real OS
-  window blur and a real Chrome quit are **pending manual verification** by the user with
-  `docs/spikes/mv3-lifecycle-manual-protocol.md`; this ADR is updated with those results.
+- **Status:** Accepted: **go, conditional on the manual protocol** (M0-10, 2026-10-14). The
+  automated criteria passed. Idle, screen lock, real OS window blur and a real Chrome quit are
+  **pending manual verification** by the user with `docs/spikes/mv3-lifecycle-manual-protocol.md`;
+  see [Manual verification](#manual-verification) for what would turn the go into a redesign or a
+  no-go. This ADR is updated with those results.
 - **Prototype:** `spikes/mv3-lifecycle` (throwaway WXT package, never shipped).
 - **Tests:** `apps/e2e/tests/spike-mv3.spec.ts`, contract in `apps/e2e/support/spike.ts`.
 - **Affects:** M2-04 (capture engine), M2-05 (persistent queue and sync).
@@ -49,7 +51,7 @@ mid-write and what `durability` buys; how to dedupe.
 | Option | Measured |
 | --- | --- |
 | A. Every listener enqueues onto one serialized chain; each step first awaits `storage.session`, `windows.getLastFocused`, `tabs.query`, `idle.queryState`, then commits the visit and the focus change together | **Lost events.** 2 lost navigations in ~180 kills. The one that was pinned down (1 in a 6 × 20-kill measurement) happened in the "kill while the next navigation is loading" pattern; the other surfaced as a missing visit a few rounds later and was not attributed to a pattern. |
-| **B. A completed navigation is committed straight from the listener in its own transaction** (database handle and session id opened at worker start, no chrome API awaited first); focus steps stay on the serialized chain | **0 lost, 0 duplicated** in 460 kills (details below). **Chosen.** |
+| **B. A completed navigation is committed straight from the listener in its own transaction** (database handle and session id opened at worker start; no chrome API awaited first, except that the first capture after a cold start waits for the in-flight `storage.session` read); focus steps stay on the serialized chain | **0 lost, 0 duplicated** in 460 kills (details below). **Chosen.** |
 
 Option A's loss is a real MV3 property, not a test artifact: Chrome dispatches the `tabs.onUpdated`
 event to the running worker, the worker is stopped before its transaction commits, the transaction
@@ -73,8 +75,11 @@ For M2-04 and M2-05:
    would let the transaction auto-commit half-way). Because IndexedDB runs overlapping readwrite
    transactions in creation order, a capture racing a focus step cannot overwrite the other's update.
    If the compute throws, the transaction is aborted: nothing is stored (fail closed).
-3. **Capture commits immediately from the listener** (option B). Open the database and resolve the
-   session id at worker start, so the first event does not wait for them either.
+3. **Capture commits immediately from the listener** (option B). Start opening the database and
+   reading the session id at worker start. A capture that arrives right after a cold start still
+   awaits that in-flight `storage.session.get` (and the database open) before its transaction, so
+   the window between delivery and commit is wider for the first event of a worker than for later
+   ones; no other chrome API is awaited on the capture path.
 4. **Focus segments are level-triggered**: on every relevant event (tab activated/updated/removed,
    window focus changed, idle state changed, heartbeat alarm, worker start) a serialized focus step
    reads what *should* be open now (`windows.getLastFocused()` must report `focused`, the active tab
@@ -98,6 +103,14 @@ For M2-04 and M2-05:
    was never recorded is emitted as a recovered visit, and the late event for it, if it still
    arrives, is skipped once. Marks newer than the tab listing win, marks from another session are
    ignored (tab ids are reused after a restart).
+   Reconciliation is a second emission path and MUST go through the same rule gate as capture:
+   deny by default, fail closed (invariants 1 and 2). If rules are missing, invalid or throw,
+   nothing is emitted and nothing is stored. Per-tab marks, the open segment and `lastAliveAt` are
+   written only after the rule check passes; a dropped visit leaves no domain + path behind (if a
+   mark is still needed for dedupe, it holds only a non-reversible key or the event id). A recovered
+   visit carries `ts` = the reconciliation time (now), not the real navigation time, which is
+   unknown. The spike has no rule engine, so none of this was prototyped: its marks store domain +
+   path unconditionally.
 9. **Ids and dedupe**: every event gets `crypto.randomUUID()` at capture, inside the same
    transaction that stores it, so a retried flush always resends the same id and the server's
    `UNIQUE (user_id, integration_id, client_event_id)` makes delivery effectively-once. Within the
@@ -118,11 +131,18 @@ headless mode, one Playwright worker. Worker kills use CDP `ServiceWorker.stopWo
 harsher than Chrome's own termination (after 30 s without events, or an event running for over
 5 minutes), which does not cut a short event handler off half-way.
 
+**Provenance.** The e2e spec (`apps/e2e/tests/spike-mv3.spec.ts`) and the unit tests
+(`spikes/mv3-lifecycle/test/core.spec.ts`) are committed and can be rerun. The following figures
+came from **ad-hoc harnesses that were not committed**, so they cannot be reproduced from the repo
+and should be read as recorded observations: the option A loss figures (2 lost in ~180 kills, 1 in
+the 6 × 20-kill measurement), the 15 × 20-kill measurement (300 of the 460 kills below), the
+9-relaunch browser restart table, and the IndexedDB commit latency benchmark.
+
 ### Go/no-go criteria
 
 | Criterion | Target | Result | |
 | --- | --- | --- | --- |
-| Events lost across forced worker kills | 0 in 20 kills | **0 lost, 0 duplicated in 460 kills** (8 runs of the 20-kill spec test + a 15 × 20-kill measurement with 525 navigations); query strings and fragments never stored | pass |
+| Events lost across forced worker kills | 0 in 20 kills | **0 lost, 0 duplicated in 460 kills** (8 runs of the committed 20-kill spec test + a 15 × 20-kill ad-hoc measurement with 525 navigations); query strings and fragments never stored | pass |
 | Tab-switch / blur segment error | < 2 s | **max 66 ms** (table below) | pass |
 | Browser restart | covered by relaunch | queue intact, no duplicate, open segment closed, never inflated | pass |
 | Idle (60 s) and lock | manual protocol | protocol written; **not yet run** | pending |
@@ -142,7 +162,7 @@ existing extension tests) and the spike spec with `--repeat-each 5` (20/20). No 
 Segment A always ended exactly where B started (gap 0 ms). The segment open across a kill stayed
 whole: the restarted worker continued it from IndexedDB.
 
-### Browser restart (9 relaunches of the same profile, page in focus ~2.05 s before close)
+### Browser restart (9 relaunches of the same profile, page in focus ~2.05 s before close; ad-hoc harness)
 
 In 3 of the 9 runs the worker was killed right before closing the browser, to force the recovery
 path.
@@ -163,7 +183,8 @@ the 30 s heartbeat period plus alarm lateness.
   i.e. Chrome **does** queue events for a stopped worker and delivers them after the restart; only
   events delivered to a dying worker are lost. With option B it never fired in 460 kills (the
   capture always committed first), so it remains an untested-in-e2e backstop covered by unit tests.
-- IndexedDB commit latency in the service worker (200 single-record transactions each):
+- IndexedDB commit latency in the service worker (200 single-record transactions each; ad-hoc
+  harness):
   `strict` p50 1.6 ms / p95 2.2 ms / max 3.2 ms; `relaxed` and Chrome's default both p50 0.2 ms /
   p95 0.4 ms / max 0.7 ms.
 - Headless Chromium reports `focused: true` for the window of the active page, so
@@ -189,16 +210,50 @@ the 30 s heartbeat period plus alarm lateness.
   navigations, `tab_opened`/`tab_closed` and session start/end events were not prototyped.
 - Zero-length segments are kept (for example a restart-recovered segment whose last step was its
   start). M2-04 decides whether a minimum duration applies.
-- The 30-minute split runs on the heartbeat, so a split segment can be noticed up to ~30 s late; the
-  boundary itself is exact (`startedAt + 30 min`).
+- The 30-minute split runs on the heartbeat, so a split segment can be noticed up to ~30 s late.
+  For continuous attention on the same page the split boundary is exact (`startedAt + 30 min`).
+  But a segment that is closed for any other reason (tab switch, navigation, blur, idle, lock,
+  restart or gap recovery) after `startedAt + 30 min` and before the heartbeat split it is clamped
+  to the cap, and the attention between `startedAt + 30 min` and the close is dropped. The loss is
+  bounded by the heartbeat period plus alarm lateness. To be fixed in M2-04 (for example by
+  applying the split before the close).
+
+## Manual verification
+
+**Status: pending.** The manual protocol has not been run yet. Results are recorded in the
+[Results table](../spikes/mv3-lifecycle-manual-protocol.md#results) of
+`docs/spikes/mv3-lifecycle-manual-protocol.md`; summarise them here (date, OS and Chrome version,
+pass or fail per scenario, and whether the worker was stopped before each scenario). A run with
+DevTools open on the worker, or whose worker never showed as stopped before the scenario, does not
+verify the wake path.
+
+What the outcomes mean for the go:
+
+- **Go stands, rule adjusted in M2-04**: boundaries consistently outside the tolerance by a fixed
+  amount (for example idle detection lagging more than 5 s, so the `now − 60 s` offset needs
+  tuning); Chrome reporting or not reporting idle while video plays (M1b), which sets the policy for
+  media; the heartbeat recovery ending segments earlier than expected but never inflating them.
+- **Redesign of the focus or idle source** (the go is suspended for M2-04's focus segments until it
+  is redesigned and rechecked):
+  - `windows.getLastFocused()` does not report `focused: false` on a real OS blur (Alt+Tab to
+    another application or minimize, M3), so the level-triggered focus check cannot see blur;
+  - idle or lock events (`idle.onStateChanged`) do not wake a stopped worker, or only on the next
+    heartbeat, so idle and lock boundaries miss the 5 s tolerance (M1, M2);
+  - focus or tab events do not wake a stopped worker in time for the 2 s tolerance (M3);
+  - after a real quit, crash or sleep, a segment counts any of the downtime (M4, M4b, M5).
+- **No-go for the persistence architecture**: after a real Chrome quit or crash (M4, M4b), queued
+  `page_visited` events or closed segments are missing, or the same visit appears twice; that would
+  mean IndexedDB state does not survive as the automated relaunch test showed.
 
 ## Go / no-go
 
-**Go** for building the M2 capture engine and queue on an MV3 service worker with IndexedDB, using
-the design above. The automated criteria are met with a wide margin. The pending manual checks
-(idle, lock, real blur, real quit) can change close rules (for example the idle offset) but not the
-persistence architecture, so they do not block M2. If any of them fails, record it here and adjust
-the rule in M2-04.
+**Go, conditional on the manual protocol**, for building the M2 capture engine and queue on an MV3
+service worker with IndexedDB, using the design above. The automated criteria are met with a wide
+margin. The pending manual checks (idle, lock, real blur, real quit) are expected to change close
+rules (for example the idle offset) rather than the persistence architecture, so M2 work can start;
+that expectation is not verified yet. If a result falls under the redesign or no-go outcomes in
+[Manual verification](#manual-verification), record it here and revisit this decision for the
+affected part; a rule-level failure is fixed in M2-04.
 
 ## Consequences for M2-04 and M2-05
 
@@ -207,8 +262,14 @@ the rule in M2-04.
   transaction behind a serialized chain, level-triggered from `getLastFocused` + active tab + idle
   state; session id in `chrome.storage.session`; restart and gap recovery at `lastAliveAt`; idle
   close at `now − 60 s`; 30-minute split; incognito and non-http(s) ignored before anything is
-  stored; reconciliation of open tabs on worker start with per-tab marks. Its unit tests (mocked
-  chrome, fake timers) should port the cases in `spikes/mv3-lifecycle/test/core.spec.ts`.
+  stored; reconciliation of open tabs on worker start with per-tab marks. Reconciliation (the
+  startup and restart emission path) MUST go through the same rule gate as capture: deny by
+  default, fail closed (invariants 1 and 2). Per-tab marks, the open segment and `lastAliveAt` are
+  written only after the rule check passes; marks for a dropped visit hold only a non-reversible key
+  or the event id, never its domain + path. Recovered visits carry `ts` = now, not the real
+  navigation time. Fix the 30-minute clamp loss described under Limitations. Its unit tests (mocked
+  chrome, fake timers) should port the cases in `spikes/mv3-lifecycle/test/core.spec.ts`, plus
+  cases for the rule gate on both emission paths.
 - **M2-05 (queue and sync)**: same database, `idb`, `durability: "strict"`; ids generated in the
   capture transaction; the flush alarm doubles as the heartbeat; deleting sent items happens in a
   transaction after the server's per-item result, so a worker killed mid-flush resends the same ids
