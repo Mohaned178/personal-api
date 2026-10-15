@@ -295,7 +295,7 @@ Targets changed on 2026-10-14: Firefox + Edge (free stores only) instead of Chro
 - [x] **M2-05 [S · high] Persistent queue and sync:** IndexedDB store, alarm-driven batch flush, backoff + jitter, per-item result handling, the 50k / 14-day cap with a reported drop counter, and 401 → disconnected. *Done when:* tests cover network failure, partial batch failure and a background restart mid-flush (service worker on Edge, event page on Firefox) with no loss and no duplicates.
 - [x] **M2-06 [S · medium] {deepseek} Popup v1 and heartbeat:** connection state, pause/resume, queue depth, last sync, dropped count, and a heartbeat on an alarm.
 - [x] **M2-07 [S · low] {deepseek} Temporary allow list** in extension storage (replaced in M4).
-- [ ] **M2-08 [S · high] e2e:** Playwright/Chromium: pair → visit fixture → events in the DB; go offline → reconnect → nothing lost or duplicated. Firefox smoke (M2-00c harness): pair → visit fixture → events in the DB.
+- [x] **M2-08 [S · high] e2e:** Playwright/Chromium: pair → visit fixture → events in the DB; go offline → reconnect → nothing lost or duplicated. Firefox smoke (M2-00c harness): pair → visit fixture → events in the DB.
 - [ ] **M2-R [O · high] Milestone review.**
 
 ### M3: Dashboard v0
