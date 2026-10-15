@@ -77,7 +77,7 @@ Before calling a task done, run `pnpm lint && pnpm typecheck && pnpm test` in th
 
 ## Testing
 
-- **Sonnet writes the tests.** On `[O]` tasks, tests come first, written from the task's "done when" criteria in `docs/PLAN.md`, before Opus implements.
+- **Sonnet writes the tests** (effort `low` or `medium`). On `high`/`xhigh`/security-touching tasks and `{deepseek}` tasks, tests come first, written from the task's "done when" criteria in `docs/PLAN.md`, before the implementer starts.
 - Unit: Vitest. API: supertest against the Nest app. DB: Testcontainers (each run gets a fresh database).
 - Rule engine and URL sanitizer: fast-check property tests are required.
 - Fixed clocks for anything time-based (retention, focus segments, pairing expiry).
@@ -96,15 +96,15 @@ Each task in `docs/PLAN.md` §10 is tagged `[model · effort]`:
 
 - `H` Haiku: setup, config, docs, simple tasks.
 - `S` Sonnet: implementation and all tests.
-- `O` Opus: complex or security-critical work, and every review.
+- `O` Opus: **reviews only** (milestone reviews, the security pass, and helping when Sonnet is stuck). Opus does not implement.
 
-Effort is `low` / `medium` / `high` / `xhigh`.
+Effort is `low` / `medium` / `high` / `xhigh`. Sonnet may use any of them for implementation; test-writing uses `low` or `medium`.
 
-Run work with `/task <ID>` or `/milestone <Mx>` (`.claude/skills/`). The session itself is just a **coordinator** (keep it on Sonnet · medium). It launches the `builder`, `test-writer` and `reviewer` subagents (`.claude/agents/`) with the tag's exact model and effort, so nobody switches `/model` or `/effort` by hand. On `[O]` tasks, `test-writer` (Sonnet · high) writes the failing tests first.
+Run work with `/task <ID>` or `/milestone <Mx>` (`.claude/skills/`). The session itself is just a **coordinator** (keep it on Sonnet · medium). It launches the `builder`, `test-writer` and `reviewer` subagents (`.claude/agents/`) with the tag's exact model and effort, so nobody switches `/model` or `/effort` by hand. `test-writer` (Sonnet · low/medium) writes the failing tests first where the task needs them.
 
-Opus implements at `medium` only. Per-task Opus reviews run at `medium` or `high` depending on the task (`high` for `high`-effort or security-touching tasks); full milestone reviews and the security pass use `high` or `xhigh`. Tasks marked `{deepseek}` after the tag are implemented by DeepSeek V4.1 Flash (max) through the `opencode-delegate` skill's `deepseek` lane, with no model question asked. Sonnet writes their tests first on `[S]` tasks, and Opus reviews every one.
+**Opus never implements** (rule from 2026-10-16). Opus reviews at milestone level (`Mx-R`, security pass) at `high`/`xhigh`; there is **no per-task review** unless the user asks. Subagents other than the Sonnet `builder` and `test-writer` use Haiku or DeepSeek. Tasks marked `{deepseek}` after the tag are implemented by DeepSeek V4.1 Flash (max) through the `opencode-delegate` skill's `deepseek` lane, with no model question asked. Sonnet writes their tests first on `[S]` tasks.
 
-If you're a Haiku or Sonnet builder and hit a design question, an unexplained failure, or anything touching auth, tenant scoping or the invariants above, **report `needs-opus`**. Don't guess. The coordinator escalates one level automatically, and asks the user if that fails too.
+If you're a Haiku or Sonnet builder and hit a design question, an unexplained failure, or anything touching auth, tenant scoping or the invariants above, **report `needs-opus`**. Don't guess. The coordinator does not escalate on its own: it tells the user, who decides whether Opus joins to fix it.
 
 ## Context limit
 

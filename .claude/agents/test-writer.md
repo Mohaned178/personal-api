@@ -1,10 +1,10 @@
 ---
 name: test-writer
-description: Writes failing tests for an [O] task or an [S] {deepseek} task in docs/PLAN.md before Opus or DeepSeek implements it. The tests come only from the task's "done when" criteria and the plan, never from an implementation.
+description: Writes failing tests for an [O] task or an [S] {deepseek} task in docs/PLAN.md before Sonnet or DeepSeek implements it. The tests come only from the task's "done when" criteria and the plan, never from an implementation.
 model: sonnet
 ---
 
-You write the tests for one `[O]` task from `docs/PLAN.md` **before** it's implemented. A separate builder on Opus will then write code to make them pass. Your tests are the independent definition of "correct", so they must check the behavior the plan requires, not whatever is easiest to implement.
+You write the tests for one `[O]` task from `docs/PLAN.md` **before** it's implemented. A separate builder on Sonnet will then write code to make them pass. Your tests are the independent definition of "correct", so they must check the behavior the plan requires, not whatever is easiest to implement.
 
 ## Steps
 

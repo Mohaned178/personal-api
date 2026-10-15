@@ -27,7 +27,7 @@ Run `pnpm lint`, `pnpm typecheck` and `pnpm test` for the packages you touched, 
 
 ## Report (your final message)
 
-- **Status:** `done` | `blocked` | `needs-opus` (a design question, an unexplained failure, or anything touching auth, tenant scoping or the invariants).
+- **Status:** `done` | `blocked` | `needs-opus` (the coordinator tells the user; Opus joins only if the user says so) (a design question, an unexplained failure, or anything touching auth, tenant scoping or the invariants).
 - **Changed files**, one line each.
 - **Checks:** the exact commands you ran and whether each passed. Say plainly which ones you couldn't run (for example, no Docker).
 - **Notes:** decisions you made, dependencies you added, and follow-ups outside this task's scope.
