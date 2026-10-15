@@ -142,6 +142,51 @@ describe("sessions", () => {
     expect(kinds[0]).toBe("started");
   });
 
+  // M2-04 review (PR #58): a long silence in the same browser session (the machine slept) ends the
+  // session after the fact, at the last moment known alive, like a session left open by a previous
+  // browser session (reason recovered), and a new one starts when the user is active again.
+  it("ends the session as recovered at the last step after a gap of 30 minutes or more in the same browser session (sleep), then starts a new one", async () => {
+    const sim = newSim();
+    await sim.start();
+    await sim.navigate(sim.tabId, "https://a.test/a");
+    await sim.beats(1); // last step at 30 s
+    advance(8 * 60 * MINUTE); // 8 h with no step: the machine slept
+    await sim.heartbeat();
+    const events = sim.sessionEvents();
+    expect(events.slice(0, 2)).toEqual([
+      { kind: "started", reason: "startup", at: T0 },
+      { kind: "ended", reason: "recovered", at: T0 + 30 * SECOND },
+    ]);
+    expect(events).toHaveLength(3);
+    expect(events[2]?.kind).toBe("started");
+    expect(events[2]?.at).toBe(T0 + 30 * SECOND + 8 * 60 * MINUTE);
+  });
+
+  it("does not end the session for a gap shorter than 30 minutes in the same browser session", async () => {
+    const sim = newSim();
+    await sim.start();
+    await sim.beats(1);
+    advance(SESSION_IDLE_TIMEOUT_MS - SECOND);
+    await sim.heartbeat();
+    expect(sim.sessionEvents().map((e) => e.kind)).toEqual(["started"]);
+  });
+
+  it("ends a session across a gap only once the gate allows session events again", async () => {
+    const sim = newSim();
+    await sim.start();
+    await sim.beats(1); // last step at 30 s
+    sim.gate = denyAll;
+    advance(8 * 60 * MINUTE);
+    await sim.heartbeat();
+    expect(sim.sessionEvents().map((e) => e.kind)).toEqual(["started"]);
+    sim.gate = { allows: () => true };
+    advance(30 * SECOND);
+    await sim.heartbeat();
+    const events = sim.sessionEvents();
+    expect(events.map((e) => e.kind)).toEqual(["started", "ended", "started"]);
+    expect(events[1]).toEqual({ kind: "ended", reason: "recovered", at: T0 + 30 * SECOND });
+  });
+
   it("emits no session event while the gate denies (positive control: it does once allowed)", async () => {
     const sim = newSim({ gate: denyAll });
     await sim.start();

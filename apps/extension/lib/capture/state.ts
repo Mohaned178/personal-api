@@ -153,7 +153,12 @@ export interface TabOpenedInput {
   emit: boolean;
 }
 
-/** A new non-incognito tab: a fresh tab reference, and `tab_opened` if allowed. */
+/**
+ * A new non-incognito tab: a fresh tab reference, and `tab_opened` if allowed. Its transaction may
+ * commit after the tab's first visit or a reconciliation (openTab awaits more gate calls than
+ * capture does): a mark that already exists in this browser session is kept as it is, so the tab
+ * keeps one reference and that visit is neither lost nor emitted again.
+ */
 export function tabOpened(
   prev: CaptureState | null,
   input: TabOpenedInput,
@@ -161,8 +166,9 @@ export function tabOpened(
 ): CaptureTransition {
   const { now, session, tabId, domain, emit } = input;
   const state = load(prev);
-  const ref = ids.newTabRef();
-  state.tabs[String(tabId)] = { ref, session, page: null, recovered: false, at: now };
+  const mark = currentMark(state, tabId, session);
+  const ref = mark?.ref ?? ids.newTabRef();
+  if (!mark) state.tabs[String(tabId)] = { ref, session, page: null, recovered: false, at: now };
   if (!emit) return { state, events: [] };
   const data = domain === null ? { tabRef: ref } : { tabRef: ref, domain };
   return { state, events: [makeEvent(ids, "browser.tab_opened", now, data)] };
@@ -261,6 +267,22 @@ export function focusStep(
   if (state.sess.open && state.sess.of !== session && state.sess.endAt === null) {
     state.sess.endAt = state.alive?.at ?? now;
   }
+  // A silence of SESSION_IDLE_TIMEOUT_MS or more in the same browser session (the machine slept or
+  // the background could not run) ends the session after the fact at the last moment known alive.
+  // Reason `recovered`, not `idle`: like a session left open by a previous browser session, the end
+  // was not observed and is placed at the last step, while `idle` means 30 minutes of observed idle
+  // timed at the last input + 30 minutes. When idle was already observed before the silence, that
+  // idle rule (step 5) ends the session instead. Fixed on first sight, emitted once the gate allows.
+  if (
+    state.sess.open &&
+    state.sess.endAt === null &&
+    state.idleSince === null &&
+    state.alive !== null &&
+    state.alive.session === session &&
+    now - state.alive.at >= SESSION_IDLE_TIMEOUT_MS
+  ) {
+    state.sess.endAt = state.alive.at;
+  }
 
   // 2. Idle bookkeeping. Idle is reported IDLE_DETECTION_S after the last input.
   if (restarted) state.idleSince = null;
@@ -300,7 +322,7 @@ export function focusStep(
   // 5. Sessions. While the gate denies events without a page, nothing changes here.
   if (input.sessionsAllowed) {
     const sess = state.sess;
-    if (sess.open && sess.of !== session) {
+    if (sess.open && (sess.of !== session || sess.endAt !== null)) {
       events.push(
         makeEvent(ids, "browser.session_ended", sess.endAt ?? now, { reason: "recovered" }),
       );
