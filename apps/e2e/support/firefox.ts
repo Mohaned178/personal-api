@@ -104,7 +104,7 @@ export interface LaunchedFirefoxExtension {
    * page, awaits a returned promise and resolves with the structured-cloneable result. Starts the
    * page first if needed (F6). Rejects with the page's error message if the script throws.
    */
-  evaluateInBackground<T>(functionBody: string): Promise<T>;
+  evaluateInBackground<T>(functionBody: string, args?: unknown[]): Promise<T>;
 
   /**
    * `browser.storage.local.get(keys)` in the background. `undefined`/`null` returns everything;
@@ -366,7 +366,7 @@ export async function launchFirefoxExtension(
     suspendBackground: async () => {
       await chrome("suspend");
     },
-    evaluateInBackground: (functionBody) => inBackground(functionBody),
+    evaluateInBackground: (functionBody, args = []) => inBackground(functionBody, args),
 
     storageGet: (keys) =>
       keys == null
