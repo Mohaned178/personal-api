@@ -1,4 +1,4 @@
-// Popup wiring for the M2-02 connect flow. All logic lives in ../../lib/connect.ts.
+// Popup wiring for the M2-02 connect flow and the M2-06 status/pause view. Logic lives in lib/.
 
 import { browser } from "wxt/browser";
 import {
@@ -9,11 +9,37 @@ import {
   disconnect,
   getConnection,
 } from "../../lib/connect";
+import { setPaused } from "../../lib/pause";
+import {
+  loadPopupState,
+  type PopupState,
+  type PopupStateDeps,
+  type PopupStatus,
+} from "../../lib/popup-state";
+import { createFlusher, createIdbCaptureStore } from "../../lib/queue";
 
 const deps: ConnectDeps = {
   permissions: browser.permissions,
   storage: browser.storage.local,
   fetch: (url, init) => fetch(url, init),
+};
+
+// The popup reads the same IndexedDB database the background writes: a store for the counters and
+// a flusher used only for `getSyncStatus`. Never the ingest key (invariant: the popup never shows it).
+const store = createIdbCaptureStore({ now: Date.now });
+const flusher = createFlusher({
+  store,
+  getConnection: () => getConnection(deps),
+  fetch: deps.fetch,
+  alarms: browser.alarms,
+  now: Date.now,
+  random: Math.random,
+});
+const stateDeps: PopupStateDeps = {
+  getConnection: () => getConnection(deps),
+  flusher,
+  store,
+  storage: browser.storage.local,
 };
 
 function byId<T extends HTMLElement>(id: string): T {
@@ -35,11 +61,57 @@ const serverUrlInput = byId<HTMLInputElement>("server-url");
 const pairingCodeInput = byId<HTMLInputElement>("pairing-code");
 const connectButton = byId<HTMLButtonElement>("connect");
 const status = byId<HTMLElement>("status");
+const stateStatus = byId<HTMLElement>("state-status");
+const stateQueueDepth = byId<HTMLElement>("state-queue-depth");
+const stateLastSync = byId<HTMLElement>("state-last-sync");
+const stateDropped = byId<HTMLElement>("state-dropped");
+const pauseToggle = byId<HTMLButtonElement>("pause-toggle");
 
 function setStatus(message: string, isError = false): void {
   status.textContent = message;
   status.dataset.error = isError ? "true" : "false";
 }
+
+// ---------------------------------------------------------------------------------------------
+// M2-06 status and pause
+
+const STATUS_LABELS: Record<PopupStatus, string> = {
+  not_connected: "Not connected",
+  disconnected: "Disconnected",
+  paused: "Paused",
+  collecting: "Collecting",
+};
+
+let state: PopupState | null = null;
+
+function renderState(next: PopupState): void {
+  state = next;
+  stateStatus.textContent = STATUS_LABELS[next.status];
+  stateQueueDepth.textContent = String(next.queueDepth);
+  stateLastSync.textContent =
+    next.lastSyncAt === null ? "Never" : new Date(next.lastSyncAt).toLocaleString();
+  stateDropped.textContent = String(next.droppedCount);
+  pauseToggle.hidden = next.connection === "not_connected";
+  pauseToggle.textContent = next.paused ? "Resume" : "Pause";
+}
+
+/** Re-reads the snapshot. `loadPopupState` never rejects. */
+function refreshState(): Promise<void> {
+  return loadPopupState(stateDeps).then(renderState);
+}
+
+pauseToggle.addEventListener("click", () => {
+  if (state === null) return;
+  pauseToggle.disabled = true;
+  void setPaused(browser.storage.local, !state.paused)
+    .then(refreshState, () => undefined)
+    .then(() => {
+      pauseToggle.disabled = false;
+    });
+});
+
+// ---------------------------------------------------------------------------------------------
+// M2-02 connect flow
 
 // Firefox may close the toolbar popup when the permission prompt opens, which would kill the
 // connect flow before fetch and storage run. So the toolbar popup only links to this same page in
@@ -74,6 +146,7 @@ connectForm.addEventListener("submit", (event) => {
       connectButton.disabled = false;
       render(connection);
       setStatus("Connected.");
+      void refreshState();
     },
     (error: unknown) => {
       connectButton.disabled = false;
@@ -102,6 +175,7 @@ disconnectButton.addEventListener("click", () => {
       disconnectButton.disabled = false;
       render(null);
       setStatus("Disconnected.");
+      void refreshState();
     },
     () => {
       disconnectButton.disabled = false;
@@ -123,4 +197,5 @@ void Promise.all([getConnection(deps), isInTab()]).then(([connection, tab]) => {
   inTab = inTab || tab;
   render(connection);
   setStatus(connection === null ? "" : "Connected.");
+  void refreshState();
 });

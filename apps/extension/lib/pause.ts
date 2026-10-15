@@ -1,22 +1,30 @@
-// M2-06 pause/resume. STUB: the implementer replaces the bodies (the tests define the behavior).
+// M2-06 pause/resume: the flag the capture gate consults first (lib/queue/wire.ts).
 
 /** `browser.storage.local` key that holds the pause flag (a boolean). */
 export const PAUSED_STORAGE_KEY = "paused";
 
 /**
- * True when capture is paused. Absent key = not paused. Fails closed (invariant 1): a stored value
- * that is not exactly `false` (for example garbage), or a storage read that throws, counts as paused.
+ * True when capture is paused. An absent key (or an `undefined` value) = not paused. Fails closed
+ * (invariant 1): a stored value that is not exactly `false` (for example garbage), or a storage
+ * read that throws, counts as paused.
  */
-export function getPaused(_storage: {
+export async function getPaused(storage: {
   get(key: string): Promise<Record<string, unknown>>;
 }): Promise<boolean> {
-  return Promise.reject(new Error("not implemented"));
+  try {
+    const stored = await storage.get(PAUSED_STORAGE_KEY);
+    const value = stored[PAUSED_STORAGE_KEY];
+    if (value === undefined) return false;
+    return value !== false;
+  } catch {
+    return true;
+  }
 }
 
 /** Persists the flag under `PAUSED_STORAGE_KEY` (survives a background kill). */
 export function setPaused(
-  _storage: { set(items: Record<string, unknown>): Promise<void> },
-  _paused: boolean,
+  storage: { set(items: Record<string, unknown>): Promise<void> },
+  paused: boolean,
 ): Promise<void> {
-  return Promise.reject(new Error("not implemented"));
+  return storage.set({ [PAUSED_STORAGE_KEY]: paused });
 }

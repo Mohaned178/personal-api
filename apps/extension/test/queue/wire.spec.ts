@@ -91,7 +91,7 @@ describe("wireBackground", () => {
     ]) {
       expect(listeners.get(name), name).toHaveLength(1);
     }
-    expect(listeners.get("alarms.onAlarm")).toHaveLength(2);
+    expect(listeners.get("alarms.onAlarm")).toHaveLength(3);
   });
 
   it("ready settles", async () => {
