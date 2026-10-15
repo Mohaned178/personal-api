@@ -104,6 +104,14 @@ export function bigEvent(i: number): CapturedEvent {
 export const utf8Bytes = (text: string): number => new TextEncoder().encode(text).length;
 export const bodyBytes = (events: unknown[]): number => utf8Bytes(JSON.stringify({ events }));
 
+/** `browser.storage.local.get(keys)` over a plain object: one entry per requested key (undefined when absent). */
+export function pick(
+  stored: Record<string, unknown>,
+  keys: string | string[],
+): Record<string, unknown> {
+  return Object.fromEntries([keys].flat().map((key) => [key, stored[key]]));
+}
+
 export const tick = (): Promise<void> => new Promise((resolve) => setImmediate(resolve));
 
 /** Lets pending IndexedDB / promise work run, with real (not fake) macrotasks. */
@@ -178,6 +186,8 @@ export interface ServerCall {
   behavior: Behavior["kind"];
   /** The HTTP status the client saw, or null when it never saw one. */
   status: number | null;
+  /** What the server decided per item (even when the response was then lost), or null when it did not process the batch. */
+  results: IngestItemResult[] | null;
 }
 
 const PROBLEM = "application/problem+json";
@@ -271,6 +281,7 @@ export class FakeServer {
       ids: events.map((event) => String((event as { id?: unknown })?.id)),
       behavior: behavior.kind,
       status: null,
+      results: null,
     };
     this.calls.push(call);
     this.inFlight++;
@@ -303,6 +314,7 @@ export class FakeServer {
     const processed = this.process(call, parsed);
     if (processed instanceof Response) return this.deliver(call, processed);
     const results = processed;
+    call.results = results;
 
     const hold = this.holds.shift();
     if (hold) await hold;

@@ -126,7 +126,8 @@ For M2-04 and M2-05:
     the commit is handed to the browser process either way); it protects against losing the last
     commits on an OS crash or power cut, where Chrome's default (measured as fast as `relaxed`) may
     not have flushed.
-11. Use the `idb` wrapper in M2-05 as the plan says: it supports the `durability` option and the
+11. (Changed in M2-05, see [Amendments](#amendments-from-the-m2-build-m2-r-review): hand-rolled
+    IndexedDB, no `idb`.) Use the `idb` wrapper in M2-05 as the plan says: it supports the `durability` option and the
     read-compute-write-in-one-transaction pattern, provided nothing but `idb` calls is awaited inside
     the transaction. The spike used raw IndexedDB only to avoid a dependency in a throwaway package.
 
@@ -307,6 +308,79 @@ affected part; a rule-level failure is fixed in M2-04.
   period on purpose. It also means a worker that "never stops" in everyday testing hides the wake
   path, so wake-path tests must stop the worker explicitly (CDP kill, or the alarm switched off as
   in this spike's manual protocol).
+
+## Amendments from the M2 build (M2-R review)
+
+Recorded after M2-04 to M2-08 were built, so the decisions above match what shipped.
+
+### The gate on the capture path, and how it was reduced
+
+Decision 3 says nothing but IndexedDB and the session id is awaited between the listener and the
+commit. The M2-04/M2-05 engine did more: `capture()` (`lib/capture/engine.ts`) awaits the
+browser-session id, then the capture gate (`lib/queue/wire.ts`), then commits. The gate was four
+sequential reads: `flusher.getSyncStatus()` (a `storage.local` read of the connection, then an
+IndexedDB read of the sync state, then a SHA-256 of the key when the state says `disconnected`),
+`getPaused()` (a second `storage.local` read) and the allow list (a third). That widened the window
+between event delivery and commit, which is the window option B exists to shrink.
+
+Now (`wireBackground` in `lib/queue/wire.ts`):
+
+- **One `browser.storage.local.get([connection, paused, allowList])`**, started immediately, and
+  **one IndexedDB read of the sync state** (`store.getMeta()`), started in parallel with it. The
+  gate waits for the slower of the two, not the sum of four. The SHA-256 only runs when the stored
+  sync state is `disconnected`.
+- **No caching.** Every decision reads fresh, so a pause or a removed domain applies on the next
+  navigation. Caching would make the gate faster but stale.
+- **Same parsers, same fail-closed behaviour.** The single read is handed to the existing
+  `getConnection`, `getPaused` and `getAllowList` (through the allow-list gate) as a snapshot, so
+  each keeps its own rule: a missing, malformed or unreadable value means no connection, paused,
+  or an empty list. A rejected or synchronously throwing storage read, a rejected or throwing
+  sync-state read, or a collect gate that throws or answers anything but `true` denies. Tests:
+  `apps/extension/test/queue/wire.spec.ts` ("the capture gate's reads").
+- The collect gate is now called in parallel with the other reads rather than after them, so it also
+  runs when the user is paused or disconnected (its answer is then ignored). It has no side effects.
+
+What is **not** solved: the gate still awaits one `storage.local.get` and one IndexedDB read, so
+decision 3's "no other chrome API is awaited on the capture path" is not literally true any more
+(it was not literally true before either, because of the session id and the sequential gate). The
+disconnected marker lives in IndexedDB; mirroring it into `storage.local` would make the gate a
+single read, but that is a change to the flush state and is left as a follow-up. No measurement of
+the commit window before and after was taken; the e2e kill test below is what would show whether
+it matters.
+
+### Decision 11 changed: no `idb`
+
+Decision 11 asked for the `idb` wrapper. M2-05 shipped hand-rolled IndexedDB helpers instead
+(`lib/queue/store.ts`: `requestResult`, one transaction helper, `openDatabase`), because no new
+dependency was approved for the task and the few helpers cover what is needed. It keeps the
+properties decision 11 wanted: `durability: "strict"` on every transaction (decision 10), and
+read-compute-write inside one transaction with nothing but IndexedDB requests awaited in it.
+`idb` is not a dependency of the extension.
+
+### `page_visited` is emitted on `status: "complete"`
+
+The spike left the choice open (see Limitations). M2-04 emits `browser.page_visited` when
+`tabs.onUpdated` reports `status: "complete"` (`lib/capture/engine.ts`), not when the navigation
+commits. Consequences: a page that never finishes loading is not recorded, and a reload counts as a
+visit. This differs from PLAN §4's "navigation committed" wording; it was chosen because it uses
+one event per page with the final URL and matches what the Spike A and C tests exercised.
+
+### Still not done
+
+Be explicit about what the shipped M2 does **not** yet have:
+
+- **The 20-kill e2e test on the real extension build.** The 0-lost, 0-duplicated results above are
+  from the throwaway spike (`spikes/mv3-lifecycle`), not from `apps/extension`. Nothing kills the
+  real worker 20 times during capture yet, on either browser. The M2-05 "restart mid-flush" case is
+  covered only by unit tests with a simulated kill over fake-indexeddb
+  (`apps/extension/test/queue/restart-mid-flush.spec.ts`: the server stored the batch and the
+  response was lost, or the request was lost; the resend gets `duplicate` or `accepted`, nothing is
+  lost or stored twice). A real CDP kill of the real build is **not done**.
+- **The manual protocols** (`docs/spikes/mv3-lifecycle-manual-protocol.md` and the Firefox one):
+  idle, lock, real OS blur, real quit and crash. **Not run.** Both results tables are empty and the
+  conditional go above still stands on them.
+- **Flush period and keep-alive measurement** (M2-05 consequence): how often the worker actually
+  stops with the chosen flush period was not measured.
 
 ## Firefox (Spike C)
 

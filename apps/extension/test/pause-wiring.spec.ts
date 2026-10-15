@@ -8,7 +8,15 @@ import { CONNECTION_STORAGE_KEY } from "../lib/connect";
 import { SERVER_HEARTBEAT_ALARM_NAME } from "../lib/heartbeat";
 import { PAUSED_STORAGE_KEY } from "../lib/pause";
 import { type BackgroundBrowserApi, wireBackground } from "../lib/queue";
-import { connectionFor, KEY, ORIGIN, ownerOf, pageEvents, World } from "./queue/support/world";
+import {
+  connectionFor,
+  KEY,
+  ORIGIN,
+  ownerOf,
+  pageEvents,
+  pick,
+  World,
+} from "./queue/support/world";
 
 type Listener = (alarm: { name: string }) => unknown;
 
@@ -44,7 +52,7 @@ function fakeBrowser(world: World, stored: Record<string, unknown>) {
     runtime: { onStartup: noop, onInstalled: noop },
     storage: {
       session: { get: async () => ({ id: "x" }), set: async () => undefined },
-      local: { get: async (key: string) => ({ [key]: stored[key] }) },
+      local: { get: async (keys: string | string[]) => pick(stored, keys) },
     },
   } satisfies BackgroundBrowserApi;
   const fire = (name: string) => Promise.all(alarmListeners.map((l) => l({ name })));
