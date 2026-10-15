@@ -1,6 +1,8 @@
 import type { CaptureGate } from "../capture";
 import { createCaptureEngine, registerCaptureListeners } from "../capture";
 import { type Connection, getConnection } from "../connect";
+import { CLIENT_VERSION, createHeartbeatSender } from "../heartbeat";
+import { getPaused } from "../pause";
 import { createFlusher } from "./flush";
 import type { BackgroundBrowserApi, BackgroundDeps, WiredBackground } from "./types";
 
@@ -37,12 +39,23 @@ export function wireBackground(deps: BackgroundDeps): WiredBackground {
     random: deps.random,
   });
 
+  const heartbeat = createHeartbeatSender({
+    store,
+    getConnection: () => readStoredConnection(browser),
+    fetch: deps.fetch,
+    alarms: browser.alarms,
+    now: deps.now,
+    clientVersion: CLIENT_VERSION,
+  });
+
   // Deny by default, fail closed (invariant 1): capture needs a stored connection, an ingest key
-  // that was not refused, and a collect gate that answers exactly `true`. M2-07 supplies the gate.
+  // that was not refused, the user not paused and a collect gate that answers exactly `true`.
+  // M2-07 supplies the gate.
   const gate: CaptureGate = {
     async allows(page) {
       try {
         if ((await flusher.getSyncStatus()).state !== "connected") return false;
+        if (await getPaused(browser.storage.local)) return false;
         if (deps.collectGate === undefined) return false;
         return (await deps.collectGate.allows(page)) === true;
       } catch {
@@ -64,6 +77,8 @@ export function wireBackground(deps: BackgroundDeps): WiredBackground {
   // The capture listeners handle the heartbeat tick for the engine; this one runs the flush for
   // the same tick and for the one-shot retry alarm. The flush never touches the heartbeat alarm.
   browser.alarms.onAlarm.addListener((alarm) => flusher.onAlarm(alarm));
+  // The server heartbeat has its own periodic alarm; it runs whether or not capture is paused.
+  browser.alarms.onAlarm.addListener((alarm) => heartbeat.onAlarm(alarm));
 
   const settled = (work: () => Promise<void>): Promise<void> => {
     try {
@@ -75,9 +90,11 @@ export function wireBackground(deps: BackgroundDeps): WiredBackground {
       return Promise.resolve();
     }
   };
-  const ready = Promise.all([settled(() => engine.start()), settled(() => flusher.start())]).then(
-    () => undefined,
-  );
+  const ready = Promise.all([
+    settled(() => engine.start()),
+    settled(() => flusher.start()),
+    settled(() => heartbeat.start()),
+  ]).then(() => undefined);
 
   return { engine, flusher, gate, ready };
 }

@@ -11,6 +11,7 @@ import {
   FLUSH_RETRY_ALARM_NAME,
   RETRY_AFTER_MAX_MS,
 } from "./constants";
+import { keyMarker } from "./key-marker";
 import type {
   FailureKind,
   FlushDeps,
@@ -24,15 +25,6 @@ import type {
 
 /** Code of a note for an event that failed validation before it was ever sent. */
 const CLIENT_EVENT_INVALID = "client.event_invalid";
-
-/** An opaque, non-reversible marker of an ingest key (never the key itself). */
-async function keyMarker(key: string): Promise<string> {
-  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(key));
-  const hex = Array.from(new Uint8Array(digest).subarray(0, 16), (byte) =>
-    byte.toString(16).padStart(2, "0"),
-  ).join("");
-  return `sha256:${hex}`;
-}
 
 /** `Retry-After` as milliseconds from `now`: delta-seconds or an HTTP date; `null` if unreadable. */
 function parseRetryAfter(header: string | null, now: number): number | null {
