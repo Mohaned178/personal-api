@@ -5,6 +5,7 @@ import {
   CONNECTION_KEY,
   countByPath,
   seedAllowListFirefox,
+  setQueueOwnerFirefox,
   triggerFlushFirefox,
   visitedPaths,
 } from "../support/pairing";
@@ -58,6 +59,12 @@ test("Firefox: pairs, visits fixture pages and the events land in the database",
     expect(body.ingestKey.key).toMatch(/^pa_ing_/);
     expect(body.integration.id).toBe(account.integrationId);
     expect(await stack.pairingCodeUsed(account.integrationId)).toBe(true);
+    // The queue is owner-scoped and only `connect()` sets the owner; do the same before anything is
+    // captured, or the queued rows would be unowned and never sent.
+    await setQueueOwnerFirefox(firefox, {
+      serverOrigin: proxy.origin,
+      integrationId: body.integration.id,
+    });
     await firefox.storageSet({
       [CONNECTION_KEY]: {
         serverOrigin: proxy.origin,

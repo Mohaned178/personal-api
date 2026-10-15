@@ -8,7 +8,7 @@ import { CONNECTION_STORAGE_KEY } from "../lib/connect";
 import { SERVER_HEARTBEAT_ALARM_NAME } from "../lib/heartbeat";
 import { PAUSED_STORAGE_KEY } from "../lib/pause";
 import { type BackgroundBrowserApi, wireBackground } from "../lib/queue";
-import { connectionFor, KEY, ORIGIN, pageEvents, World } from "./queue/support/world";
+import { connectionFor, KEY, ORIGIN, ownerOf, pageEvents, World } from "./queue/support/world";
 
 type Listener = (alarm: { name: string }) => unknown;
 
@@ -107,6 +107,7 @@ describe("pause closes the capture gate", () => {
 
   it("pause does not stop syncing what is already queued", async () => {
     const { wired, store } = wire({ stored: { [PAUSED_STORAGE_KEY]: true } });
+    await store.setOwner(ownerOf(connectionFor(KEY))); // events are queued for the paired owner
     await store.transact((prev) => ({ state: prev ?? {}, events: pageEvents(2) }));
     await wired.flusher.flush();
     expect((await store.stats()).depth).toBe(0);
@@ -141,6 +142,7 @@ describe("server heartbeat wiring", () => {
 
   it("the capture alarm runs the flush but does not send the server heartbeat", async () => {
     const { fire, store, urls } = wire();
+    await store.setOwner(ownerOf(connectionFor(KEY))); // events are queued for the paired owner
     await store.transact((prev) => ({ state: prev ?? {}, events: pageEvents(1) }));
     await fire(HEARTBEAT_ALARM_NAME);
     expect(urls.some((url) => url.endsWith("/v1/ingest/events"))).toBe(true);

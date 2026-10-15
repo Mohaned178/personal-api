@@ -71,7 +71,20 @@ export interface Connection {
   integrationName: string;
 }
 
+/**
+ * The local queue, as `connect` needs it (M2-R fix): a store (`QueueStore`) satisfies this. When it
+ * is given, a successful pairing for a DIFFERENT owner (origin or integration) discards the old
+ * queue and records the new owner; the same owner keeps the queue.
+ */
+export interface ConnectQueue {
+  stats(): Promise<{ depth: number }>;
+  getOwner(): Promise<{ serverOrigin: string; integrationId: string } | null>;
+  setOwner(owner: { serverOrigin: string; integrationId: string }): Promise<void>;
+  clear(): Promise<number>;
+}
+
 export interface ConnectDeps {
+  queue?: ConnectQueue;
   permissions: {
     request(p: { origins: string[] }): Promise<boolean>;
     remove(p: { origins: string[] }): Promise<boolean>;
@@ -186,8 +199,26 @@ export async function connect(
     integrationId: parsed.data.integration.id,
     integrationName: parsed.data.integration.name,
   };
+  await adoptQueueOwner(deps.queue, connection);
   await deps.storage.set({ [CONNECTION_STORAGE_KEY]: connection });
   return connection;
+}
+
+/**
+ * After a successful pairing only: a queue that belongs to another owner (or to none we can prove)
+ * is discarded so its events can never reach the new server or account, then the new owner is
+ * recorded. The same owner keeps its queue. If this fails, the pairing fails and nothing is stored.
+ */
+async function adoptQueueOwner(queue: ConnectQueue | undefined, connection: Connection) {
+  if (queue === undefined) return;
+  const owner = { serverOrigin: connection.serverOrigin, integrationId: connection.integrationId };
+  const current = await queue.getOwner();
+  const same =
+    current !== null &&
+    current.serverOrigin === owner.serverOrigin &&
+    current.integrationId === owner.integrationId;
+  if (!same && (await queue.stats()).depth > 0) await queue.clear();
+  await queue.setOwner(owner);
 }
 
 /** Removes the stored connection and, best effort, the origin permission. Never throws for that. */

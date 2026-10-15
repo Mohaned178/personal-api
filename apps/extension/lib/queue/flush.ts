@@ -176,7 +176,11 @@ export function createFlusher(deps: FlushDeps): Flusher {
 
     let maxEvents: number | undefined;
     for (;;) {
-      const rows = await store.peekBatch(maxEvents === undefined ? {} : { maxEvents });
+      // Only rows queued for THIS server and integration may go out with this key.
+      const rows = await store.peekBatch({
+        owner: { serverOrigin: connection.serverOrigin, integrationId: connection.integrationId },
+        ...(maxEvents === undefined ? {} : { maxEvents }),
+      });
       if (rows.length === 0) return { status: "drained" };
 
       // Nothing that fails the contract ever leaves the browser (for example a query string).

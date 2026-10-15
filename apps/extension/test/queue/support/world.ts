@@ -28,6 +28,7 @@ import {
   type FlushAlarms,
   type Flusher,
   type QueueLimits,
+  type QueueOwner,
   type QueueStore,
 } from "../../../lib/queue";
 
@@ -41,15 +42,22 @@ export const ORIGIN = "https://api.example.test";
 export const KEY = "pa_ing_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
 export const KEY_2 = "pa_ing_BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB";
 export const INTEGRATION_ID = "0193a000-1111-7000-8000-000000000001";
+export const INTEGRATION_ID_2 = "0193a000-2222-7000-8000-000000000002";
+export const ORIGIN_2 = "https://other.example.test";
 
 export const SECRET_DOMAIN = "secret-domain.example";
 export const SECRET_PATH_PREFIX = "/secret/path";
 
-export function connectionFor(key: string = KEY): Connection {
+/** The queue owner of a connection (what the store stamps rows with). */
+export function ownerOf(connection: Connection): QueueOwner {
+  return { serverOrigin: connection.serverOrigin, integrationId: connection.integrationId };
+}
+
+export function connectionFor(key: string = KEY, owner: Partial<QueueOwner> = {}): Connection {
   return {
-    serverOrigin: ORIGIN,
+    serverOrigin: owner.serverOrigin ?? ORIGIN,
     ingestKey: key,
-    integrationId: INTEGRATION_ID,
+    integrationId: owner.integrationId ?? INTEGRATION_ID,
     integrationName: "Test browser",
   };
 }
@@ -512,6 +520,8 @@ export class World {
   }
 
   async enqueue(instance: Instance, events: CapturedEvent[]): Promise<void> {
+    // Events are captured while connected: the store stamps them for the current connection.
+    if (this.connection) await instance.store.setOwner(ownerOf(this.connection));
     await instance.store.transact((prev) => ({ state: prev ?? { created: true }, events }));
   }
 

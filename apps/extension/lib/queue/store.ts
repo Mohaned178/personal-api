@@ -12,6 +12,7 @@ import type {
   CreateStoreOptions,
   QueuedEvent,
   QueueLimits,
+  QueueOwner,
   QueueStats,
   QueueStore,
   RejectNote,
@@ -33,6 +34,7 @@ const CAPTURE_STATE_KEY = "capture";
 const SYNC_KEY = "sync";
 const COUNTERS_KEY = "counters";
 const NOTES_KEY = "notes";
+const OWNER_KEY = "owner";
 
 interface Counters {
   dropped: number;
@@ -56,6 +58,29 @@ const BODY_OVERHEAD_BYTES = 13;
 
 const encoder = new TextEncoder();
 const noop = (): void => undefined;
+
+function isOwner(value: unknown): value is QueueOwner {
+  if (typeof value !== "object" || value === null) return false;
+  const candidate = value as Record<string, unknown>;
+  return typeof candidate.serverOrigin === "string" && typeof candidate.integrationId === "string";
+}
+
+function sameOwner(row: QueuedEvent, owner: QueueOwner): boolean {
+  const rowOwner = row.owner;
+  return (
+    isOwner(rowOwner) &&
+    rowOwner.serverOrigin === owner.serverOrigin &&
+    rowOwner.integrationId === owner.integrationId
+  );
+}
+
+/** Reads the stored owner; anything that is not a well-formed owner counts as none (fail closed). */
+async function readOwner(meta: IDBObjectStore): Promise<QueueOwner | null> {
+  const stored = await requestResult<unknown>(meta.get(OWNER_KEY));
+  return isOwner(stored)
+    ? { serverOrigin: stored.serverOrigin, integrationId: stored.integrationId }
+    : null;
+}
 
 function requestResult<T>(request: IDBRequest<T>): Promise<T> {
   return new Promise<T>((resolve, reject) => {
@@ -214,6 +239,7 @@ class IdbQueueStore implements QueueStore {
         const stored = await requestResult<CaptureState | undefined>(
           tx.objectStore(STATE_STORE).get(CAPTURE_STATE_KEY),
         );
+        const owner = await readOwner(tx.objectStore(META_STORE));
         const transition = compute(stored === undefined ? null : stored);
         if (isThenable(transition)) {
           (transition as unknown as Promise<unknown>).then(undefined, noop);
@@ -226,7 +252,7 @@ class IdbQueueStore implements QueueStore {
         const queuedAt = this.now();
         tx.objectStore(STATE_STORE).put(state, CAPTURE_STATE_KEY);
         const queue = tx.objectStore(QUEUE_STORE);
-        for (const event of events) queue.add({ event, queuedAt });
+        for (const event of events) queue.add({ event, owner, queuedAt });
         await this.enforceLimits(tx, queuedAt);
       });
     });
@@ -268,8 +294,11 @@ class IdbQueueStore implements QueueStore {
   async peekBatch(limits: BatchLimits = {}): Promise<QueuedEvent[]> {
     const maxEvents = Math.max(1, Math.floor(limits.maxEvents ?? FLUSH_BATCH_MAX_EVENTS));
     const maxBytes = limits.maxBytes ?? FLUSH_BATCH_MAX_BYTES;
+    const { owner } = limits;
     const rows = await this.read([QUEUE_STORE], (tx) =>
-      requestResult<QueuedEvent[]>(tx.objectStore(QUEUE_STORE).getAll(undefined, maxEvents)),
+      owner === undefined
+        ? requestResult<QueuedEvent[]>(tx.objectStore(QUEUE_STORE).getAll(undefined, maxEvents))
+        : this.collectOwned(tx, owner, maxEvents),
     );
     const batch: QueuedEvent[] = [];
     let bytes = BODY_OVERHEAD_BYTES;
@@ -281,6 +310,26 @@ class IdbQueueStore implements QueueStore {
       batch.push(row);
     }
     return batch;
+  }
+
+  /** The oldest `max` rows that belong to `owner`, skipping every other row (oldest first). */
+  private collectOwned(tx: IDBTransaction, owner: QueueOwner, max: number): Promise<QueuedEvent[]> {
+    return new Promise<QueuedEvent[]>((resolve, reject) => {
+      const found: QueuedEvent[] = [];
+      const request = tx.objectStore(QUEUE_STORE).openCursor();
+      request.onerror = () => reject(request.error ?? new Error("IndexedDB request failed"));
+      request.onsuccess = () => {
+        const cursor = request.result;
+        if (cursor === null) {
+          resolve(found);
+          return;
+        }
+        const row = cursor.value as QueuedEvent;
+        if (sameOwner(row, owner)) found.push(row);
+        if (found.length >= max) resolve(found);
+        else cursor.continue();
+      };
+    });
   }
 
   settle(update: SettleUpdate): Promise<void> {
@@ -360,6 +409,23 @@ class IdbQueueStore implements QueueStore {
       return runTransaction(db, [QUEUE_STORE, META_STORE], "readwrite", (tx) =>
         this.enforceLimits(tx, this.now()),
       );
+    });
+  }
+
+  async getOwner(): Promise<QueueOwner | null> {
+    return this.read([META_STORE], (tx) => readOwner(tx.objectStore(META_STORE)));
+  }
+
+  /** Pure setter: later `transact` commits are stamped with it; no row is cleared or re-stamped. */
+  setOwner(owner: QueueOwner): Promise<void> {
+    return this.write(async () => {
+      const db = await this.database();
+      await runTransaction(db, [META_STORE], "readwrite", async (tx) => {
+        tx.objectStore(META_STORE).put(
+          { serverOrigin: owner.serverOrigin, integrationId: owner.integrationId },
+          OWNER_KEY,
+        );
+      });
     });
   }
 

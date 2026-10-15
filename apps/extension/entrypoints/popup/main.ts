@@ -11,22 +11,23 @@ import {
 } from "../../lib/connect";
 import { setPaused } from "../../lib/pause";
 import {
+  clearLocalQueue,
   loadPopupState,
   type PopupState,
-  type PopupStateDeps,
   type PopupStatus,
 } from "../../lib/popup-state";
 import { createFlusher, createIdbCaptureStore } from "../../lib/queue";
 
+// The popup reads the same IndexedDB database the background writes: a store for the counters and
+// a flusher used for `getSyncStatus` and the "Clear local queue" action. Never the ingest key
+// (invariant: the popup never shows it).
+const store = createIdbCaptureStore({ now: Date.now });
 const deps: ConnectDeps = {
   permissions: browser.permissions,
   storage: browser.storage.local,
   fetch: (url, init) => fetch(url, init),
+  queue: store,
 };
-
-// The popup reads the same IndexedDB database the background writes: a store for the counters and
-// a flusher used only for `getSyncStatus`. Never the ingest key (invariant: the popup never shows it).
-const store = createIdbCaptureStore({ now: Date.now });
 const flusher = createFlusher({
   store,
   getConnection: () => getConnection(deps),
@@ -35,7 +36,7 @@ const flusher = createFlusher({
   now: Date.now,
   random: Math.random,
 });
-const stateDeps: PopupStateDeps = {
+const stateDeps = {
   getConnection: () => getConnection(deps),
   flusher,
   store,
@@ -66,6 +67,7 @@ const stateQueueDepth = byId<HTMLElement>("state-queue-depth");
 const stateLastSync = byId<HTMLElement>("state-last-sync");
 const stateDropped = byId<HTMLElement>("state-dropped");
 const pauseToggle = byId<HTMLButtonElement>("pause-toggle");
+const clearQueueButton = byId<HTMLButtonElement>("clear-queue");
 
 function setStatus(message: string, isError = false): void {
   status.textContent = message;
@@ -93,6 +95,7 @@ function renderState(next: PopupState): void {
   stateDropped.textContent = String(next.droppedCount);
   pauseToggle.hidden = next.connection === "not_connected";
   pauseToggle.textContent = next.paused ? "Resume" : "Pause";
+  clearQueueButton.hidden = !next.canClearQueue;
 }
 
 /** Re-reads the snapshot. `loadPopupState` never rejects. */
@@ -108,6 +111,14 @@ pauseToggle.addEventListener("click", () => {
     .then(() => {
       pauseToggle.disabled = false;
     });
+});
+
+clearQueueButton.addEventListener("click", () => {
+  clearQueueButton.disabled = true;
+  void clearLocalQueue(stateDeps).then((next) => {
+    renderState(next);
+    clearQueueButton.disabled = false;
+  });
 });
 
 // ---------------------------------------------------------------------------------------------

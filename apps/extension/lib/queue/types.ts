@@ -11,11 +11,26 @@ import type {
 } from "../capture";
 import type { Connection } from "../connect";
 
+/**
+ * Who the queued events belong to: the server and the integration they were captured for. Events
+ * queued for one owner must never be sent to another (privacy: M2-R fix).
+ */
+export interface QueueOwner {
+  /** Canonical origin, as in `Connection.serverOrigin`. */
+  serverOrigin: string;
+  integrationId: string;
+}
+
 /** A queued event as stored. `seq` is the insertion order (oldest = smallest). */
 export interface QueuedEvent {
   seq: number;
   /** Exactly the event the capture engine handed to `transact` (same id, same data; no extra keys). */
   event: CapturedEvent;
+  /**
+   * The store's owner when the event was committed (`null` = none was set). Only rows whose
+   * owner equals the current connection's owner are ever flushed.
+   */
+  owner?: QueueOwner | null;
   /** `now()` of the store when the event was committed. The 14-day cap counts from here. */
   queuedAt: number;
 }
@@ -25,6 +40,11 @@ export interface BatchLimits {
   maxEvents?: number;
   /** Default FLUSH_BATCH_MAX_BYTES. Counted as the UTF-8 length of `JSON.stringify({ events })`. */
   maxBytes?: number;
+  /**
+   * When given, only rows whose owner equals this one are returned (a row without an owner never
+   * matches). The flusher always passes the current connection's owner. Omitted = every row.
+   */
+  owner?: QueueOwner;
 }
 
 export interface QueueLimits {
@@ -107,6 +127,10 @@ export interface QueueStore extends CaptureStore {
   getMeta(): Promise<{ sync: SyncMeta; rejectedNotes: RejectNote[] }>;
   /** Drops events older than the age limit (counted in `droppedCount`). Returns how many. `transact` does this too. */
   applyLimits(): Promise<number>;
+  /** The owner that new events are stamped with, or `null` when none was set. */
+  getOwner(): Promise<QueueOwner | null>;
+  /** Pure setter: later `transact` commits are stamped with `owner`. It never clears or re-stamps rows. */
+  setOwner(owner: QueueOwner): Promise<void>;
   /** Deletes every queued event (user action; not counted as dropped). Returns how many. */
   clear(): Promise<number>;
   /**
