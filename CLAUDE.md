@@ -35,6 +35,7 @@ pnpm test                     # unit tests (no Docker needed)
 pnpm test:int                 # integration tests (Testcontainers, needs Docker)
 pnpm e2e:install              # once per machine: Playwright's bundled Chromium
 pnpm test:e2e                 # Playwright; builds the extension and the spike first
+pnpm --filter @personal-api/e2e test:e2e:firefox:smoke # Firefox smoke (Selenium + geckodriver); build firefox-mv3 first
 pnpm --filter extension build # builds chrome-mv3 (Edge) and firefox-mv3 into apps/extension/.output
 pnpm --filter extension build:firefox # Firefox only (load .output/firefox-mv3 via about:debugging)
 pnpm --filter extension zip   # store zips for both targets
