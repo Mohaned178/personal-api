@@ -47,6 +47,22 @@ export class IntegrationsService {
     };
   }
 
+  /**
+   * Creates a deny-by-default `browser-extension` integration. No key is created here: the
+   * extension gets its ingest key (once) when it redeems a pairing code, so the response carries
+   * the integration only.
+   */
+  async createBrowserExtension(
+    userId: string,
+    request: CreateIntegrationRequest,
+  ): Promise<IntegrationResponse> {
+    assertUserScope(userId);
+    const integration = await this.repository.createBrowserExtension(userId, {
+      name: request.name,
+    });
+    return { integration: toIntegration(integration) };
+  }
+
   async list(userId: string): Promise<IntegrationListResponse> {
     assertUserScope(userId);
     const rows = await this.repository.list(userId);
@@ -79,7 +95,7 @@ function found(row: IntegrationRow | null): IntegrationRow {
 }
 
 /** Explicit field list: a new column (or a key hash) can never leak into a response by accident. */
-function toIntegration(row: IntegrationRow): Integration {
+export function toIntegration(row: IntegrationRow): Integration {
   return {
     id: row.id,
     kind: row.kind as Integration["kind"],

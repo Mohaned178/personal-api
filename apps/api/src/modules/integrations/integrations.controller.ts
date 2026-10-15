@@ -28,14 +28,20 @@ import { IntegrationsService } from "./integrations.service";
 export class IntegrationsController {
   constructor(private readonly integrations: IntegrationsService) {}
 
-  /** The only response that carries a key, so it must not be cached. */
+  /**
+   * An `http` integration answers with its ingest key (shown once), so the response must not be
+   * cached. A `browser-extension` one answers with the integration only: its key is issued when
+   * the extension redeems a pairing code.
+   */
   @Post()
   @Header("Cache-Control", "no-store")
   create(
     @CurrentAuth("session") auth: SessionAuthContext,
     @Body() body: CreateIntegrationDto,
-  ): Promise<CreateIntegrationResponse> {
-    return this.integrations.create(auth.userId, body);
+  ): Promise<CreateIntegrationResponse | IntegrationResponse> {
+    return body.kind === "http"
+      ? this.integrations.create(auth.userId, body)
+      : this.integrations.createBrowserExtension(auth.userId, body);
   }
 
   @Get()

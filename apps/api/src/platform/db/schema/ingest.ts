@@ -70,6 +70,30 @@ export const apiKeys = pgTable(
   ],
 );
 
+/**
+ * One-time codes that the browser extension exchanges for an ingest key. Only the SHA-256 hash is
+ * stored; the code is shown once. `used_at` is set by the single UPDATE that redeems it.
+ */
+export const pairingCodes = pgTable(
+  "pairing_codes",
+  {
+    id: id(),
+    userId: userId(),
+    integrationId: uuid("integration_id")
+      .notNull()
+      .references(() => integrations.id, { onDelete: "cascade" }),
+    codeHash: text("code_hash").notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    usedAt: timestamp("used_at", { withTimezone: true }),
+    createdAt: createdAt(),
+  },
+  (table) => [
+    uniqueIndex("pairing_codes_code_hash_idx").on(table.codeHash),
+    index("pairing_codes_integration_id_idx").on(table.integrationId),
+    index("pairing_codes_user_id_idx").on(table.userId),
+  ],
+);
+
 export const events = pgTable(
   "events",
   {

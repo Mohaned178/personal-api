@@ -19,13 +19,26 @@ describe("createIntegrationRequestSchema", () => {
     ["userId", { kind: "http", name: "a", userId: "u" }],
     ["defaultPolicy", { kind: "http", name: "a", defaultPolicy: "allow" }],
     ["status", { kind: "http", name: "a", status: "revoked" }],
-    ["browser-extension kind", { kind: "browser-extension", name: "a" }],
+    ["unknown kind", { kind: "imap", name: "a" }],
+    ["userId on a browser-extension", { kind: "browser-extension", name: "a", userId: "u" }],
+    [
+      "an ingest key on a browser-extension",
+      { kind: "browser-extension", name: "a", ingestKey: "x" },
+    ],
     ["missing kind", { name: "a" }],
     ["blank name", { kind: "http", name: "   " }],
     ["long name", { kind: "http", name: "x".repeat(81) }],
     ["non-string name", { kind: "http", name: 5 }],
   ])("rejects %s", (_label, body) => {
     expect(createIntegrationRequestSchema.safeParse(body).success).toBe(false);
+  });
+});
+
+describe("createIntegrationRequestSchema, browser-extension", () => {
+  it("accepts a browser-extension integration (M2-01) and trims the name", () => {
+    expect(
+      createIntegrationRequestSchema.parse({ kind: "browser-extension", name: "  Work Edge  " }),
+    ).toEqual({ kind: "browser-extension", name: "Work Edge" });
   });
 });
 

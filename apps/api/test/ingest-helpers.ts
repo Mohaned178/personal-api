@@ -13,6 +13,8 @@ import { ingestBatchResponseSchema } from "@personal-api/contracts";
 import type { Pool } from "pg";
 import request from "supertest";
 import { expect } from "vitest";
+import { PAIRING_RATE_LIMITER } from "../src/modules/pairing/pairing.tokens";
+import type { RateLimiter } from "../src/platform/rate-limit/rate-limiter";
 import { FakeClock } from "./fake-clock";
 import { startTestDatabase, type TestDatabase } from "./postgres";
 import { buildFixtureApp, type FixtureUser, seedTwoUsers } from "./two-user-fixture";
@@ -202,8 +204,10 @@ export async function startIngestHarness(): Promise<IngestHarness> {
     a,
     b,
     reset: async () => {
-      await testDb.pool.query("truncate events, ingestion_log restart identity");
+      await testDb.pool.query("truncate events, ingestion_log, pairing_codes restart identity");
       clock.set(FIXED_NOW);
+      // Every request in a test run comes from one address, so forget the pairing throttle.
+      app.get<RateLimiter>(PAIRING_RATE_LIMITER).reset();
     },
     stop: async () => {
       await app.close();

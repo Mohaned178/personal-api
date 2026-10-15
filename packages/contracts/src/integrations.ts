@@ -12,9 +12,13 @@ export const INTEGRATION_NAME_MAX_LENGTH = 80;
 /** What the user calls the source ("Work laptop"). Trimmed, 1 to 80 characters. */
 export const integrationNameSchema = z.string().trim().min(1).max(INTEGRATION_NAME_MAX_LENGTH);
 
-/** `browser-extension` is created through the pairing flow (M2-01), so only `http` is accepted here. */
+/**
+ * An `http` source answers with its ingest key. A `browser-extension` source answers with no
+ * key: its key is issued once, when the extension redeems a pairing code (`POST /v1/pair`), so
+ * the dashboard never shows a key for the user to copy by hand.
+ */
 export const createIntegrationRequestSchema = z.strictObject({
-  kind: z.literal("http"),
+  kind: z.enum(["http", "browser-extension"]),
   name: integrationNameSchema,
 });
 export type CreateIntegrationRequest = z.output<typeof createIntegrationRequestSchema>;
@@ -58,6 +62,7 @@ export const createdIngestKeySchema = z.strictObject({
 });
 export type CreatedIngestKey = z.output<typeof createdIngestKeySchema>;
 
+/** The response for an `http` integration. A `browser-extension` one answers with `integrationResponseSchema`. */
 export const createIntegrationResponseSchema = z.strictObject({
   integration: integrationSchema,
   ingestKey: createdIngestKeySchema,
