@@ -142,13 +142,12 @@ describe("normalizeServerUrl", () => {
     );
   });
 
-  it.each([
-    "http://api.example.com",
-    "http://192.168.1.5:3000",
-    "http://localhost.evil.com",
-  ])("rejects plain http to non-loopback host %s as insecure", (bad) => {
-    expect(codeOfSync(() => normalizeServerUrl(bad))).toBe("server_url_insecure");
-  });
+  it.each(["http://api.example.com", "http://192.168.1.5:3000", "http://localhost.evil.com"])(
+    "rejects plain http to non-loopback host %s as insecure",
+    (bad) => {
+      expect(codeOfSync(() => normalizeServerUrl(bad))).toBe("server_url_insecure");
+    },
+  );
 
   it.each([
     "",
