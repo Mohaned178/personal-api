@@ -40,6 +40,11 @@ export interface BatchLimits {
   maxEvents?: number;
   /** Default FLUSH_BATCH_MAX_BYTES. Counted as the UTF-8 length of `JSON.stringify({ events })`. */
   maxBytes?: number;
+  /**
+   * When given, only rows whose owner equals this one are returned (a row without an owner never
+   * matches). The flusher always passes the current connection's owner. Omitted = every row.
+   */
+  owner?: QueueOwner;
 }
 
 export interface QueueLimits {

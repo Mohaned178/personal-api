@@ -83,7 +83,7 @@ export async function loadPopupState(deps: PopupStateDeps): Promise<PopupState> 
       droppedCount: stats.droppedCount,
       ruleDroppedCount: stats.ruleDroppedCount,
       rejectedCount: stats.rejectedCount,
-      canClearQueue: false, // M2-R fix stub
+      canClearQueue: connectionState !== "connected" && stats.depth > 0,
     };
   } catch {
     return unreadableState();
@@ -96,7 +96,12 @@ export async function loadPopupState(deps: PopupStateDeps): Promise<PopupState> 
  * Never rejects; if clearing fails the returned snapshot still shows the real depth.
  */
 export async function clearLocalQueue(
-  _deps: PopupStateDeps & { flusher: Pick<Flusher, "getSyncStatus" | "clearQueue"> },
+  deps: PopupStateDeps & { flusher: Pick<Flusher, "getSyncStatus" | "clearQueue"> },
 ): Promise<PopupState> {
-  throw new Error("not implemented: clearLocalQueue");
+  try {
+    await deps.flusher.clearQueue();
+  } catch {
+    // The snapshot below still shows the real depth; nothing is logged (it could name a key or URL).
+  }
+  return loadPopupState(deps);
 }

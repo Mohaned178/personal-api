@@ -894,7 +894,8 @@ describe("queue owner scoping (events never reach a different server or integrat
       world.connection = connectionFor(KEY_2, owner); // paired again, as another owner
       await inst.flusher.flush();
       expect(world.server.calls).toHaveLength(1); // only the refused request; nothing under KEY_2
-      for (const id of ids(old)) expect(world.server.sentIds().slice(1)).not.toContain(id);
+      for (const id of ids(old))
+        expect(world.server.calls.slice(1).flatMap((c) => c.ids)).not.toContain(id);
       expect(world.server.accepted.size).toBe(0);
 
       // New events captured for the new owner do flow, and only they.

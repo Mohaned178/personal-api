@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { HEARTBEAT_ALARM_NAME } from "../../lib/capture";
 import { CONNECTION_STORAGE_KEY } from "../../lib/connect";
 import { type BackgroundBrowserApi, FLUSH_RETRY_ALARM_NAME, wireBackground } from "../../lib/queue";
-import { connectionFor, KEY, pageEvents, World } from "./support/world";
+import { connectionFor, KEY, ownerOf, pageEvents, World } from "./support/world";
 
 type Listener = (...args: never[]) => unknown;
 
@@ -63,6 +63,9 @@ function wire(options: { allow?: boolean | null; connected?: boolean } = {}) {
     options.connected === false ? {} : { [CONNECTION_STORAGE_KEY]: connectionFor(KEY) };
   const { browser, listeners } = fakeBrowser(world, stored);
   const { store } = world.open();
+  // Events are queued for the paired owner. Called first, so it also precedes the engine's own
+  // start-up events (the store runs writes in call order).
+  void store.setOwner(ownerOf(connectionFor(KEY)));
   const wired = wireBackground({
     browser,
     store,
