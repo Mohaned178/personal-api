@@ -71,7 +71,20 @@ export interface Connection {
   integrationName: string;
 }
 
+/**
+ * The local queue, as `connect` needs it (M2-R fix): a store (`QueueStore`) satisfies this. When it
+ * is given, a successful pairing for a DIFFERENT owner (origin or integration) discards the old
+ * queue and records the new owner; the same owner keeps the queue.
+ */
+export interface ConnectQueue {
+  stats(): Promise<{ depth: number }>;
+  getOwner(): Promise<{ serverOrigin: string; integrationId: string } | null>;
+  setOwner(owner: { serverOrigin: string; integrationId: string }): Promise<void>;
+  clear(): Promise<number>;
+}
+
 export interface ConnectDeps {
+  queue?: ConnectQueue;
   permissions: {
     request(p: { origins: string[] }): Promise<boolean>;
     remove(p: { origins: string[] }): Promise<boolean>;

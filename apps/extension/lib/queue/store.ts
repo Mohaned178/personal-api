@@ -12,6 +12,7 @@ import type {
   CreateStoreOptions,
   QueuedEvent,
   QueueLimits,
+  QueueOwner,
   QueueStats,
   QueueStore,
   RejectNote,
@@ -362,6 +363,13 @@ class IdbQueueStore implements QueueStore {
       );
     });
   }
+
+  // M2-R fix stub: not implemented yet (inert, so existing behaviour is unchanged).
+  async getOwner(): Promise<QueueOwner | null> {
+    return null;
+  }
+
+  async setOwner(_owner: QueueOwner): Promise<void> {}
 
   clear(): Promise<number> {
     return this.write(async () => {

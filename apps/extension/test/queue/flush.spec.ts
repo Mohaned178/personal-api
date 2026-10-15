@@ -21,10 +21,13 @@ import {
   bigEvent,
   connectionFor,
   expectBatchesValid,
+  INTEGRATION_ID_2,
   type Instance,
   KEY,
   KEY_2,
   ORIGIN,
+  ORIGIN_2,
+  ownerOf,
   pageEvent,
   pageEvents,
   SECRET_DOMAIN,
@@ -659,7 +662,7 @@ describe("401 puts the extension in the disconnected state", () => {
     expect(await queuedIds()).toEqual(ids(events.slice(100)));
   });
 
-  it("resumes with a DIFFERENT ingest key and sends the retained queue with it, never with the old one", async () => {
+  it("resumes with a DIFFERENT ingest key for the SAME owner (origin and integration) and sends the retained queue with it, never with the old one", async () => {
     const events = pageEvents(3);
     await enqueue(events);
     world.server.expectedKey = KEY_2;
@@ -846,5 +849,98 @@ describe("silence: no logs, no timers, no secrets in anything the flush exposes"
       setTimeoutSpy.mockRestore();
       setIntervalSpy.mockRestore();
     }
+  });
+});
+
+// M2-R fix: the queue records its owner (server origin + integration). Events queued for one owner
+// are never sent under another owner's key, whatever the sync state says.
+describe("queue owner scoping (events never reach a different server or integration)", () => {
+  const owners = [
+    {
+      label: "a different integration on the same server",
+      owner: { integrationId: INTEGRATION_ID_2 },
+    },
+    { label: "a different server", owner: { serverOrigin: ORIGIN_2 } },
+    {
+      label: "a different server AND integration",
+      owner: { serverOrigin: ORIGIN_2, integrationId: INTEGRATION_ID_2 },
+    },
+  ];
+
+  it("the store reports no owner until one is set, then returns it, also after a restart", async () => {
+    await expect(inst.store.getOwner()).resolves.toBeNull();
+    await inst.store.setOwner(ownerOf(connectionFor(KEY)));
+    await expect(inst.store.getOwner()).resolves.toEqual(ownerOf(connectionFor(KEY)));
+    inst = await world.restart(inst);
+    await expect(inst.store.getOwner()).resolves.toEqual(ownerOf(connectionFor(KEY)));
+  });
+
+  it("setOwner only records the owner: it does not clear or re-stamp queued events", async () => {
+    await enqueue(pageEvents(2));
+    await inst.store.setOwner(ownerOf(connectionFor(KEY, { serverOrigin: ORIGIN_2 })));
+    expect(await depth()).toBe(2);
+    const rows = await inst.store.peekBatch();
+    for (const row of rows) expect(row.owner).toEqual(ownerOf(connectionFor(KEY)));
+  });
+
+  for (const { label, owner } of owners) {
+    it(`after a 401, pairing ${label} sends NONE of the old events (not even under the new key)`, async () => {
+      const old = pageEvents(3);
+      await enqueue(old);
+      world.server.expectedKey = KEY_2;
+      await inst.flusher.flush(); // KEY is refused: disconnected
+      expect((await status()).state).toBe("disconnected");
+
+      world.connection = connectionFor(KEY_2, owner); // paired again, as another owner
+      await inst.flusher.flush();
+      expect(world.server.calls).toHaveLength(1); // only the refused request; nothing under KEY_2
+      for (const id of ids(old)) expect(world.server.sentIds().slice(1)).not.toContain(id);
+      expect(world.server.accepted.size).toBe(0);
+
+      // New events captured for the new owner do flow, and only they.
+      const fresh = pageEvents(2, 10);
+      await enqueue(fresh);
+      await inst.flusher.flush();
+      expect(world.server.acceptedIds().sort()).toEqual(ids(fresh).sort());
+      expect(world.server.calls.slice(1).map((c) => c.headers.get("authorization"))).toEqual([
+        `Bearer ${KEY_2}`,
+      ]);
+    });
+
+    it(`rows queued for the previous owner are never flushed when the connection is ${label}, without any 401`, async () => {
+      const old = pageEvents(2);
+      await enqueue(old); // stamped for the first connection
+      world.connection = connectionFor(KEY, owner);
+      const fresh = pageEvents(1, 10);
+      await enqueue(fresh); // stamped for the new owner
+      await inst.flusher.flush();
+      expect(world.server.sentIds()).toEqual(ids(fresh));
+      for (const id of ids(old)) expect(world.server.sentIds()).not.toContain(id);
+    });
+
+    it(`a flush under ${label} never sends the old events, even when the old queue is all that exists`, async () => {
+      await enqueue(pageEvents(3));
+      world.connection = connectionFor(KEY, owner);
+      await inst.flusher.flush();
+      expect(world.server.calls).toEqual([]);
+    });
+  }
+
+  it("the same owner after a 401 keeps and sends its queue with the new key", async () => {
+    const events = pageEvents(2);
+    await enqueue(events);
+    world.server.expectedKey = KEY_2;
+    await inst.flusher.flush();
+    world.connection = connectionFor(KEY_2); // same origin and integration
+    await inst.flusher.flush();
+    expect(world.server.acceptedIds().sort()).toEqual(ids(events).sort());
+  });
+
+  it("clearQueue also removes rows of a previous owner (nothing lingers)", async () => {
+    await enqueue(pageEvents(2));
+    world.connection = connectionFor(KEY, { serverOrigin: ORIGIN_2 });
+    await enqueue(pageEvents(1, 5));
+    await expect(inst.flusher.clearQueue()).resolves.toBe(3);
+    expect(await depth()).toBe(0);
   });
 });

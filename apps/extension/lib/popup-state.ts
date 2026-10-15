@@ -23,6 +23,8 @@ export interface PopupState {
   ruleDroppedCount: number;
   /** Events removed with a rejection note. */
   rejectedCount: number;
+  /** True when "Clear local queue" should be offered: not connected or disconnected, and events are queued. */
+  canClearQueue: boolean;
 }
 
 export interface PopupStateDeps {
@@ -45,6 +47,7 @@ function unreadableState(): PopupState {
     droppedCount: 0,
     ruleDroppedCount: 0,
     rejectedCount: 0,
+    canClearQueue: false,
   };
 }
 
@@ -80,8 +83,20 @@ export async function loadPopupState(deps: PopupStateDeps): Promise<PopupState> 
       droppedCount: stats.droppedCount,
       ruleDroppedCount: stats.ruleDroppedCount,
       rejectedCount: stats.rejectedCount,
+      canClearQueue: false, // M2-R fix stub
     };
   } catch {
     return unreadableState();
   }
+}
+
+/**
+ * The popup's "Clear local queue" action (M2-R fix): deletes every queued event through
+ * `flusher.clearQueue` and returns a fresh snapshot, whose `queueDepth` is what the popup shows.
+ * Never rejects; if clearing fails the returned snapshot still shows the real depth.
+ */
+export async function clearLocalQueue(
+  _deps: PopupStateDeps & { flusher: Pick<Flusher, "getSyncStatus" | "clearQueue"> },
+): Promise<PopupState> {
+  throw new Error("not implemented: clearLocalQueue");
 }
