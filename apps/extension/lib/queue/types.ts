@@ -205,7 +205,9 @@ export interface Flusher {
 export type BackgroundBrowserApi = CaptureBrowserApi &
   CaptureListenerApi & {
     alarms: FlushAlarms;
-    storage: { local: { get(key: string): Promise<Record<string, unknown>> } };
+    storage: {
+      local: { get(keys: string | string[]): Promise<Record<string, unknown>> };
+    };
   };
 
 export interface BackgroundDeps {

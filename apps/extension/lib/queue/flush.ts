@@ -12,6 +12,7 @@ import {
   RETRY_AFTER_MAX_MS,
 } from "./constants";
 import { keyMarker } from "./key-marker";
+import { connectionState } from "./sync-state";
 import type {
   FailureKind,
   FlushDeps,
@@ -305,16 +306,8 @@ export function createFlusher(deps: FlushDeps): Flusher {
   async function getSyncStatus(): Promise<SyncStatus> {
     const connection = await readConnection();
     const { sync } = await store.getMeta();
-    let state: SyncStatus["state"] = "connected";
-    if (connection === null) state = "not_connected";
-    else if (
-      sync.state === "disconnected" &&
-      sync.disconnectedFor === (await keyMarker(connection.ingestKey))
-    ) {
-      state = "disconnected";
-    }
     return {
-      state,
+      state: await connectionState(connection, sync),
       consecutiveFailures: sync.consecutiveFailures,
       nextAttemptAt: sync.nextAttemptAt,
       lastSuccessAt: sync.lastSuccessAt,

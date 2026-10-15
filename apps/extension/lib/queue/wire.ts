@@ -1,11 +1,15 @@
-import { createAllowListGate } from "../allow-list";
+import { ALLOW_LIST_STORAGE_KEY, createAllowListGate } from "../allow-list";
 import type { CaptureGate } from "../capture";
 import { createCaptureEngine, registerCaptureListeners } from "../capture";
-import { type Connection, getConnection } from "../connect";
+import { CONNECTION_STORAGE_KEY, type Connection, getConnection } from "../connect";
 import { CLIENT_VERSION, createHeartbeatSender } from "../heartbeat";
-import { getPaused } from "../pause";
+import { getPaused, PAUSED_STORAGE_KEY } from "../pause";
 import { createFlusher } from "./flush";
+import { connectionState } from "./sync-state";
 import type { BackgroundBrowserApi, BackgroundDeps, WiredBackground } from "./types";
+
+/** What the capture gate reads from `browser.storage.local`, in one call. */
+const GATE_STORAGE_KEYS = [CONNECTION_STORAGE_KEY, PAUSED_STORAGE_KEY, ALLOW_LIST_STORAGE_KEY];
 
 const unavailable = (): Promise<never> =>
   Promise.reject(new Error("not available to the background wiring"));
@@ -49,24 +53,37 @@ export function wireBackground(deps: BackgroundDeps): WiredBackground {
     clientVersion: CLIENT_VERSION,
   });
 
-  // The M2-07 temporary allow list is the default gate; an explicit `collectGate` (tests, later
-  // milestones) wins. The list is read-only here: `addAllowedDomain`/`removeAllowedDomain` are the
-  // popup's business, so `set` rejects like it does for the stored connection.
-  const collectGate =
-    deps.collectGate ??
-    createAllowListGate({
-      get: (key) => browser.storage.local.get(key),
-      set: unavailable,
-    });
-
   // Deny by default, fail closed (invariant 1): capture needs a stored connection, an ingest key
   // that was not refused, the user not paused and a collect gate that answers exactly `true`.
+  //
+  // This runs on the capture path (ADR 0002 decision 3), so it is as short as it can be: ONE
+  // `storage.local.get` for the connection, the pause flag and the allow list, started at once and
+  // in parallel with the one IndexedDB read of the sync state (a 401 marker), instead of four
+  // sequential reads. Nothing is cached: every call reads fresh, so a pause or a removed domain
+  // takes effect on the next navigation. The values still go through their own parsers
+  // (`getConnection`, `getPaused`, `getAllowList` via the allow-list gate), each of which fails
+  // closed on a missing, malformed or unreadable value, and a failed read fails all of them.
+  // The M2-07 temporary allow list is the default collect gate (read-only here: `set` rejects, the
+  // popup owns writes); an explicit `collectGate` (tests, later milestones) wins.
   const gate: CaptureGate = {
     async allows(page) {
       try {
-        if ((await flusher.getSyncStatus()).state !== "connected") return false;
-        if (await getPaused(browser.storage.local)) return false;
-        return (await collectGate.allows(page)) === true;
+        const snapshot = browser.storage.local.get(GATE_STORAGE_KEYS);
+        const view = { get: () => snapshot, set: unavailable };
+        const collectGate = deps.collectGate ?? createAllowListGate(view);
+        const [connection, paused, collected, meta] = await Promise.all([
+          getConnection({
+            storage: { get: view.get, set: unavailable, remove: unavailable },
+            permissions: { request: unavailable, remove: unavailable },
+            fetch: unavailable,
+          }),
+          getPaused(view),
+          collectGate.allows(page),
+          store.getMeta(),
+        ]);
+        if ((await connectionState(connection, meta.sync)) !== "connected") return false;
+        if (paused) return false;
+        return collected === true;
       } catch {
         return false;
       }

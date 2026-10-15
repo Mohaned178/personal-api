@@ -4,7 +4,16 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { HEARTBEAT_ALARM_NAME } from "../../lib/capture";
 import { CONNECTION_STORAGE_KEY } from "../../lib/connect";
 import { type BackgroundBrowserApi, FLUSH_RETRY_ALARM_NAME, wireBackground } from "../../lib/queue";
-import { connectionFor, KEY, ownerOf, pageEvents, World } from "./support/world";
+import {
+  connectionFor,
+  KEY,
+  ownerOf,
+  pageEvents,
+  pick,
+  World,
+  waitFor,
+  withOverrides,
+} from "./support/world";
 
 type Listener = (...args: never[]) => unknown;
 
@@ -45,7 +54,7 @@ function fakeBrowser(world: World, stored: Record<string, unknown>) {
     },
     storage: {
       session: { get: async () => ({ id: "x" }), set: async () => undefined },
-      local: { get: async (key: string) => ({ [key]: stored[key] }) },
+      local: { get: async (keys: string | string[]) => pick(stored, keys) },
     },
   } satisfies BackgroundBrowserApi;
   return { browser, listeners };
@@ -170,5 +179,127 @@ describe("wireBackground", () => {
     await flushListener({ name: FLUSH_RETRY_ALARM_NAME });
     expect(world.server.calls.length).toBeGreaterThan(0);
     expect((await store.stats()).depth).toBe(0);
+  });
+});
+
+// M2-R fix: the capture path gate (ADR 0002 decision 3) reads its state in one storage call, in
+// parallel with the sync-state read, and every failed read denies.
+describe("the capture gate's reads", () => {
+  type StorageLocal = { get(keys: string | string[]): Promise<Record<string, unknown>> };
+
+  function wireWith(options: {
+    get?: StorageLocal["get"];
+    store?: (store: ReturnType<World["open"]>["store"]) => ReturnType<World["open"]>["store"];
+  }) {
+    const stored: Record<string, unknown> = { [CONNECTION_STORAGE_KEY]: connectionFor(KEY) };
+    const { browser } = fakeBrowser(world, stored);
+    const local: StorageLocal = { get: options.get ?? (async (keys) => pick(stored, keys)) };
+    const opened = world.open();
+    return wireBackground({
+      browser: { ...browser, storage: { ...browser.storage, local } },
+      store: options.store ? options.store(opened.store) : opened.store,
+      fetch: world.server.fetch,
+      now: world.now,
+      random: () => 0,
+      newId: () => "0192f1c2-7c1e-7a3b-9f00-000000000001",
+      newTabRef: () => "tabref-aaaa1111",
+      collectGate: { allows: () => true },
+    });
+  }
+
+  it("is allowed when every read works (the baseline for the failing cases)", async () => {
+    expect(await wireWith({}).gate.allows(null)).toBe(true);
+  });
+
+  it("reads connection, pause flag and allow list with ONE storage call, started together with the sync-state read", async () => {
+    const calls: (string | string[])[] = [];
+    let held: Promise<void> | null = null;
+    let release = () => {};
+    let metaReads = 0;
+    const wired = wireWith({
+      get: async (keys) => {
+        calls.push(keys);
+        if (held) await held;
+        return pick({ [CONNECTION_STORAGE_KEY]: connectionFor(KEY) }, keys);
+      },
+      store: (store) =>
+        withOverrides(store, {
+          getMeta: () => {
+            metaReads++;
+            return store.getMeta();
+          },
+        }),
+    });
+    await wired.ready; // start-up work (the engine's own gate calls) is not what is measured
+    calls.length = 0;
+    metaReads = 0;
+    held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+
+    const decision = wired.gate.allows(null);
+    await waitFor(() => metaReads === 1, "the sync-state read to start");
+    // The storage read is still pending: the sync-state read did not wait for it.
+    expect(calls).toEqual([["connection", "paused", "allowList"]]);
+    release();
+    expect(await decision).toBe(true);
+    expect(calls).toHaveLength(1);
+  });
+
+  it("reads fresh on every call (nothing is cached), so a pause takes effect at once", async () => {
+    let paused: unknown;
+    const wired = wireWith({
+      get: async (keys) => pick({ [CONNECTION_STORAGE_KEY]: connectionFor(KEY), paused }, keys),
+    });
+    expect(await wired.gate.allows(null)).toBe(true);
+    paused = true;
+    expect(await wired.gate.allows(null)).toBe(false);
+    paused = false;
+    expect(await wired.gate.allows(null)).toBe(true);
+  });
+
+  it("denies when the storage read throws synchronously", async () => {
+    const wired = wireWith({
+      get: () => {
+        throw new Error("storage unavailable");
+      },
+    });
+    expect(await wired.gate.allows(null)).toBe(false);
+  });
+
+  it("denies when the storage read rejects", async () => {
+    const wired = wireWith({ get: () => Promise.reject(new Error("storage unavailable")) });
+    expect(await wired.gate.allows(null)).toBe(false);
+    expect(await wired.gate.allows({ domain: "a.example", path: "/" })).toBe(false);
+  });
+
+  it("denies when the sync-state read (IndexedDB) rejects", async () => {
+    const wired = wireWith({
+      store: (store) =>
+        withOverrides(store, { getMeta: () => Promise.reject(new Error("indexeddb unavailable")) }),
+    });
+    expect(await wired.gate.allows(null)).toBe(false);
+  });
+
+  it("denies when the sync-state read throws synchronously", async () => {
+    const wired = wireWith({
+      store: (store) =>
+        withOverrides(store, {
+          getMeta: () => {
+            throw new Error("indexeddb unavailable");
+          },
+        }),
+    });
+    expect(await wired.gate.allows(null)).toBe(false);
+  });
+
+  it("denies when the stored values are garbage, whatever the others say", async () => {
+    for (const stored of [
+      { connection: "nope" },
+      { connection: connectionFor(KEY), paused: "yes" },
+    ]) {
+      const wired = wireWith({ get: async (keys) => pick(stored, keys) });
+      expect(await wired.gate.allows(null)).toBe(false);
+    }
   });
 });

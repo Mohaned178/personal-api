@@ -4,7 +4,7 @@ import { ALLOW_LIST_STORAGE_KEY } from "../lib/allow-list";
 import { CONNECTION_STORAGE_KEY } from "../lib/connect";
 import { PAUSED_STORAGE_KEY } from "../lib/pause";
 import { type BackgroundBrowserApi, wireBackground } from "../lib/queue";
-import { connectionFor, KEY, World } from "./queue/support/world";
+import { connectionFor, KEY, pick, World } from "./queue/support/world";
 
 let world: World;
 beforeEach(() => {
@@ -46,7 +46,7 @@ function wire(stored: Record<string, unknown>, connected = true) {
     runtime: { onStartup: noop, onInstalled: noop },
     storage: {
       session: { get: async () => ({ id: "x" }), set: async () => undefined },
-      local: { get: async (key: string) => ({ [key]: all[key] }) },
+      local: { get: async (keys: string | string[]) => pick(all, keys) },
     },
   } satisfies BackgroundBrowserApi;
   const { store } = world.open();

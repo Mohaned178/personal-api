@@ -58,6 +58,27 @@
       #open-tab-view p {
         margin: 0 0 0.75rem;
       }
+      h2 {
+        margin: 0.75rem 0 0.5rem;
+        font-size: 0.9rem;
+      }
+      #allow-list {
+        margin: 0 0 0.5rem;
+        padding: 0;
+        list-style: none;
+      }
+      #allow-list li {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.5rem;
+        overflow-wrap: anywhere;
+      }
+      #allow-list-error {
+        min-height: 1.25rem;
+        margin: 0.25rem 0 0;
+        color: #d13438;
+      }
       #status {
         min-height: 1.25rem;
         margin: 0.5rem 0 0;
@@ -87,6 +108,27 @@
         </dl>
         <button id="pause-toggle" type="button" hidden></button>
         <button id="clear-queue" type="button" hidden>Clear local queue</button>
+      </section>
+
+      <!-- TEMPORARY allow list editor, replaced by the rule editor in M4-06. -->
+      <section id="allow-list-view" aria-label="Allowed domains">
+        <h2>Allowed domains</h2>
+        <p id="allow-list-empty">Nothing is collected until you add a domain.</p>
+        <ul id="allow-list"></ul>
+        <form id="allow-list-form">
+          <label for="allow-list-input">
+            Domain
+            <input
+              id="allow-list-input"
+              type="text"
+              autocomplete="off"
+              spellcheck="false"
+              placeholder="example.com"
+            />
+          </label>
+          <button id="allow-list-add" type="submit">Add</button>
+        </form>
+        <p id="allow-list-error" role="alert" data-error="true"></p>
       </section>
 
       <section id="connected-view" aria-label="Connection" hidden>

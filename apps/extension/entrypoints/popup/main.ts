@@ -2,6 +2,12 @@
 
 import { browser } from "wxt/browser";
 import {
+  type AllowListEditorState,
+  addDomainFromInput,
+  loadAllowListEditor,
+  removeDomain,
+} from "../../lib/allow-list-editor";
+import {
   type ConnectDeps,
   ConnectError,
   type Connection,
@@ -120,6 +126,47 @@ clearQueueButton.addEventListener("click", () => {
     clearQueueButton.disabled = false;
   });
 });
+
+// ---------------------------------------------------------------------------------------------
+// TEMPORARY allow list editor (M2-R fix), replaced by the rule editor in M4-06. Never logs values.
+
+const allowList = byId<HTMLUListElement>("allow-list");
+const allowListEmpty = byId<HTMLElement>("allow-list-empty");
+const allowListForm = byId<HTMLFormElement>("allow-list-form");
+const allowListInput = byId<HTMLInputElement>("allow-list-input");
+const allowListError = byId<HTMLElement>("allow-list-error");
+
+function renderAllowList(next: AllowListEditorState): void {
+  allowListError.textContent = next.error ?? "";
+  allowListEmpty.hidden = next.domains.length > 0;
+  allowList.replaceChildren(
+    ...next.domains.map((domain) => {
+      const item = document.createElement("li");
+      const label = document.createElement("span");
+      label.textContent = domain;
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.textContent = "Remove";
+      remove.setAttribute("aria-label", `Remove ${domain}`);
+      remove.addEventListener("click", () => {
+        remove.disabled = true;
+        void removeDomain(browser.storage.local, domain).then(renderAllowList);
+      });
+      item.append(label, remove);
+      return item;
+    }),
+  );
+}
+
+allowListForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+  void addDomainFromInput(browser.storage.local, allowListInput.value).then((next) => {
+    if (next.error === null) allowListInput.value = "";
+    renderAllowList(next);
+  });
+});
+
+void loadAllowListEditor(browser.storage.local).then(renderAllowList);
 
 // ---------------------------------------------------------------------------------------------
 // M2-02 connect flow
