@@ -153,7 +153,9 @@ export class FakeCaptureStore implements CaptureStore {
       this.failures--;
       throw new Error("transaction aborted");
     }
-    const failIndex = this.failTypes.findIndex((type) => events.some((e) => e.type === type));
+    const present = new Set<string>(events.map((e) => e.type));
+    const failType = this.failTypes.find((type) => present.has(type));
+    const failIndex = failType === undefined ? -1 : this.failTypes.indexOf(failType);
     if (failIndex >= 0) {
       this.failTypes.splice(failIndex, 1);
       throw new Error("transaction aborted");

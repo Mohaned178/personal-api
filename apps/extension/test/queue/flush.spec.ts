@@ -21,6 +21,7 @@ import {
   bigEvent,
   connectionFor,
   expectBatchesValid,
+  type Instance,
   KEY,
   KEY_2,
   ORIGIN,
@@ -28,14 +29,13 @@ import {
   pageEvents,
   SECRET_DOMAIN,
   SECRET_PATH_PREFIX,
-  T0,
-  type Instance,
   spyOnConsole,
+  T0,
   tick,
   uuid,
+  World,
   waitFor,
   withOverrides,
-  World,
 } from "./support/world";
 
 let world: World;
@@ -150,8 +150,11 @@ describe("request shape", () => {
   });
 
   it("never sends an event that fails local validation (for example a query string) and notes it without payload", async () => {
-    const withQuery = { ...pageEvent(1), data: { ...pageEvent(1).data, path: "/a?token=SECRET" } } as CapturedEvent;
-    const unknownType = { ...pageEvent(3), type: "nonsense.type" } as CapturedEvent;
+    const withQuery = {
+      ...pageEvent(1),
+      data: { ...pageEvent(1).data, path: "/a?token=SECRET" },
+    } as unknown as CapturedEvent;
+    const unknownType = { ...pageEvent(3), type: "nonsense.type" } as unknown as CapturedEvent;
     await enqueue([pageEvent(0), withQuery, pageEvent(2), unknownType]);
     await inst.flusher.flush();
     expect(world.server.sentIds()).toEqual([pageEvent(0).id, pageEvent(2).id]);
@@ -206,7 +209,7 @@ describe("per-item results", () => {
     "removes only the rejected event for %s and keeps a payload-free local note",
     async (code) => {
       world.server.rejectRule = (event) =>
-        (event as CapturedEvent).data.path === "/poison/x" ? code : null;
+        (event as { data?: { path?: string } }).data?.path === "/poison/x" ? code : null;
       const bad = pageEvent(1, { path: "/poison/x" });
       await enqueue([pageEvent(0), bad, pageEvent(2)]);
       await inst.flusher.flush();
@@ -232,7 +235,9 @@ describe("per-item results", () => {
     await expect(inst.flusher.flush()).resolves.toEqual({ status: "drained" });
     expect(world.server.calls).toHaveLength(1);
     expect(await depth()).toBe(0);
-    expect(ids(events.filter((_, i) => [0, 4].includes(i)))).toEqual([...world.server.accepted.keys()]);
+    expect(ids(events.filter((_, i) => [0, 4].includes(i)))).toEqual([
+      ...world.server.accepted.keys(),
+    ]);
     expect(await inst.store.stats()).toMatchObject({ ruleDroppedCount: 1, rejectedCount: 2 });
     expect((await inst.store.getMeta()).rejectedNotes.map((note) => note.id)).toEqual([
       events[3]?.id,
@@ -241,7 +246,11 @@ describe("per-item results", () => {
   });
 
   it("applies one batch's result in ONE readwrite transaction", async () => {
-    await enqueue([pageEvent(0), pageEvent(1, { path: "/ruledrop/1" }), pageEvent(2, { path: "/poison/2" })]);
+    await enqueue([
+      pageEvent(0),
+      pageEvent(1, { path: "/ruledrop/1" }),
+      pageEvent(2, { path: "/poison/2" }),
+    ]);
     const before = world.server.delivered;
     await inst.flusher.flush();
     // Transactions opened after the response arrived: exactly one.
@@ -280,9 +289,15 @@ describe("per-item results", () => {
 describe("malformed or misaligned responses are failures: nothing is deleted", () => {
   const cases: [string, (results: { id?: string; status: string }[]) => unknown][] = [
     ["fewer results than events", (r) => ({ results: r.slice(0, -1) })],
-    ["more results than events", (r) => ({ results: [...r, { id: uuid(900), status: "accepted" }] })],
+    [
+      "more results than events",
+      (r) => ({ results: [...r, { id: uuid(900), status: "accepted" }] }),
+    ],
     ["results in the wrong order", (r) => ({ results: [...r].reverse() })],
-    ["a result for the wrong id", (r) => ({ results: r.map((x, i) => (i === 1 ? { ...x, id: uuid(901) } : x)) })],
+    [
+      "a result for the wrong id",
+      (r) => ({ results: r.map((x, i) => (i === 1 ? { ...x, id: uuid(901) } : x)) }),
+    ],
     ["an unknown status", (r) => ({ results: r.map((x) => ({ ...x, status: "weird" })) })],
     ["no results key", () => ({})],
     ["an extra key", (r) => ({ results: r, extra: true })],
@@ -314,7 +329,9 @@ describe("failures keep everything and back off with jitter, scheduled through a
     world.server.next({ kind: "network" });
     await expect(inst.flusher.flush()).resolves.toEqual({ status: "backoff" });
     expect(await queuedIds()).toEqual(ids(events));
-    expect(world.alarms.creates).toEqual([{ name: FLUSH_RETRY_ALARM_NAME, when: T0 + BACKOFF_BASE_MS }]);
+    expect(world.alarms.creates).toEqual([
+      { name: FLUSH_RETRY_ALARM_NAME, when: T0 + BACKOFF_BASE_MS },
+    ]);
     expect(await status()).toEqual({
       state: "connected",
       consecutiveFailures: 1,
@@ -396,7 +413,10 @@ describe("failures keep everything and back off with jitter, scheduled through a
       world.random = random;
       const fresh = world.open();
       world.clock = T0;
-      await fresh.store.settle({ removeSeqs: [], sync: { consecutiveFailures: 0, nextAttemptAt: null } });
+      await fresh.store.settle({
+        removeSeqs: [],
+        sync: { consecutiveFailures: 0, nextAttemptAt: null },
+      });
       world.server.next({ kind: "network" });
       await fresh.flusher.flush();
       expect(world.alarms.lastWhen).toBe(expectedWhen);
@@ -527,13 +547,20 @@ describe("429 and Retry-After", () => {
 });
 
 describe("other 4xx on the whole request keep the queue (nothing is deleted without a per-item result)", () => {
-  it.each([403, 404, 405, 408, 409, 410, 422])("treats HTTP %i as a retryable client error, not a disconnect", async (code) => {
-    await enqueue(pageEvents(2));
-    world.server.next({ kind: "status", status: code });
-    await expect(inst.flusher.flush()).resolves.toEqual({ status: "backoff" });
-    expect(await depth()).toBe(2);
-    expect(await status()).toMatchObject({ state: "connected", consecutiveFailures: 1, lastFailure: "client_error" });
-  });
+  it.each([403, 404, 405, 408, 409, 410, 422])(
+    "treats HTTP %i as a retryable client error, not a disconnect",
+    async (code) => {
+      await enqueue(pageEvents(2));
+      world.server.next({ kind: "status", status: code });
+      await expect(inst.flusher.flush()).resolves.toEqual({ status: "backoff" });
+      expect(await depth()).toBe(2);
+      expect(await status()).toMatchObject({
+        state: "connected",
+        consecutiveFailures: 1,
+        lastFailure: "client_error",
+      });
+    },
+  );
 });
 
 describe("whole-request 400/413: halve the batch, never delete without a per-item result", () => {
@@ -575,7 +602,11 @@ describe("whole-request 400/413: halve the batch, never delete without a per-ite
   it("at a batch of one it is a plain failure: the event is kept, with backoff, and the run stops", async () => {
     const events = pageEvents(3);
     await enqueue(events);
-    world.server.fallback = { kind: "status", status: 413, body: { code: "http.payload_too_large" } };
+    world.server.fallback = {
+      kind: "status",
+      status: 413,
+      body: { code: "http.payload_too_large" },
+    };
     await expect(inst.flusher.flush()).resolves.toEqual({ status: "backoff" });
     expect(world.server.calls.map((call) => call.events.length)).toEqual([3, 1]);
     expect(await queuedIds()).toEqual(ids(events));
@@ -620,7 +651,10 @@ describe("401 puts the extension in the disconnected state", () => {
   it("keeps what an earlier batch already delivered and only the rest stays queued", async () => {
     const events = pageEvents(150);
     await enqueue(events);
-    world.server.next({ kind: "ok" }, { kind: "status", status: 401, body: { code: "auth.invalid_key" } });
+    world.server.next(
+      { kind: "ok" },
+      { kind: "status", status: 401, body: { code: "auth.invalid_key" } },
+    );
     await expect(inst.flusher.flush()).resolves.toEqual({ status: "disconnected" });
     expect(await queuedIds()).toEqual(ids(events.slice(100)));
   });
@@ -767,7 +801,10 @@ describe("silence: no logs, no timers, no secrets in anything the flush exposes"
     const outputs: unknown[] = [];
     await enqueue([...pageEvents(2), pageEvent(2, { path: "/poison/2" })]);
     const behaviors = [
-      { kind: "network", message: `connect failed to ${ORIGIN} with ${KEY} for ${SECRET_DOMAIN}${SECRET_PATH_PREFIX}` },
+      {
+        kind: "network",
+        message: `connect failed to ${ORIGIN} with ${KEY} for ${SECRET_DOMAIN}${SECRET_PATH_PREFIX}`,
+      },
       { kind: "status", status: 500, body: `oops ${KEY} ${SECRET_DOMAIN}` },
       { kind: "mangle", body: () => `garbage ${KEY}` },
       { kind: "status", status: 429, headers: { "retry-after": "10" } },
@@ -780,7 +817,12 @@ describe("silence: no logs, no timers, no secrets in anything the flush exposes"
     await inst.flusher.flush(); // succeeds; one event is rejected with a note
     world.server.revoke();
     await enqueue(pageEvents(1, 7));
-    outputs.push(await inst.flusher.flush(), await status(), await inst.store.getMeta(), await inst.store.stats());
+    outputs.push(
+      await inst.flusher.flush(),
+      await status(),
+      await inst.store.getMeta(),
+      await inst.store.stats(),
+    );
 
     const text = JSON.stringify(outputs);
     for (const secret of [KEY, ORIGIN, SECRET_DOMAIN, SECRET_PATH_PREFIX, "pa_ing_"]) {

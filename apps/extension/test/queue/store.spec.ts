@@ -1,23 +1,15 @@
 // M2-05 (1) createIdbCaptureStore as the capture engine's CaptureStore, (2) the queue repository,
 // (4) the 50,000 events / 14 days cap with a persisted, reported drop counter.
 
-import type { CapturedEvent, CaptureState } from "../../lib/capture";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { CapturedEvent, CaptureState } from "../../lib/capture";
 import {
   MAX_QUEUE_AGE_MS,
   MAX_QUEUE_EVENTS,
-  REJECT_NOTES_MAX,
   type QueueStore,
+  REJECT_NOTES_MAX,
 } from "../../lib/queue";
-import {
-  bigEvent,
-  bodyBytes,
-  DAY,
-  pageEvent,
-  pageEvents,
-  T0,
-  World,
-} from "./support/world";
+import { bigEvent, bodyBytes, DAY, pageEvent, pageEvents, T0, World } from "./support/world";
 
 let world: World;
 beforeEach(() => {
@@ -242,7 +234,11 @@ describe("CaptureStore.transact over IndexedDB", () => {
     const s = store({ maxEvents: 3 });
     await append(s, pageEvents(5));
     const rows = await s.peekBatch();
-    await s.settle({ removeSeqs: [rows[0]?.seq ?? -1], rejected: [], sync: { consecutiveFailures: 1 } });
+    await s.settle({
+      removeSeqs: [rows[0]?.seq ?? -1],
+      rejected: [],
+      sync: { consecutiveFailures: 1 },
+    });
     await s.applyLimits();
     await s.clear();
     const readwrite = world.transactions.filter((tx) => tx.mode === "readwrite");
@@ -306,12 +302,17 @@ describe("queue repository", () => {
 
   it("applies the default byte budget of 256 KB", async () => {
     const s = store();
-    await append(s, Array.from({ length: 100 }, (_, i) => bigEvent(i)));
+    await append(
+      s,
+      Array.from({ length: 100 }, (_, i) => bigEvent(i)),
+    );
     const batch = await s.peekBatch();
     expect(batch.length).toBeGreaterThan(0);
     expect(batch.length).toBeLessThan(100);
     expect(bodyBytes(batch.map((row) => row.event))).toBeLessThanOrEqual(256 * 1024);
-    expect(bodyBytes(batch.map((row) => row.event).concat(bigEvent(0)))).toBeGreaterThan(256 * 1024);
+    expect(bodyBytes(batch.map((row) => row.event).concat(bigEvent(0)))).toBeGreaterThan(
+      256 * 1024,
+    );
   });
 
   it("returns the oldest event alone when it is bigger than the byte budget (never an empty batch)", async () => {
@@ -564,7 +565,10 @@ describe("queue caps: 50,000 events / 14 days, oldest dropped first, counted", (
 
   it("measures age from the moment it was queued, not from the event's occurredAt", async () => {
     const s = store({ maxAgeMs: 10_000 });
-    const ancient = { ...pageEvent(0), occurredAt: new Date(T0 - 60 * DAY).toISOString() } as CapturedEvent;
+    const ancient = {
+      ...pageEvent(0),
+      occurredAt: new Date(T0 - 60 * DAY).toISOString(),
+    } as CapturedEvent;
     await append(s, [ancient]);
     world.clock = T0 + 5_000;
     await s.applyLimits();

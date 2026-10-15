@@ -59,7 +59,10 @@ export function connectionFor(key: string = KEY): Connection {
  * that orders by id (or by `occurredAt`) is caught.
  */
 export function uuid(i: number): string {
-  const scrambled = ((i + 1) * 0x9e3779b1) % 0xffffffffffff;
+  // Odd multiplier mod 2^32 is a bijection (unique per i); the high bits of the product are
+  // scrambled by the golden-ratio constant, and the sequence is reversed so small i are not ascending.
+  const mixed = Math.imul(i + 1, 0x9e3779b1) >>> 0;
+  const scrambled = (0xffffffff - mixed) * 0x10000 + (i & 0xffff);
   return `0192f1c2-7c1e-7a3b-9f00-${scrambled.toString(16).padStart(12, "0")}`;
 }
 
@@ -186,16 +189,12 @@ export class FakeServer {
   maxBytesPerRequest = INGEST_MAX_BATCH_BYTES;
   /** Events whose id this returns a code for are answered `rejected`. */
   rejectRule: (event: unknown) => IngestErrorCode | null = (event) =>
-    typeof event === "object" &&
-    event !== null &&
-    String(((event as { data?: { path?: unknown } }).data ?? {}).path).startsWith("/poison")
+    String((event as { data?: { path?: unknown } } | null)?.data?.path).startsWith("/poison")
       ? "ingest.occurred_at_too_old"
       : null;
   /** Events this returns true for are answered `dropped` (a collect rule) and never stored. */
   dropRule: (event: unknown) => boolean = (event) =>
-    typeof event === "object" &&
-    event !== null &&
-    String(((event as { data?: { path?: unknown } }).data ?? {}).path).startsWith("/ruledrop");
+    String((event as { data?: { path?: unknown } } | null)?.data?.path).startsWith("/ruledrop");
   private plan: Behavior[] = [];
   /** Applied to every call once the plan is empty. */
   fallback: Behavior = { kind: "ok" };
@@ -248,8 +247,10 @@ export class FakeServer {
       parsed = undefined;
     }
     const events =
-      typeof parsed === "object" && parsed !== null && Array.isArray((parsed as { events?: unknown }).events)
-        ? ((parsed as { events: unknown[] }).events)
+      typeof parsed === "object" &&
+      parsed !== null &&
+      Array.isArray((parsed as { events?: unknown }).events)
+        ? (parsed as { events: unknown[] }).events
         : [];
     const call: ServerCall = {
       index: this.calls.length,
@@ -280,7 +281,10 @@ export class FakeServer {
       case "hang":
         return new Promise<Response>(() => {});
       case "status":
-        return this.deliver(call, this.json(behavior.status, behavior.body ?? problem(behavior.status), behavior.headers));
+        return this.deliver(
+          call,
+          this.json(behavior.status, behavior.body ?? problem(behavior.status), behavior.headers),
+        );
       default:
         break;
     }
@@ -512,7 +516,10 @@ export class World {
   }
 
   async queued(instance: Instance): Promise<CapturedEvent[]> {
-    const rows = await instance.store.peekBatch({ maxEvents: 1_000_000, maxBytes: Number.MAX_SAFE_INTEGER });
+    const rows = await instance.store.peekBatch({
+      maxEvents: 1_000_000,
+      maxBytes: Number.MAX_SAFE_INTEGER,
+    });
     return rows.map((row) => row.event);
   }
 }

@@ -37,21 +37,29 @@ describe("backoffDelayMs", () => {
 
   it("never returns less than 30 s, whatever the failure count and random value", () => {
     fc.assert(
-      fc.property(fc.integer({ min: 1, max: 200 }), fc.double({ min: 0, max: 1, maxExcluded: true, noNaN: true }), (n, r) => {
-        const delay = backoffDelayMs(n, () => r);
-        expect(Number.isInteger(delay)).toBe(true);
-        expect(delay).toBeGreaterThanOrEqual(BACKOFF_BASE_MS);
-        expect(delay).toBeGreaterThanOrEqual(rawDelay(n));
-        expect(delay).toBeLessThan(rawDelay(n) * (1 + BACKOFF_JITTER_RATIO) + 1);
-      }),
+      fc.property(
+        fc.integer({ min: 1, max: 200 }),
+        fc.double({ min: 0, max: 1, maxExcluded: true, noNaN: true }),
+        (n, r) => {
+          const delay = backoffDelayMs(n, () => r);
+          expect(Number.isInteger(delay)).toBe(true);
+          expect(delay).toBeGreaterThanOrEqual(BACKOFF_BASE_MS);
+          expect(delay).toBeGreaterThanOrEqual(rawDelay(n));
+          expect(delay).toBeLessThan(rawDelay(n) * (1 + BACKOFF_JITTER_RATIO) + 1);
+        },
+      ),
     );
   });
 
   it("never gets shorter as failures pile up (same random value)", () => {
     fc.assert(
-      fc.property(fc.integer({ min: 1, max: 100 }), fc.double({ min: 0, max: 1, maxExcluded: true, noNaN: true }), (n, r) => {
-        expect(backoffDelayMs(n + 1, () => r)).toBeGreaterThanOrEqual(backoffDelayMs(n, () => r));
-      }),
+      fc.property(
+        fc.integer({ min: 1, max: 100 }),
+        fc.double({ min: 0, max: 1, maxExcluded: true, noNaN: true }),
+        (n, r) => {
+          expect(backoffDelayMs(n + 1, () => r)).toBeGreaterThanOrEqual(backoffDelayMs(n, () => r));
+        },
+      ),
     );
   });
 

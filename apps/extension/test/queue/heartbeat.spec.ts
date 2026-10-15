@@ -18,7 +18,12 @@ describe("buildHeartbeat", () => {
   it("reports an empty queue as depth 0, age 0, nothing dropped", async () => {
     const { store } = world.open();
     const body = await buildHeartbeat(store, options());
-    expect(body).toEqual({ queueDepth: 0, oldestQueuedAgeMs: 0, droppedCount: 0, clientVersion: "0.1.0" });
+    expect(body).toEqual({
+      queueDepth: 0,
+      oldestQueuedAgeMs: 0,
+      droppedCount: 0,
+      clientVersion: "0.1.0",
+    });
     expect(heartbeatRequestSchema.safeParse(body).success).toBe(true);
   });
 
@@ -70,8 +75,16 @@ describe("buildHeartbeat", () => {
   it("contains exactly the four contract fields and no event data", async () => {
     const inst = world.open();
     await world.enqueue(inst, pageEvents(2));
-    const body = await buildHeartbeat(inst.store, { now: world.now, clientVersion: "x".repeat(HEARTBEAT_CLIENT_VERSION_MAX) });
-    expect(Object.keys(body).sort()).toEqual(["clientVersion", "droppedCount", "oldestQueuedAgeMs", "queueDepth"]);
+    const body = await buildHeartbeat(inst.store, {
+      now: world.now,
+      clientVersion: "x".repeat(HEARTBEAT_CLIENT_VERSION_MAX),
+    });
+    expect(Object.keys(body).sort()).toEqual([
+      "clientVersion",
+      "droppedCount",
+      "oldestQueuedAgeMs",
+      "queueDepth",
+    ]);
     expect(JSON.stringify(body)).not.toContain(SECRET_DOMAIN);
     expect(heartbeatRequestSchema.safeParse(body).success).toBe(true);
   });
