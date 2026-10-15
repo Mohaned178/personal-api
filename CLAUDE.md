@@ -101,7 +101,13 @@ Effort is `low` / `medium` / `high` / `xhigh`.
 
 Run work with `/task <ID>` or `/milestone <Mx>` (`.claude/skills/`). The session itself is just a **coordinator** (keep it on Sonnet · medium). It launches the `builder`, `test-writer` and `reviewer` subagents (`.claude/agents/`) with the tag's exact model and effort, so nobody switches `/model` or `/effort` by hand. On `[O]` tasks, `test-writer` (Sonnet · high) writes the failing tests first.
 
+Opus implements at `medium` only. `high` and `xhigh` are for Opus reviews. Tasks marked `{deepseek}` after the tag are implemented by DeepSeek V4.1 Flash (max) through the `opencode-delegate` skill's `deepseek` lane, with no model question asked. Sonnet writes their tests first on `[S]` tasks, and Opus · high reviews every one.
+
 If you're a Haiku or Sonnet builder and hit a design question, an unexplained failure, or anything touching auth, tenant scoping or the invariants above, **report `needs-opus`**. Don't guess. The coordinator escalates one level automatically, and asks the user if that fails too.
+
+## Context limit
+
+When context usage reaches **40%**, stop working. Don't start another step. Commit or save any work in progress, write a short handoff (what's done, what's next, any uncommitted state), tell the user to open a new chat, and end there.
 
 ## Git
 
