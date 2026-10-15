@@ -52,6 +52,9 @@
         font: inherit;
         cursor: pointer;
       }
+      #open-tab-view p {
+        margin: 0 0 0.75rem;
+      }
       #status {
         min-height: 1.25rem;
         margin: 0.5rem 0 0;
@@ -76,6 +79,14 @@
           <dd id="connected-name"></dd>
         </dl>
         <button id="disconnect" type="button">Disconnect</button>
+      </section>
+
+      <section id="open-tab-view" aria-label="Connect" hidden>
+        <p>
+          Connecting opens in a new tab, so the browser's permission prompt cannot close this
+          popup halfway through.
+        </p>
+        <button id="open-tab" type="button">Connect…</button>
       </section>
 
       <form id="connect-form" hidden>

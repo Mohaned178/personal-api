@@ -159,6 +159,9 @@ describe("normalizeServerUrl", () => {
     "file:///etc/passwd",
     "chrome://settings",
     "https://",
+    "https://*",
+    "https://*.example.com",
+    "https://ex%2a.com",
   ])("rejects %j as an invalid server URL", (bad) => {
     expect(codeOfSync(() => normalizeServerUrl(bad))).toBe("server_url_invalid");
   });

@@ -15,6 +15,14 @@ const INGEST_KEY_PREFIX = "pa_ing_";
 /** Plain http is only allowed to the user's own machine, never to a remote host. */
 const LOOPBACK_HOSTNAMES = new Set(["localhost", "127.0.0.1", "[::1]"]);
 
+/**
+ * Hostnames that can safely go into a permission match pattern: plain DNS labels or IPv4
+ * (after the URL parser's punycode/lowercase step) or a bracketed IPv6 literal. Anything else,
+ * notably `*`, would widen the requested permission.
+ */
+const HOSTNAME_PATTERN = /^[a-z0-9.-]+$/;
+const IPV6_HOSTNAME_PATTERN = /^\[[0-9a-f:.]+\]$/;
+
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const PERMISSION_DENIED_MESSAGE = "Permission for the server was not granted. Nothing was sent.";
@@ -99,6 +107,9 @@ export function normalizeServerUrl(input: string): { origin: string; originPatte
   }
 
   const hostname = url.hostname.toLowerCase();
+  if (!HOSTNAME_PATTERN.test(hostname) && !IPV6_HOSTNAME_PATTERN.test(hostname)) {
+    throw new ConnectError("server_url_invalid", URL_INVALID_MESSAGE);
+  }
   if (url.protocol === "http:" && !LOOPBACK_HOSTNAMES.has(hostname)) {
     throw new ConnectError("server_url_insecure", URL_INSECURE_MESSAGE);
   }
