@@ -193,8 +193,9 @@ export interface BackgroundDeps {
   newId(): string;
   newTabRef(): string;
   /**
-   * The rule gate. M2-07 supplies the first real one (a temporary allow list). While it is absent,
-   * everything is denied (invariant 1).
+   * The rule gate. When omitted, the wiring falls back to the M2-07 temporary allow list in
+   * `browser.storage.local` (read-only); an explicit gate wins (tests, later milestones). Deny by
+   * default either way (invariant 1).
    */
   collectGate?: CaptureGate;
 }
