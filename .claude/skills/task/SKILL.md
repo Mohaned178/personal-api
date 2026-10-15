@@ -28,11 +28,13 @@ Always call the Agent tool with **explicit `subagent_type`, `model` and `effort`
 | --- | --- |
 | `[H · e]` | `builder`, model `haiku`, effort `e` |
 | `[S · e]` | `builder`, model `sonnet`, effort `e` |
-| `[O · e]` | 1. `test-writer`, model `sonnet`, effort `high`. Commit its tests on the branch (`test(<scope>): failing tests for <ID>`). 2. `builder`, model `opus`, effort **`medium`** (always, whatever `e` says), told that the tests exist and must not be weakened. 3. After the PR is open, `reviewer`, model `opus`, effort `high`, scope `main...<branch>`. |
+| `[O · e]` | 1. `test-writer`, model `sonnet`, effort `high`. Commit its tests on the branch (`test(<scope>): failing tests for <ID>`). 2. `builder`, model `opus`, effort **`medium`** (always, whatever `e` says), told that the tests exist and must not be weakened. 3. After the PR is open, `reviewer`, model `opus`, at the task review effort (below), scope `main...<branch>`. |
 | `[H · e] {deepseek}` / `[S · e] {deepseek}` | DeepSeek implements through OpenCode, Opus reviews. See "DeepSeek tasks" below. |
 | `Mx-R` | `reviewer`, model `opus`, effort `e`. Scope: every commit merged for milestone Mx (find them with `git log --oneline` and the task branch names). |
 
 **Opus never implements above `medium`.** `high` and `xhigh` are for the `reviewer` only.
+
+**Task review effort** (per-task `reviewer` on `opus`): `medium` when the tag's effort is `low` or `medium`; `high` when it is `high`, or when the task touches auth, sessions, keys, tenant scoping, URL sanitizing, rule enforcement or another privacy invariant in `CLAUDE.md`. Full reviews (`Mx-R`, the security pass) use their tag: `high` or `xhigh`.
 
 For `Mx-R`: when there are blockers or should-fix findings, report them to the user and offer to open fix tasks. Don't fix them silently. When the verdict is `approve`, tick `Mx-R`.
 
@@ -43,7 +45,7 @@ Don't ask the user which model to use. The lane is fixed: `deepseek` in the glob
 1. **Tests first, on `[S]` tasks only:** `test-writer`, model `sonnet`, effort `e`, from the task's "done when" criteria (and a cross-tenant test for any new route). Commit them (`test(<scope>): failing tests for <ID>`). `[H]` tasks (scaffold, docs, packaging, polish) skip this.
 2. **Implement:** load the `opencode-delegate` skill and dispatch with its relay, in the background: `--lane deepseek --cd <repo> --timeout 2h`. Write the brief per that skill. It must include the task line from `docs/PLAN.md`, the plan sections it relies on, a pointer to `CLAUDE.md` (invariants and conventions), the gate commands from step 4, "don't commit", "don't add dependencies the plan doesn't name", and, if tests exist, "make these tests pass; never edit, skip or weaken them".
 3. **Verify** (step 4). If the checks fail, send one delta brief with `--resume-last`. If they still fail, fall back to the normal row for the tag (`builder` on `haiku`/`sonnet` at `e`) with the failure output and the diff so far, then follow the escalation ladder.
-4. **Review:** after the PR is open, `reviewer`, model `opus`, effort `high`, scope `main...<branch>`. This review is mandatory for every DeepSeek task.
+4. **Review:** after the PR is open, `reviewer`, model `opus`, at the task review effort, scope `main...<branch>`. This review is mandatory for every DeepSeek task.
 
 ## 4. Verify (never trust "done" alone)
 
@@ -69,7 +71,7 @@ A builder status of `needs-opus` from Haiku or Sonnet goes straight to step 2.
 1. Tick the task's checkbox in `docs/PLAN.md` on the branch, so the tick merges together with the work. Then commit with a Conventional Commit message, ending with the attribution trailer Claude Code gives you.
 2. Push the branch and open a PR to `main`. The PR body gives the task ID, a summary, the checks run (with results), and anything not run locally.
 3. For `[O]` and `{deepseek}` tasks: run the reviewer (step 3).
-   - On `blocker` or `should-fix`: send the findings to a `builder` on `opus` at effort `medium`, re-verify, push, and re-review once (`reviewer`, `opus`, `high`).
+   - On `blocker` or `should-fix`: send the findings to a `builder` on `opus` at effort `medium`, re-verify, push, and re-review once (`reviewer`, `opus`, same review effort).
    - Open `follow-up` findings as GitHub issues.
 4. Wait for CI (`gh pr checks --watch`).
 5. **Merge:**

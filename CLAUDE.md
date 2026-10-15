@@ -101,7 +101,7 @@ Effort is `low` / `medium` / `high` / `xhigh`.
 
 Run work with `/task <ID>` or `/milestone <Mx>` (`.claude/skills/`). The session itself is just a **coordinator** (keep it on Sonnet · medium). It launches the `builder`, `test-writer` and `reviewer` subagents (`.claude/agents/`) with the tag's exact model and effort, so nobody switches `/model` or `/effort` by hand. On `[O]` tasks, `test-writer` (Sonnet · high) writes the failing tests first.
 
-Opus implements at `medium` only. `high` and `xhigh` are for Opus reviews. Tasks marked `{deepseek}` after the tag are implemented by DeepSeek V4.1 Flash (max) through the `opencode-delegate` skill's `deepseek` lane, with no model question asked. Sonnet writes their tests first on `[S]` tasks, and Opus · high reviews every one.
+Opus implements at `medium` only. Per-task Opus reviews run at `medium` or `high` depending on the task (`high` for `high`-effort or security-touching tasks); full milestone reviews and the security pass use `high` or `xhigh`. Tasks marked `{deepseek}` after the tag are implemented by DeepSeek V4.1 Flash (max) through the `opencode-delegate` skill's `deepseek` lane, with no model question asked. Sonnet writes their tests first on `[S]` tasks, and Opus reviews every one.
 
 If you're a Haiku or Sonnet builder and hit a design question, an unexplained failure, or anything touching auth, tenant scoping or the invariants above, **report `needs-opus`**. Don't guess. The coordinator escalates one level automatically, and asks the user if that fails too.
 

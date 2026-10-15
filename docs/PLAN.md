@@ -236,8 +236,8 @@ Each milestone ends with something demoable, green CI and a short demo note in t
 **Legend:** each tag is `[model · effort]`. You never pick these yourself: `/task` and `/milestone` read the tag and launch the right model at the right effort (see §12).
 
 - **Model:** `H` Haiku: setup, config, docs, simple tasks. `S` Sonnet: implementation and **all tests**. `O` Opus: complex or security-critical implementation, plus **every review**.
-- **Effort:** `low` is mechanical work with an obvious answer. `medium` is normal feature work. `high` covers tricky edge cases, concurrency, security-adjacent work or fiddly tooling. Opus always implements at `medium`, whatever the tag says. `high` and `xhigh` are for Opus reviews only (`xhigh` for privacy-critical milestone reviews and the security pass). `max` isn't used by default.
-- **`{deepseek}`** after a tag: DeepSeek V4.1 Flash (`opencode/deepseek-v4.1-flash-free`, variant `max`, through OpenCode's `deepseek` delegate lane) implements instead of Claude. On `[S]` tasks Sonnet writes the tests first. Opus · high reviews every one, and Opus · medium fixes what the review finds. Untagged tasks (security-critical, `[O]`, test suites, reviews) stay on Claude.
+- **Effort:** `low` is mechanical work with an obvious answer. `medium` is normal feature work. `high` covers tricky edge cases, concurrency, security-adjacent work or fiddly tooling. Opus always implements at `medium`, whatever the tag says. Per-task Opus reviews run at `medium` for `low`/`medium` tasks and at `high` for `high` or security-touching tasks. Full reviews (`Mx-R`, the security pass) use `high` or `xhigh` as tagged. `max` isn't used by default.
+- **`{deepseek}`** after a tag: DeepSeek V4.1 Flash (`opencode/deepseek-v4.1-flash-free`, variant `max`, through OpenCode's `deepseek` delegate lane) implements instead of Claude. On `[S]` tasks Sonnet writes the tests first. Opus reviews every one (`medium` or `high`, per the rule above), and Opus · medium fixes what the review finds. Untagged tasks (security-critical, `[O]`, test suites, reviews) stay on Claude.
 
 - On an `[O]` task, **Sonnet writes the tests first** from the "done when" criteria, then Opus implements until they pass. The tests stay independent of the code they check.
 - Tasks are numbered `Mx-NN`, with one branch per task (`mx-nn-short-name`).
@@ -398,8 +398,8 @@ The subagents live in `.claude/agents/`: `builder`, `test-writer` and `reviewer`
 | --- | --- |
 | `[H · e]` | `builder` on Haiku at effort *e* does the task. Tests, if any, are part of it. |
 | `[S · e]` | `builder` on Sonnet at effort *e* writes the tests and the code. |
-| `[O · e]` | 1. `test-writer` on Sonnet · high writes failing tests from "done when". 2. `builder` on Opus · medium implements until they pass. It must not weaken the tests. 3. `reviewer` on Opus · high reviews the PR. |
-| `{deepseek}` | 1. On `[S]` tasks, `test-writer` on Sonnet at effort *e* writes failing tests first. 2. DeepSeek V4.1 Flash (max) implements through the `opencode-delegate` relay, `--lane deepseek`. 3. `reviewer` on Opus · high reviews the PR; `builder` on Opus · medium fixes the findings. |
+| `[O · e]` | 1. `test-writer` on Sonnet · high writes failing tests from "done when". 2. `builder` on Opus · medium implements until they pass. It must not weaken the tests. 3. `reviewer` on Opus reviews the PR (`high`, since `[O]` tasks are `high`). |
+| `{deepseek}` | 1. On `[S]` tasks, `test-writer` on Sonnet at effort *e* writes failing tests first. 2. DeepSeek V4.1 Flash (max) implements through the `opencode-delegate` relay, `--lane deepseek`. 3. `reviewer` on Opus reviews the PR (`medium` for `low`/`medium` tasks, `high` for `high` or security-touching ones); `builder` on Opus · medium fixes the findings. |
 | `Mx-R` | `reviewer` on Opus at the tagged effort reviews the whole milestone diff. |
 
 Around every task, the coordinator:
