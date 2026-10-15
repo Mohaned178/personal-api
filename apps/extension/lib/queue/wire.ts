@@ -1,3 +1,4 @@
+import { createAllowListGate } from "../allow-list";
 import type { CaptureGate } from "../capture";
 import { createCaptureEngine, registerCaptureListeners } from "../capture";
 import { type Connection, getConnection } from "../connect";
@@ -48,16 +49,24 @@ export function wireBackground(deps: BackgroundDeps): WiredBackground {
     clientVersion: CLIENT_VERSION,
   });
 
+  // The M2-07 temporary allow list is the default gate; an explicit `collectGate` (tests, later
+  // milestones) wins. The list is read-only here: `addAllowedDomain`/`removeAllowedDomain` are the
+  // popup's business, so `set` rejects like it does for the stored connection.
+  const collectGate =
+    deps.collectGate ??
+    createAllowListGate({
+      get: (key) => browser.storage.local.get(key),
+      set: unavailable,
+    });
+
   // Deny by default, fail closed (invariant 1): capture needs a stored connection, an ingest key
   // that was not refused, the user not paused and a collect gate that answers exactly `true`.
-  // M2-07 supplies the gate.
   const gate: CaptureGate = {
     async allows(page) {
       try {
         if ((await flusher.getSyncStatus()).state !== "connected") return false;
         if (await getPaused(browser.storage.local)) return false;
-        if (deps.collectGate === undefined) return false;
-        return (await deps.collectGate.allows(page)) === true;
+        return (await collectGate.allows(page)) === true;
       } catch {
         return false;
       }
