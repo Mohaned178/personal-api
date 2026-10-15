@@ -62,6 +62,23 @@ describe("sanitizeUrl: kept parts", () => {
     ["https://example.com\\a\\b", "example.com", "/a/b"],
     ["  https://example.com/a  ", "example.com", "/a"],
     ["https:///example.com/a", "example.com", "/a"],
+    // Tab and newline are removed by the URL parser anywhere, also inside the host and query.
+    ["https://exa\tmple.com/a?b\n=c", "example.com", "/a"],
+    // Fullwidth ? and # are not delimiters: they stay in the path, percent-encoded.
+    ["https://example.com/a？b", "example.com", "/a%EF%BC%9Fb"],
+    ["https://example.com/a＃b", "example.com", "/a%EF%BC%83b"],
+    // An ideographic full stop in the host is a label separator.
+    ["https://example。com/a", "example.com", "/a"],
+    // Percent-encoded dot segments are normalised away like literal ones.
+    ["https://example.com/a/%2e%2e/b", "example.com", "/b"],
+    ["https://example.com/a/%2E%2E/b/%2e/c", "example.com", "/b/c"],
+    // Leading C0 control characters are stripped before parsing.
+    ["\u0001https://example.com/a", "example.com", "/a"],
+    ["\u0000\u001fhttps://example.com/a", "example.com", "/a"],
+    // A special scheme without slashes still parses as a host.
+    ["http:example.com/a?q", "example.com", "/a"],
+    // An encoded slash before @ is userinfo, so the real host is after the @.
+    ["https://example.com%2F@evil.com/a", "evil.com", "/a"],
   ])("%s -> %s %s", (url, domain, path) => {
     expect(sanitizeUrl(url)).toEqual({ domain, path });
   });
@@ -127,9 +144,86 @@ const segmentArb = fc
   .map((s) => s.replace(/[?#]/g, ""));
 const pathArb = fc
   .array(segmentArb, { maxLength: 5 })
-  .map((parts) => parts.map((p) => `/${p}`).join(""));
+  .map((parts) => parts.map((p) => `/${p}`).join(""))
+  // The URL parser trims trailing C0 controls and spaces from the whole input, so a path ending in
+  // one would only be kept when a query or fragment follows it. Not a leak, just a different pair.
+  .map((path) => {
+    let end = path.length;
+    while (end > 0 && path.charCodeAt(end - 1) <= 0x20) end--;
+    return path.slice(0, end);
+  });
 const queryArb = fc.string({ maxLength: 40 });
 const fragmentArb = fc.string({ maxLength: 40 });
+
+// `unit: "binary"` almost never yields ASCII delimiters, so on its own it makes the "hunt"
+// properties below vacuous. Bodies are also drawn from a URL-structural alphabet: delimiters,
+// whitespace and control characters the parser strips, lookalikes and a few host-ish characters.
+const STRUCTURAL_CHARS = [
+  "?",
+  "#",
+  "\\",
+  "/",
+  "\t",
+  "\n",
+  "\r",
+  "%",
+  "@",
+  ":",
+  ";",
+  ".",
+  " ",
+  "？", // fullwidth ?
+  "＃", // fullwidth #
+  "。", // ideographic full stop
+  "a",
+  "b",
+  "1",
+  "-",
+  "2",
+  "3",
+  "f",
+];
+const structuralArb = fc.string({ unit: fc.constantFrom(...STRUCTURAL_CHARS), maxLength: 60 });
+const binaryArb = (maxLength: number) => fc.string({ unit: "binary", maxLength });
+const httpSchemeArb = fc.constantFrom("http://", "https://", "HTTPS://", "http:", "https:/");
+
+/**
+ * Strings that start like an http(s) URL, with a structural, host-led or binary body. The
+ * host-led branch is weighted up so that a good share of inputs actually parse.
+ */
+const httpLikeArb = fc.oneof(
+  fc.tuple(httpSchemeArb, structuralArb).map(([s, body]) => s + body),
+  {
+    weight: 4,
+    arbitrary: fc
+      .tuple(httpSchemeArb, hostArb, fc.constantFrom("/", "?", "#", "\\", ""), structuralArb)
+      .map(([s, host, sep, body]) => s + host + sep + body),
+  },
+  fc
+    .tuple(httpSchemeArb, structuralArb, binaryArb(30), structuralArb)
+    .map(([s, a, b, c]) => s + a + b + c),
+  fc.tuple(httpSchemeArb, binaryArb(100)).map(([s, body]) => s + body),
+);
+
+/** Fully arbitrary strings, with http-like and structural strings mixed in. */
+const anyStringArb = fc.oneof(
+  binaryArb(300),
+  structuralArb,
+  { weight: 3, arbitrary: httpLikeArb },
+  fc.tuple(binaryArb(20), httpLikeArb).map(([junk, url]) => junk + url),
+);
+
+/** Inputs for the idempotence property. */
+const idempotenceArb = fc.oneof(
+  fc.webUrl({
+    withQueryParameters: true,
+    withFragments: true,
+    validSchemes: ["http", "https"],
+  }),
+  binaryArb(100).map((s) => `https://example.com/${s}`),
+  structuralArb.map((s) => `https://example.com/${s}`),
+  httpLikeArb,
+);
 
 function assertValid(result: { domain: string; path: string }) {
   expect(domainSchema.safeParse(result.domain).success).toBe(true);
@@ -139,10 +233,29 @@ function assertValid(result: { domain: string; path: string }) {
   expect(result.domain).not.toMatch(/[?#@:/\s]/);
 }
 
+describe("sanitizeUrl: property inputs are not vacuous", () => {
+  // If an arbitrary stops producing delimiters or parseable URLs, the properties using it pass
+  // without testing anything. Fixed seed: deterministic, never flaky.
+  it.each([
+    ["arbitrary strings", anyStringArb],
+    ["http-like strings", httpLikeArb],
+    ["idempotence inputs", idempotenceArb],
+  ])("%s often contain ? or # and often sanitize to a result", (_name, arb) => {
+    const samples = fc.sample(arb, { numRuns: 2000, seed: 42 });
+    const hasDelimiter = (s: string) => /[?#]/.test(s);
+    const withDelimiter = samples.filter(hasDelimiter).length;
+    const kept = samples.filter((s) => sanitizeUrl(s) !== null);
+    const keptWithDelimiter = kept.filter(hasDelimiter).length;
+    expect(withDelimiter / samples.length).toBeGreaterThan(0.2);
+    expect(kept.length / samples.length).toBeGreaterThan(0.2);
+    expect(keptWithDelimiter / samples.length).toBeGreaterThan(0.1);
+  });
+});
+
 describe("sanitizeUrl: properties", () => {
   it("never throws and never leaks ? or # for arbitrary strings", () => {
     fc.assert(
-      fc.property(fc.string({ unit: "binary", maxLength: 300 }), (input) => {
+      fc.property(anyStringArb, (input) => {
         const result = sanitizeUrl(input);
         if (result) assertValid(result);
       }),
@@ -162,14 +275,10 @@ describe("sanitizeUrl: properties", () => {
 
   it("never leaks ? or # for strings that look like http URLs", () => {
     fc.assert(
-      fc.property(
-        fc.constantFrom("http://", "https://", "HTTPS://"),
-        fc.string({ unit: "binary", maxLength: 100 }),
-        (scheme, rest) => {
-          const result = sanitizeUrl(scheme + rest);
-          if (result) assertValid(result);
-        },
-      ),
+      fc.property(httpLikeArb, (input) => {
+        const result = sanitizeUrl(input);
+        if (result) assertValid(result);
+      }),
       { numRuns: 2000 },
     );
   });
@@ -236,21 +345,11 @@ describe("sanitizeUrl: properties", () => {
 
   it("is idempotent: sanitizing the rebuilt https URL gives the same pair", () => {
     fc.assert(
-      fc.property(
-        fc.oneof(
-          fc.webUrl({
-            withQueryParameters: true,
-            withFragments: true,
-            validSchemes: ["http", "https"],
-          }),
-          fc.string({ unit: "binary", maxLength: 100 }).map((s) => `https://example.com/${s}`),
-        ),
-        (url) => {
-          const first = sanitizeUrl(url);
-          if (!first) return;
-          expect(sanitizeUrl(`https://${first.domain}${first.path}`)).toEqual(first);
-        },
-      ),
+      fc.property(idempotenceArb, (url) => {
+        const first = sanitizeUrl(url);
+        if (!first) return;
+        expect(sanitizeUrl(`https://${first.domain}${first.path}`)).toEqual(first);
+      }),
       { numRuns: 2000 },
     );
   });
