@@ -27,9 +27,9 @@ Run the milestone's unticked tasks **in order**, one at a time. For each one, fo
 
 ## 3. Review
 
-When every task is ticked, run `Mx-R` (the tagged effort, `reviewer` on `opus`) over the whole milestone.
+There are no per-task reviews. When every task is ticked, run `Mx-R` (the tagged effort, `reviewer` on `opus`) over the whole milestone.
 - On `approve`: tick `Mx-R`.
-- On anything else: report the findings and propose fix tasks. Don't fix them without the user's approval.
+- On anything else: report the findings and propose fix tasks. Fix them with Sonnet builders only (never Opus), and only with the user's approval, or immediately if the user said auto-merge/away. Open follow-ups as issues.
 
 ## 4. Close out
 
