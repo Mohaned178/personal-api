@@ -9,7 +9,7 @@
     "e2e:install": "playwright install chromium",
     "test:e2e:firefox": "pnpm --filter @personal-api/spike-mv3-lifecycle build && playwright test --config playwright.firefox.config.ts",
     "test:e2e:firefox:smoke": "playwright test --config playwright.firefox.config.ts extension-smoke-firefox extension-harness-firefox",
-    "test:e2e": "pnpm --filter extension build && pnpm --filter @personal-api/spike-mv3-lifecycle build && playwright test"
+    "test:e2e": "pnpm --filter @personal-api/contracts build && pnpm --filter extension build && pnpm --filter @personal-api/spike-mv3-lifecycle build && playwright test"
   },
   "devDependencies": {
     "@personal-api/tsconfig": "workspace:*",
