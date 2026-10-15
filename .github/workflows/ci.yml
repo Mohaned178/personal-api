@@ -109,6 +109,10 @@ jobs:
       - name: Install Chromium
         run: pnpm --filter @personal-api/e2e exec playwright install --with-deps chromium
 
+      # The extension imports @personal-api/contracts through its built dist.
+      - name: Build contracts
+        run: pnpm --filter @personal-api/contracts build
+
       # The e2e package script builds the extension first, then runs Playwright.
       - name: E2E tests
         run: pnpm test:e2e
@@ -153,6 +157,9 @@ jobs:
 
       - name: Check Firefox
         run: firefox --version
+
+      - name: Build contracts
+        run: pnpm --filter @personal-api/contracts build
 
       - name: Build the extension for Firefox
         run: pnpm --filter extension build:firefox
