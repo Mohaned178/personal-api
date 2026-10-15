@@ -26,6 +26,7 @@ const row: IntegrationRow = {
 function setup() {
   const repository = {
     createHttp: vi.fn(async () => ({ integration: row, keyId: ID })),
+    createBrowserExtension: vi.fn(async () => ({ ...row, kind: "browser-extension" })),
     list: vi.fn(async () => [row]),
     findById: vi.fn(async () => row),
     rename: vi.fn(async () => row),
@@ -58,6 +59,20 @@ describe("IntegrationsService", () => {
       "name",
       "status",
     ]);
+  });
+
+  it("creates a browser-extension integration with no key at all", async () => {
+    const { repository, service } = setup();
+    const created = await service.createBrowserExtension(USER, {
+      kind: "browser-extension",
+      name: "Work Edge",
+    });
+    expect(repository.createBrowserExtension).toHaveBeenCalledWith(USER, { name: "Work Edge" });
+    expect(repository.createHttp).not.toHaveBeenCalled();
+    expect(created.integration.kind).toBe("browser-extension");
+    expect(created.integration.defaultPolicy).toBe("deny");
+    expect(Object.keys(created)).toEqual(["integration"]);
+    expect(JSON.stringify(created)).not.toContain("pa_ing_");
   });
 
   it("answers a malformed id with the same 404 as an unknown id, without a query", async () => {

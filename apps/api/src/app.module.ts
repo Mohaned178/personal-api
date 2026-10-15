@@ -10,6 +10,7 @@ import { INGEST_EVENTS_PATH } from "./modules/ingest/ingest.controller";
 import { IngestModule } from "./modules/ingest/ingest.module";
 import { IntegrationsModule } from "./modules/integrations/integrations.module";
 import { KeysModule } from "./modules/keys/keys.module";
+import { PairingModule } from "./modules/pairing/pairing.module";
 import { ClockModule } from "./platform/clock/clock.module";
 import { DbModule } from "./platform/db/db.module";
 import { ProblemFilter } from "./platform/errors/problem.filter";
@@ -44,6 +45,7 @@ import { buildPinoHttpOptions } from "./platform/logging/logging";
     KeysModule,
     IntegrationsModule,
     IngestModule,
+    PairingModule,
   ],
   providers: [
     { provide: APP_FILTER, useClass: ProblemFilter },

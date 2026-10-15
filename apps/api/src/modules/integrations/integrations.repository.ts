@@ -11,6 +11,10 @@ export interface NewHttpIntegration {
   name: string;
 }
 
+export interface NewBrowserExtensionIntegration {
+  name: string;
+}
+
 export interface NewIngestKeyValues {
   prefix: string;
   /** SHA-256 of the plaintext key. The plaintext never reaches this layer. */
@@ -31,7 +35,8 @@ export class IntegrationsRepository {
 
   /**
    * Creates a deny-by-default `http` integration and its first ingest key in ONE transaction, so
-   * there is never a keyless integration (nothing else mints a key in M1).
+   * an `http` integration is never keyless. (A `browser-extension` one starts without a key on
+   * purpose: see `createBrowserExtension`.)
    */
   async createHttp(
     userId: string,
@@ -57,6 +62,23 @@ export class IntegrationsRepository {
       if (!stored) throw new Error("api key insert returned no row");
       return { integration, keyId: stored.id };
     });
+  }
+
+  /**
+   * Creates a deny-by-default `browser-extension` integration with NO key. Its ingest key is
+   * issued when the extension redeems a pairing code (PairingRepository.redeem), never earlier.
+   */
+  async createBrowserExtension(
+    userId: string,
+    values: NewBrowserExtensionIntegration,
+  ): Promise<IntegrationRow> {
+    const [integration] = await tenantScope(this.db, userId).insert(integrations, {
+      kind: "browser-extension",
+      name: values.name,
+      defaultPolicy: "deny",
+    });
+    if (!integration) throw new Error("integration insert returned no row");
+    return integration;
   }
 
   /** Newest first, with the id as the tie-break. A user has a handful of sources: no paging. */

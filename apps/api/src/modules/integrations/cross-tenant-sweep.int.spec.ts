@@ -1,6 +1,6 @@
 /**
- * M1-07 cross-tenant sweep: every M1 route (`/v1/me`, integrations create/list/get/rename/revoke,
- * ingest events, ingest heartbeat) is attacked by user A against user B and by B against A, in one
+ * M1-07 cross-tenant sweep: every route (`/v1/me`, integrations create/list/get/rename/revoke,
+ * ingest events, ingest heartbeat, and from M2-01 the pairing code and `POST /v1/pair`) is attacked by user A against user B and by B against A, in one
  * table. One oracle for every row: the victim's state (integrations, keys, events, counters) is
  * deep-equal before and after, the answer is the specific refusal (not a bare status), and the
  * owner making the same call succeeds (so a typo'd path cannot pass as "denied").
@@ -35,6 +35,13 @@ import {
   postEvents,
   startIngestHarness,
 } from "../../../test/ingest-helpers";
+import {
+  createExtension,
+  issueCode,
+  PAIR_PATH,
+  pair,
+  requestCode,
+} from "../../../test/pairing-helpers";
 import type { FixtureUser } from "../../../test/two-user-fixture";
 import { generateApiKey } from "../keys/key-generation";
 
@@ -87,6 +94,9 @@ async function expectSameAsUnknown(res: Res, unknown: Res) {
   expect(res.body).toEqual(unknown.body);
 }
 
+/** Each user's extension integration and its pending (unused, unexpired) code, set per test. */
+const pending = new Map<string, { integrationId: string; pairingCode: string }>();
+
 interface Attack {
   label: string;
   run: (attacker: FixtureUser, victim: FixtureUser) => Promise<void>;
@@ -101,6 +111,82 @@ interface Route {
 }
 
 const ROUTES: Route[] = [
+  {
+    route: "POST /v1/integrations/:id/pairing-code",
+    attacks: [
+      {
+        label: "requesting a code for the victim's extension",
+        run: async (attacker, victim) => {
+          const target = pending.get(victim.userId);
+          if (!target) throw new Error("the victim has a pending code");
+          const res = await requestCode(h.app, attacker, target.integrationId);
+          expectProblem(res, 404, NOT_FOUND);
+          await expectSameAsUnknown(res, await requestCode(h.app, attacker, missing));
+          // The victim's pending code was neither replaced nor invalidated: the tenant state the
+          // loop compares includes their pairing_codes rows.
+        },
+      },
+      {
+        label: "naming the victim in query and headers while requesting for their own extension",
+        run: async (attacker, victim) => {
+          const own = pending.get(attacker.userId);
+          if (!own) throw new Error("the attacker has an extension");
+          const res = await requestCode(h.app, attacker, own.integrationId)
+            .query({ userId: victim.userId, integrationId: victim.integrationId })
+            .set("X-User-Id", victim.userId);
+          expect(res.status).toBe(201);
+          const { rows } = await h.testDb.pool.query(
+            "select user_id, integration_id from pairing_codes where integration_id = $1",
+            [own.integrationId],
+          );
+          expect(rows).toEqual([{ user_id: attacker.userId, integration_id: own.integrationId }]);
+        },
+      },
+    ],
+    control: async (owner) => {
+      const spare = await createExtension(h.app, owner, "pairing control");
+      expect((await requestCode(h.app, owner, spare)).status).toBe(201);
+    },
+  },
+  {
+    route: "POST /v1/pair",
+    attacks: [
+      {
+        label: "naming the victim's user and integration in the body",
+        run: async (attacker, victim) => {
+          const own = pending.get(attacker.userId);
+          if (!own) throw new Error("the attacker has a pending code");
+          const res = await pair(h.app, {
+            pairingCode: own.pairingCode,
+            userId: victim.userId,
+            integrationId: victim.integrationId,
+          });
+          expectProblem(res, 400, "request.invalid");
+          expect(JSON.stringify(res.body)).not.toContain(victim.userId);
+          expect(JSON.stringify(res.body)).not.toContain(victim.integrationId);
+        },
+      },
+      {
+        label: "guessing a code while naming the victim in query and headers",
+        run: async (attacker, victim) => {
+          const guess = pending.get(attacker.userId)?.pairingCode.replace(/^.{4}/, "0000");
+          const res = await http()
+            .post(`${PAIR_PATH}?userId=${victim.userId}&integrationId=${victim.integrationId}`)
+            .set("X-User-Id", victim.userId)
+            .set("X-Integration-Id", victim.integrationId)
+            .send({ pairingCode: guess });
+          expectProblem(res, 400, "pairing.code_invalid");
+        },
+      },
+    ],
+    control: async (owner) => {
+      const spare = await createExtension(h.app, owner, "pair control");
+      const { pairingCode } = await issueCode(h.app, owner, spare);
+      const res = await pair(h.app, { pairingCode });
+      expect(res.status).toBe(200);
+      expect(res.body.integration.id).toBe(spare);
+    },
+  },
   {
     route: "GET /v1/me",
     attacks: [
@@ -339,9 +425,15 @@ const ROUTES: Route[] = [
   },
 ];
 
-/** Both users start with one stored event and a heartbeat, so "unchanged" is not trivially empty. */
+/**
+ * Both users start with one stored event, a heartbeat, and an extension with a pending pairing
+ * code, so "unchanged" is not trivially empty.
+ */
 async function seedActivity() {
   for (const user of [h.a, h.b]) {
+    const integrationId = await createExtension(h.app, user, "sweep extension");
+    const { pairingCode } = await issueCode(h.app, user, integrationId);
+    pending.set(user.userId, { integrationId, pairingCode });
     expectResults(await postEvents(h.app, user.ingestKey, [pageVisit()]));
     expect((await postHeartbeat(h.app, user.ingestKey, heartbeatBody)).status).toBe(204);
   }
@@ -401,7 +493,9 @@ describe("the table covers every M1 route, and each refuses a missing or wrong-k
     expect(ROUTES.map((r) => r.route).sort()).toEqual(registeredRoutes());
   });
 
-  const sessionRoutes = ROUTES.filter((r) => !r.route.includes("/v1/ingest/"));
+  const sessionRoutes = ROUTES.filter(
+    (r) => !r.route.includes("/v1/ingest/") && r.route !== "POST /v1/pair",
+  );
   const ingestRoutes = ROUTES.filter((r) => r.route.includes("/v1/ingest/"));
 
   function call(route: string) {
@@ -417,6 +511,7 @@ describe("the table covers every M1 route, and each refuses a missing or wrong-k
     if (route.includes("/heartbeat")) return heartbeatBody;
     if (route.startsWith("PATCH")) return { name: "x" };
     if (route === "POST /v1/integrations") return { kind: "http", name: "x" };
+    if (route === "POST /v1/pair") return { pairingCode: "x" };
     return {};
   };
 
@@ -431,6 +526,22 @@ describe("the table covers every M1 route, and each refuses a missing or wrong-k
       }
     },
   );
+
+  it("POST /v1/pair is the one open route: no credential is needed, and none changes the answer", async () => {
+    const attempts: Array<(req: ReturnType<typeof call>) => ReturnType<typeof call>> = [
+      (req) => req,
+      (req) => req.set("Cookie", h.a.cookie),
+      (req) => req.set("Authorization", `Bearer ${h.a.ingestKey}`),
+      (req) => req.set("Authorization", `Bearer ${generateApiKey("read").plaintext}`),
+    ];
+    for (const attempt of attempts) {
+      expectProblem(
+        await attempt(call("POST /v1/pair")).send(body("POST /v1/pair")),
+        400,
+        "pairing.code_invalid",
+      );
+    }
+  });
 
   it.each(ingestRoutes.map((r) => r.route))(
     "%s: 401 auth.invalid_key with no key, a session cookie, a read key or a non-key bearer",

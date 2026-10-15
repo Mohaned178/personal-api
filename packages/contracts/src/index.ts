@@ -13,6 +13,7 @@ export {
 } from "./errors.js";
 export * from "./ingest.js";
 export * from "./integrations.js";
+export * from "./pairing.js";
 export * from "./parse-event.js";
 export * from "./primitives.js";
 export * from "./registry.js";

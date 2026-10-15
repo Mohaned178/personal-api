@@ -29,7 +29,14 @@ function publicMethods(): string[] {
 
 describe("IntegrationsRepository tenant scoping", () => {
   it("has the methods the service relies on (so the scoping check below is not vacuous)", () => {
-    expect(publicMethods().sort()).toEqual(["createHttp", "findById", "list", "rename", "revoke"]);
+    expect(publicMethods().sort()).toEqual([
+      "createBrowserExtension",
+      "createHttp",
+      "findById",
+      "list",
+      "rename",
+      "revoke",
+    ]);
   });
 
   it("rejects every method with MissingUserScopeError when userId is missing", async () => {

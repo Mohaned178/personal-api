@@ -70,6 +70,7 @@ export async function tenantState(pool: Pool, userId: string): Promise<Record<st
     apiKeys: await q("select * from api_keys where user_id = $1 order by id"),
     events: await q("select * from events where user_id = $1 order by client_event_id"),
     ingestionLog: await q("select * from ingestion_log where user_id = $1 order by bucket"),
+    pairingCodes: await q("select * from pairing_codes where user_id = $1 order by id"),
   };
 }
 
