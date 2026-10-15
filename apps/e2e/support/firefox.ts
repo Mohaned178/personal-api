@@ -3,6 +3,7 @@ import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { By, until } from "selenium-webdriver";
 import { Context, Driver, Options, ServiceBuilder } from "selenium-webdriver/firefox.js";
 
 // =============================================================================================
@@ -91,14 +92,36 @@ export interface LaunchedFirefoxExtension {
   tabUrl(tab: FirefoxTab): Promise<string>;
   /** The tab's document title. */
   tabTitle(tab: FirefoxTab): Promise<string>;
+  /** Closes `tab` and returns to the first tab that is left. */
+  closeTab(tab: FirefoxTab): Promise<void>;
+
+  /**
+   * Page interaction through WebDriver element commands, which Marionette performs as real
+   * (trusted) input: they work in a moz-extension:// page, so the popup can be driven like a user
+   * does, user gesture included. Each waits (up to 15 s) for the element to exist.
+   * `typeInto` replaces the field's value; `click` clicks; `textOf` reads the rendered text.
+   */
+  typeInto(tab: FirefoxTab, selector: string, text: string): Promise<void>;
+  click(tab: FirefoxTab, selector: string): Promise<void>;
+  textOf(tab: FirefoxTab, selector: string): Promise<string>;
+  /** `getAttribute` of the element (`null` when the attribute is absent). */
+  attributeOf(tab: FirefoxTab, selector: string, name: string): Promise<string | null>;
+  /** Whether the element exists and is displayed (a `hidden` element is not). */
+  isDisplayed(tab: FirefoxTab, selector: string): Promise<boolean>;
 
   /** True while the extension's event page is alive according to the browser. */
   isBackgroundRunning(): Promise<boolean>;
   /**
    * Terminates the event page on demand (Firefox's own idle termination, no tabs/events fired) and
    * resolves once `isBackgroundRunning()` is false. Resolves immediately if already stopped.
+   *
+   * By default it honours Firefox's listener keep-alive: while a promise returned by one of the
+   * page's listeners is pending (a flush in flight), Firefox declines to terminate, and the harness
+   * waits for that promise to settle before asking again. `harsh: true` ignores the keep-alive and
+   * terminates at once even with such a promise pending, like a crash, an update or a browser quit
+   * would (the in-flight request is cancelled). Use it to test "the background dies mid-flush".
    */
-  suspendBackground(): Promise<void>;
+  suspendBackground(options?: { harsh?: boolean }): Promise<void>;
   /**
    * Evaluates `functionBody` (a function BODY, so it uses `return`) inside the running background
    * page, awaits a returned promise and resolves with the structured-cloneable result. Starts the
@@ -220,7 +243,8 @@ const [addonId, op, arg, timeoutMs, done] = arguments;
         }
         const pending = [...(extension.backgroundContext?.runListenerPromises ?? [])];
         await extension.terminateBackground();
-        if (pending.length > 0 && state() === "running") {
+        // "harsh" asks again at once, which terminates even with a listener promise pending.
+        if (arg !== "harsh" && pending.length > 0 && state() === "running") {
           await Promise.race([
             Promise.allSettled(pending),
             sleep(Math.max(0, deadline - Date.now())),
@@ -286,7 +310,7 @@ export async function launchFirefoxExtension(
 
   const chrome = async <T>(
     op: ChromeOp,
-    arg: ChromeRead | null = null,
+    arg: ChromeRead | "harsh" | null = null,
     timeoutMs = DEFAULT_WAIT_MS,
   ): Promise<T> => {
     await useContext(Context.CHROME);
@@ -317,6 +341,12 @@ export async function launchFirefoxExtension(
     if (current !== tab.handle) await switchTo(tab);
     await useContext(Context.CONTENT);
     await driver.get(url);
+  };
+
+  const element = async (tab: FirefoxTab, selector: string) => {
+    if (current !== tab.handle) await switchTo(tab);
+    await useContext(Context.CONTENT);
+    return driver.wait(until.elementLocated(By.css(selector)), DEFAULT_WAIT_MS);
   };
 
   // The browser is up: install the temporary add-on and wait for its event page (F5).
@@ -362,9 +392,33 @@ export async function launchFirefoxExtension(
       return driver.executeScript<string>("return document.title");
     },
 
+    closeTab: async (tab) => {
+      if (current !== tab.handle) await switchTo(tab);
+      await useContext(Context.CONTENT);
+      await driver.close();
+      const [first] = await driver.getAllWindowHandles();
+      if (first === undefined) throw new Error("closeTab: no tab is left");
+      await driver.switchTo().window(first);
+      current = first;
+    },
+    typeInto: async (tab, selector, text) => {
+      const field = await element(tab, selector);
+      await field.clear();
+      await field.sendKeys(text);
+    },
+    click: async (tab, selector) => {
+      await (await element(tab, selector)).click();
+    },
+    textOf: async (tab, selector) => (await element(tab, selector)).getText(),
+    attributeOf: async (tab, selector, name) => (await element(tab, selector)).getAttribute(name),
+    isDisplayed: async (tab, selector) => {
+      const found = await element(tab, selector).catch(() => null);
+      return found === null ? false : found.isDisplayed();
+    },
+
     isBackgroundRunning: async () => (await chrome<string>("state")) === "running",
-    suspendBackground: async () => {
-      await chrome("suspend");
+    suspendBackground: async ({ harsh = false } = {}) => {
+      await chrome("suspend", harsh ? "harsh" : null);
     },
     evaluateInBackground: (functionBody, args = []) => inBackground(functionBody, args),
 

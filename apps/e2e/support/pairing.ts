@@ -76,56 +76,27 @@ export async function seedAllowListFirefox(
   await firefox.storageSet({ [ALLOW_LIST_KEY]: domains });
 }
 
-// The extension's queue database (apps/extension/lib/queue/store.ts and constants.ts). The queue is
-// owner-scoped: the flusher only sends rows stamped with the current connection's owner, and
-// `connect()` records that owner. Pinned here like the keys above; a change there must change this.
-const QUEUE_DB_NAME = "personal-api";
-const QUEUE_DB_VERSION = 1;
-
 /**
- * Records the queue owner the way `connect()` does (`store.setOwner`), for the Firefox spec, which
- * writes the connection straight into storage instead of clicking through the popup. Runs inside the
- * event page, whose IndexedDB is the extension's own. Call it BEFORE any event is captured: rows
- * queued earlier would be unowned and never sent. If the database does not exist yet it is created
- * with the same schema the extension uses (version 1), so the extension opens it unchanged.
+ * Pairs through the real popup page in a tab (`popup.html?tab=1`), driven with WebDriver element
+ * commands. Marionette performs them as trusted input, so `permissions.request` sees the user
+ * gesture it needs. This runs the shipped connect() and its queue owner adoption. The tab is closed
+ * afterwards. Needs the loopback host permission to be granted up front (see patched-build.ts).
  */
-export async function setQueueOwnerFirefox(
+export async function pairThroughPopupFirefox(
   firefox: LaunchedFirefoxExtension,
-  owner: { serverOrigin: string; integrationId: string },
+  serverOrigin: string,
+  pairingCode: string,
 ): Promise<void> {
-  await firefox.evaluateInBackground(
-    `const [name, version, owner] = arguments;
-     return (async () => {
-     const db = await new Promise((resolve, reject) => {
-       const request = indexedDB.open(name, version);
-       request.onupgradeneeded = () => {
-         const created = request.result;
-         created.createObjectStore("state");
-         created
-           .createObjectStore("queue", { keyPath: "seq", autoIncrement: true })
-           .createIndex("queuedAt", "queuedAt");
-         created.createObjectStore("meta");
-       };
-       request.onsuccess = () => resolve(request.result);
-       request.onerror = () => reject(request.error);
-     });
-     try {
-       await new Promise((resolve, reject) => {
-         const tx = db.transaction(["meta"], "readwrite");
-         tx.objectStore("meta").put(
-           { serverOrigin: owner.serverOrigin, integrationId: owner.integrationId },
-           "owner",
-         );
-         tx.oncomplete = () => resolve(undefined);
-         tx.onerror = () => reject(tx.error);
-         tx.onabort = () => reject(tx.error);
-       });
-     } finally {
-       db.close();
-     }
-     })()`,
-    [QUEUE_DB_NAME, QUEUE_DB_VERSION, owner],
-  );
+  const popup = await firefox.openTab(`moz-extension://${firefox.extensionUuid}/popup.html?tab=1`);
+  await firefox.typeInto(popup, "#server-url", serverOrigin);
+  await firefox.typeInto(popup, "#pairing-code", pairingCode);
+  await firefox.click(popup, "#connect");
+  await expect
+    .poll(() => firefox.textOf(popup, "#status"), { timeout: 30_000, intervals: [250] })
+    .toBe("Connected.");
+  expect(await firefox.attributeOf(popup, "#status", "data-error")).toBe("false");
+  expect(await firefox.isDisplayed(popup, "#connected-view")).toBe(true);
+  await firefox.closeTab(popup);
 }
 
 export async function triggerFlushFirefox(firefox: LaunchedFirefoxExtension): Promise<void> {

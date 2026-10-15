@@ -21,6 +21,7 @@ import { IDBDatabase, IDBFactory } from "fake-indexeddb";
 import { expect, vi } from "vitest";
 import type { CapturedEvent } from "../../../lib/capture";
 import type { Connection } from "../../../lib/connect";
+import { connectionOwner, pairedMirror } from "../../../lib/gate-mirror";
 import {
   createFlusher,
   createIdbCaptureStore,
@@ -60,6 +61,14 @@ export function connectionFor(key: string = KEY, owner: Partial<QueueOwner> = {}
     integrationId: owner.integrationId ?? INTEGRATION_ID,
     integrationName: "Test browser",
   };
+}
+
+/**
+ * The storage.local entries the capture gate's mirror holds for a paired, not-refused connection
+ * (lib/gate-mirror.ts): what the background has written once it has started or paired.
+ */
+export function mirrorFor(connection: Connection = connectionFor()): Record<string, unknown> {
+  return pairedMirror(connectionOwner(connection));
 }
 
 /**

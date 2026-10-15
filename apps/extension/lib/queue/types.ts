@@ -158,6 +158,14 @@ export interface FlushDeps {
   now(): number;
   /** In [0, 1). */
   random(): number;
+  /**
+   * The capture gate's copy of the "disconnected after a 401" marker (lib/gate-mirror.ts).
+   * Optional: without it nothing is mirrored (the popup's flusher never flushes).
+   */
+  gateMirror?: {
+    markDisconnected(marker: string): Promise<void>;
+    refresh(): Promise<void>;
+  };
 }
 
 /**
@@ -206,7 +214,11 @@ export type BackgroundBrowserApi = CaptureBrowserApi &
   CaptureListenerApi & {
     alarms: FlushAlarms;
     storage: {
-      local: { get(keys: string | string[]): Promise<Record<string, unknown>> };
+      local: {
+        get(keys: string | string[]): Promise<Record<string, unknown>>;
+        /** Only for the gate mirror (lib/gate-mirror.ts); the capture gate itself never writes. */
+        set(items: Record<string, unknown>): Promise<void>;
+      };
     };
   };
 

@@ -316,37 +316,69 @@ Recorded after M2-04 to M2-08 were built, so the decisions above match what ship
 ### The gate on the capture path, and how it was reduced
 
 Decision 3 says nothing but IndexedDB and the session id is awaited between the listener and the
-commit. The M2-04/M2-05 engine did more: `capture()` (`lib/capture/engine.ts`) awaits the
+commit. (As first built, the gate also awaited an IndexedDB read; it is now a single
+`storage.local.get`, see below.) The M2-04/M2-05 engine did more: `capture()` (`lib/capture/engine.ts`) awaits the
 browser-session id, then the capture gate (`lib/queue/wire.ts`), then commits. The gate was four
 sequential reads: `flusher.getSyncStatus()` (a `storage.local` read of the connection, then an
 IndexedDB read of the sync state, then a SHA-256 of the key when the state says `disconnected`),
 `getPaused()` (a second `storage.local` read) and the allow list (a third). That widened the window
 between event delivery and commit, which is the window option B exists to shrink.
 
-Now (`wireBackground` in `lib/queue/wire.ts`):
+Now (`wireBackground` in `lib/queue/wire.ts`, `lib/gate-mirror.ts`):
 
-- **One `browser.storage.local.get([connection, paused, allowList])`**, started immediately, and
-  **one IndexedDB read of the sync state** (`store.getMeta()`), started in parallel with it. The
-  gate waits for the slower of the two, not the sum of four. The SHA-256 only runs when the stored
-  sync state is `disconnected`.
+- **Exactly one `browser.storage.local.get`**, with the keys `connection`, `paused`, `allowList`,
+  `gateOwner` and `gateDisconnect`, and **no IndexedDB read**. Decision 3 is met for the gate: the
+  gate awaits that one read and, only when the mirrored marker says a key was refused, a SHA-256 of
+  the ingest key (`crypto.subtle`, not a browser API). The collect gate is the allow list, read
+  through the same snapshot. (A custom `collectGate` passed by tests or later milestones may do its
+  own reads; the default does not.)
+- **The two facts that lived in IndexedDB are mirrored into `storage.local`.** IndexedDB stays the
+  source of truth for the queue owner and the sync state; the mirror is only ever read by the gate.
+  Two keys, so no writer does a read-modify-write: `gateOwner` (`{ serverOrigin, integrationId }` or
+  `null`) and `gateDisconnect` (`{ disconnectedFor: <opaque key marker> | null }`). They hold no key,
+  URL or domain.
+- **Who writes the mirror.** `connect()` (a re-pair): drops `gateOwner` first, then changes the queue
+  owner in IndexedDB, then writes the new owner and a cleared marker, then the connection (so a
+  pairing that dies half-way leaves the gate denying, never allowing under a stale owner). The
+  flusher on a 401: writes the marker to the mirror **before** settling the IndexedDB state, so a
+  kill between the two leaves capture denied, not allowed. At every background start, and after
+  every flush alarm, `createGateMirror().refresh()` rewrites both keys from IndexedDB, so a stale or
+  missing mirror heals within one alarm period.
+- **Fail closed.** The gate denies unless all of these hold: a valid stored connection; a mirror
+  that is present and well-formed (a missing, `null`, malformed or unreadable value denies); the
+  mirrored owner equals the connection's `{ serverOrigin, integrationId }` (so events are never
+  queued under an owner the flusher will not send for: closes the M2-R follow-up); the mirrored
+  marker does not match this key's hash; not paused; the collect gate answers exactly `true`. A
+  rejected or synchronously throwing storage read, or a result that is not an object, denies.
+  Because a mirror that was never written denies, the very first capture of a never-started
+  background can be denied; that only happens before the first pairing or right after an upgrade,
+  and the start-up refresh (which runs before the engine's own start-up work) fixes it.
+- **Start-up owner adoption** (the other M2-R follow-up): if the queue has no owner and a valid
+  connection is stored, the connection's owner is set. Rows already queued stay without an owner
+  and are never sent (`setOwner` does not re-stamp). A queue owned by another owner is left alone
+  and the gate denies until the user pairs again.
 - **No caching.** Every decision reads fresh, so a pause or a removed domain applies on the next
-  navigation. Caching would make the gate faster but stale.
-- **Same parsers, same fail-closed behaviour.** The single read is handed to the existing
-  `getConnection`, `getPaused` and `getAllowList` (through the allow-list gate) as a snapshot, so
-  each keeps its own rule: a missing, malformed or unreadable value means no connection, paused,
-  or an empty list. A rejected or synchronously throwing storage read, a rejected or throwing
-  sync-state read, or a collect gate that throws or answers anything but `true` denies. Tests:
-  `apps/extension/test/queue/wire.spec.ts` ("the capture gate's reads").
-- The collect gate is now called in parallel with the other reads rather than after them, so it also
+  navigation.
+- **Same parsers.** The one read is handed to the existing `getConnection`, `getPaused` and
+  `getAllowList` (through the allow-list gate) as a snapshot, so each keeps its own rule.
+  Tests: `apps/extension/test/queue/wire.spec.ts` ("the capture gate's reads"),
+  `apps/extension/test/gate-mirror.spec.ts`.
+- The collect gate is called in parallel with the other parsers rather than after them, so it also
   runs when the user is paused or disconnected (its answer is then ignored). It has no side effects.
 
-What is **not** solved: the gate still awaits one `storage.local.get` and one IndexedDB read, so
-decision 3's "no other chrome API is awaited on the capture path" is not literally true any more
-(it was not literally true before either, because of the session id and the sequential gate). The
-disconnected marker lives in IndexedDB; mirroring it into `storage.local` would make the gate a
-single read, but that is a change to the flush state and is left as a follow-up. No measurement of
-the commit window before and after was taken; the e2e kill test below is what would show whether
-it matters.
+What is **not** solved, honestly:
+
+- The gate is still preceded by the awaited browser-session id in `capture()` (decision 3's own
+  caveat for the first event of a worker), and a custom `collectGate` is not constrained.
+- The mirror is eventually consistent with IndexedDB. Two narrow windows remain: (1) a lost
+  *clear* of the marker (a key was replaced, or the queue resumed) leaves the gate denying until the
+  next refresh (a lost *mark* is not possible: the mirror is written first); (2) a refresh that
+  races a concurrent re-pair can write the old owner after the new one, which denies (never allows)
+  until the next alarm refresh. Both fail closed. The reverse (a stale mirror that allows) needs the
+  stored connection and the mirrored owner to agree while IndexedDB holds another owner, which the
+  ordering of `connect()` above prevents, and the refresh heals.
+- No measurement of the commit window before and after was taken; the e2e kill test below is what
+  would show whether it matters.
 
 ### Decision 11 changed: no `idb`
 
