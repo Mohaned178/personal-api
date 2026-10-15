@@ -243,6 +243,17 @@ Each milestone ends with something demoable, green CI and a short demo note in t
 - Tasks are numbered `Mx-NN`, with one branch per task (`mx-nn-short-name`).
 - M0 to M3 tasks are concrete. M4 to M7 have firm scope, but get refined at the start of each milestone.
 
+### Who implements what (open tasks)
+
+| Implementer | Tasks | Review |
+| --- | --- | --- |
+| **DeepSeek V4.1 Flash · max** (OpenCode, free) | M2-00c, M2-02, M2-06, M2-07 · M3-01, M3-02, M3-03, M3-04, M3-05, M3-06, M3-07 · M4-04, M4-07, M4-08 · M5-02, M5-03, M5-05, M5-07 · M6-01, M6-03, M6-05, M6-07 · M7-05, M7-06, M7-07 | Opus · medium, or high for `high`-effort tasks |
+| **Sonnet** | M2-01, M2-03, M2-08 · M4-03, M4-06, M4-09 · M5-01, M5-06 · M6-06 · M7-01, M7-02, M7-03, plus the tests for every `[O]` and `[S] {deepseek}` task | Opus · medium or high, by task |
+| **Opus · medium** | M2-04, M2-05 · M4-01, M4-02, M4-05 · M5-04 · M6-02, M6-04, plus fixing review findings | Opus · high |
+| **Opus · high / xhigh** (review only) | M2-R, M3-R, M4-R, M5-R, M6-R, M7-04, M7-R | — |
+
+To move a task between DeepSeek and Claude, add or remove `{deepseek}` on its line below and update this table.
+
 ### M0: Foundations and spikes
 
 - [x] **M0-01 [H · medium] Monorepo scaffold:** pnpm workspace, Turborepo, `packages/tsconfig`, Biome, `.editorconfig`, `.gitignore`, `.nvmrc` (24), `packageManager` + `engines` pins, TypeScript 6.0.x (not 7: Nest/Better Auth peers), `minimumReleaseAge: 20160` and a dependency build-script allowlist in `pnpm-workspace.yaml`, and root scripts for install/lint/format/typecheck/test/build (later scripts are added by the task that creates their target). *Done when:* `pnpm install && pnpm lint && pnpm typecheck && pnpm test` passes locally on Windows (Linux is proven by M0-02). The PR has no CI yet, so say so.
