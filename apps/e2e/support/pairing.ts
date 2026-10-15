@@ -95,6 +95,7 @@ export async function setQueueOwnerFirefox(
 ): Promise<void> {
   await firefox.evaluateInBackground(
     `const [name, version, owner] = arguments;
+     return (async () => {
      const db = await new Promise((resolve, reject) => {
        const request = indexedDB.open(name, version);
        request.onupgradeneeded = () => {
@@ -121,7 +122,8 @@ export async function setQueueOwnerFirefox(
        });
      } finally {
        db.close();
-     }`,
+     }
+     })()`,
     [QUEUE_DB_NAME, QUEUE_DB_VERSION, owner],
   );
 }
