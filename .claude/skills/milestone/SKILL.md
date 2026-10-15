@@ -23,7 +23,7 @@ Run the milestone's unticked tasks **in order**, one at a time. For each one, fo
 
 - Each task must be merged before the next starts, because later tasks build on earlier ones.
 - If a task ends in "stop and ask the user", pause the milestone, report where you stopped, and wait.
-- Between tasks, post a single progress line, for example `M1-03 ✓ (opus · xhigh) PR #12 merged; next M1-04 (sonnet · medium)`. No tables.
+- Between tasks, post a single progress line, for example `M1-03 ✓ (opus · medium) PR #12 merged; next M1-04 (deepseek · max)`. No tables.
 
 ## 3. Review
 

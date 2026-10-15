@@ -236,7 +236,8 @@ Each milestone ends with something demoable, green CI and a short demo note in t
 **Legend:** each tag is `[model · effort]`. You never pick these yourself: `/task` and `/milestone` read the tag and launch the right model at the right effort (see §12).
 
 - **Model:** `H` Haiku: setup, config, docs, simple tasks. `S` Sonnet: implementation and **all tests**. `O` Opus: complex or security-critical implementation, plus **every review**.
-- **Effort:** `low` is mechanical work with an obvious answer. `medium` is normal feature work. `high` covers tricky edge cases, concurrency, security-adjacent work or fiddly tooling. Implementation never uses `xhigh`: Opus builds at `high` at most. `xhigh` is for reviews only (privacy-critical milestone reviews and the security pass). `max` isn't used by default.
+- **Effort:** `low` is mechanical work with an obvious answer. `medium` is normal feature work. `high` covers tricky edge cases, concurrency, security-adjacent work or fiddly tooling. Opus always implements at `medium`, whatever the tag says. `high` and `xhigh` are for Opus reviews only (`xhigh` for privacy-critical milestone reviews and the security pass). `max` isn't used by default.
+- **`{deepseek}`** after a tag: DeepSeek V4.1 Flash (`opencode/deepseek-v4.1-flash-free`, variant `max`, through OpenCode's `deepseek` delegate lane) implements instead of Claude. On `[S]` tasks Sonnet writes the tests first. Opus · high reviews every one, and Opus · medium fixes what the review finds. Untagged tasks (security-critical, `[O]`, test suites, reviews) stay on Claude.
 
 - On an `[O]` task, **Sonnet writes the tests first** from the "done when" criteria, then Opus implements until they pass. The tests stay independent of the code they check.
 - Tasks are numbered `Mx-NN`, with one branch per task (`mx-nn-short-name`).
@@ -275,27 +276,27 @@ Targets changed on 2026-10-14: Firefox + Edge (free stores only) instead of Chro
 
 - [x] **M2-00a [S · medium] Cross-browser build:** WXT targets `firefox-mv3` and `chrome-mv3` (`build`, `build:firefox`, `zip` for both), `browser_specific_settings.gecko` (id + `strict_min_version`) and Firefox `data_collection_permissions` in the manifest, and the M0-08 manifest test extended to both outputs. Rename the integration kind `chrome-extension` → `browser-extension` (contracts, schema, migration, tests). *Done when:* both builds succeed in CI, both manifest tests assert exactly `tabs`, `idle`, `storage`, `alarms` + `optional_host_permissions`, no content scripts, incognito not allowed; `pnpm test:int` covers the migrated constraint.
 - [x] **M2-00b [O · high] Spike C, Firefox lifecycle:** re-run the Spike A design (ADR 0002 option B) on a Firefox MV3 event page with web-ext + Selenium/geckodriver: forced background suspension during capture, idle, lock (Firefox may not report `locked`), window blur and browser restart. *Done when:* an automated test suspends/reloads the background 20× during capture with zero lost or duplicated events (or the PR explains why Firefox can't force this and what was measured instead), blur/tab-switch segments are off by less than 2 s, and ADR 0002 gains a Firefox section with go/no-go and any per-browser differences M2-04/M2-05 must handle.
-- [ ] **M2-00c [S · high] Firefox e2e smoke harness:** web-ext + Selenium/geckodriver loads the `firefox-mv3` build against the local fixture site, plus a CI job. *Done when:* it runs headless in CI and can read the extension's stored state.
+- [ ] **M2-00c [S · high] {deepseek} Firefox e2e smoke harness:** web-ext + Selenium/geckodriver loads the `firefox-mv3` build against the local fixture site, plus a CI job. *Done when:* it runs headless in CI and can read the extension's stored state.
 
 - [ ] **M2-01 [S · high] Pairing (API):** a `pairing_codes` table, `POST /v1/integrations/:id/pairing-code` (session) and `POST /v1/pair` (single use, 10-minute expiry, rate limited). *Done when:* tests cover expired, reused and brute-force-throttled codes.
-- [ ] **M2-02 [S · medium] Connect UI (extension):** server URL input, `browser.permissions.request` for that origin (inside the click handler: Firefox requires a user gesture), pairing, key stored in `browser.storage.local`, and a disconnect button.
+- [ ] **M2-02 [S · medium] {deepseek} Connect UI (extension):** server URL input, `browser.permissions.request` for that origin (inside the click handler: Firefox requires a user gesture), pairing, key stored in `browser.storage.local`, and a disconnect button.
 - [ ] **M2-03 [S · high] URL sanitizer:** keep domain + path, strip query and fragment, normalize IDN and case, and ignore non-http(s) schemes (`chrome://`, `edge://`, `moz-extension://`, `chrome-extension://`, `file://`, `about:`). *Done when:* property tests show the output never contains `?` or `#`.
 - [ ] **M2-04 [O · high] Capture engine:** listeners → `page_visited`, `tab_opened/closed`, a `focus_segment` state machine, session start and end, incognito ignored, state persisted following ADR 0002 (Spike A + Spike C). *Done when:* unit tests with mocked `browser.*` APIs and fake timers pass, covering the idle, lock and blur cases, including Firefox's differences recorded by Spike C.
 - [ ] **M2-05 [O · high] Persistent queue and sync:** IndexedDB store, alarm-driven batch flush, backoff + jitter, per-item result handling, the 50k / 14-day cap with a reported drop counter, and 401 → disconnected. *Done when:* tests cover network failure, partial batch failure and a background restart mid-flush (service worker on Edge, event page on Firefox) with no loss and no duplicates.
-- [ ] **M2-06 [S · medium] Popup v1 and heartbeat:** connection state, pause/resume, queue depth, last sync, dropped count, and a heartbeat on an alarm.
-- [ ] **M2-07 [S · low] Temporary allow list** in extension storage (replaced in M4).
+- [ ] **M2-06 [S · medium] {deepseek} Popup v1 and heartbeat:** connection state, pause/resume, queue depth, last sync, dropped count, and a heartbeat on an alarm.
+- [ ] **M2-07 [S · low] {deepseek} Temporary allow list** in extension storage (replaced in M4).
 - [ ] **M2-08 [S · high] e2e:** Playwright/Chromium: pair → visit fixture → events in the DB; go offline → reconnect → nothing lost or duplicated. Firefox smoke (M2-00c harness): pair → visit fixture → events in the DB.
 - [ ] **M2-R [O · high] Milestone review.**
 
 ### M3: Dashboard v0
 
-- [ ] **M3-01 [H · medium] `apps/web` scaffold:** Vite, React 19, TanStack Router + Query, Tailwind v4 and shadcn/ui. The API serves the build statically, with a dev proxy to the API.
-- [ ] **M3-02 [S · medium] Auth pages:** first-run setup, signup, login, logout, and route guards.
-- [ ] **M3-03 [S · medium] Integrations page:** list, add extension (shows the pairing code with a countdown), add HTTP integration (key shown once), and revoke with confirmation.
-- [ ] **M3-04 [S · medium] Platform events API (session):** list with filters + keyset cursor, get one, delete by ids, including cross-tenant tests.
-- [ ] **M3-05 [S · medium] Events browser UI:** virtualized table, filters (source, type, time range, domain), a detail drawer (JSON, origin, integration) and multi-select delete.
-- [ ] **M3-06 [S · medium] Diagnostics API and Health page:** last seen per integration, queue depth from heartbeats, and accepted/duplicate/dropped/rejected charts.
-- [ ] **M3-07 [H · low] UI polish:** empty, loading and error states, and copy.
+- [ ] **M3-01 [H · medium] {deepseek} `apps/web` scaffold:** Vite, React 19, TanStack Router + Query, Tailwind v4 and shadcn/ui. The API serves the build statically, with a dev proxy to the API.
+- [ ] **M3-02 [S · medium] {deepseek} Auth pages:** first-run setup, signup, login, logout, and route guards.
+- [ ] **M3-03 [S · medium] {deepseek} Integrations page:** list, add extension (shows the pairing code with a countdown), add HTTP integration (key shown once), and revoke with confirmation.
+- [ ] **M3-04 [S · medium] {deepseek} Platform events API (session):** list with filters + keyset cursor, get one, delete by ids, including cross-tenant tests.
+- [ ] **M3-05 [S · medium] {deepseek} Events browser UI:** virtualized table, filters (source, type, time range, domain), a detail drawer (JSON, origin, integration) and multi-select delete.
+- [ ] **M3-06 [S · medium] {deepseek} Diagnostics API and Health page:** last seen per integration, queue depth from heartbeats, and accepted/duplicate/dropped/rejected charts.
+- [ ] **M3-07 [H · low] {deepseek} UI polish:** empty, loading and error states, and copy.
 - [ ] **M3-R [O · medium] Milestone review.**
 
 ### M4: Rules
@@ -303,34 +304,34 @@ Targets changed on 2026-10-14: Firefox + Edge (free stores only) instead of Chro
 - [ ] **M4-01 [O · high] Rule format:** the Zod schema in `contracts`, a per-type field registry (which fields conditions may use), and a draft of `docs/rule-format.md`.
 - [ ] **M4-02 [O · high] Engine (`packages/rules`):** `evaluate(event, rules, policy) → {decision, event, trace}` with the ops, actions, priority and drop-beats-allow semantics from §5. Pure, with no I/O.
 - [ ] **M4-03 [S · high] Engine tests:** table tests per op and action, plus fast-check properties (drop dominance, determinism, idempotent transforms, invalid input → fail closed).
-- [ ] **M4-04 [S · medium] Rules API:** CRUD, rule-set versioning, `rule_history` snapshots, validation on save, and `POST /v1/rules/test`.
+- [ ] **M4-04 [S · medium] {deepseek} Rules API:** CRUD, rule-set versioning, `rule_history` snapshots, validation on save, and `POST /v1/rules/test`.
 - [ ] **M4-05 [O · high] Server enforcement:** per-user rule-set cache invalidated by version, collect then process stages at ingest, stored traces, per-rule drop counters, and engine errors → `rejected(rule_error)`.
 - [ ] **M4-06 [S · high] Extension rule sync:** `GET /v1/ingest/config` with ETag, alarm-based sync, fail closed when rules are missing or invalid, removal of the M2-07 list, and the current-tab verdict in the popup.
-- [ ] **M4-07 [S · medium] Rules UI:** list with priority ordering, form builder, JSON toggle with inline errors, test against a sample event, and drop counts.
-- [ ] **M4-08 [S · medium] Explainability:** the "why is this here" view on events, and onboarding starter templates.
+- [ ] **M4-07 [S · medium] {deepseek} Rules UI:** list with priority ordering, form builder, JSON toggle with inline errors, test against a sample event, and drop counts.
+- [ ] **M4-08 [S · medium] {deepseek} Explainability:** the "why is this here" view on events, and onboarding starter templates.
 - [ ] **M4-09 [S · high] e2e:** demo steps 3 and 7 (add a rule → collected; change the rule → later events behave differently).
 - [ ] **M4-R [O · xhigh] Milestone review** (`/code-review` + `/security-review`).
 
 ### M5: Query API and user endpoints
 
 - [ ] **M5-01 [S · high] Read keys:** scopes (`events:read`, `activity:read`, `endpoint:<id>`), optional source/type restriction, `ReadKeyGuard`, and a keys UI.
-- [ ] **M5-02 [S · medium] `GET /v1/events`** for a session or read key, with scope filtering applied.
-- [ ] **M5-03 [S · medium] Aggregates:** `/v1/activity/daily` and `/v1/activity/domains` (time from focus segments), plus a user time zone setting.
+- [ ] **M5-02 [S · medium] {deepseek} `GET /v1/events`** for a session or read key, with scope filtering applied.
+- [ ] **M5-03 [S · medium] {deepseek} Aggregates:** `/v1/activity/daily` and `/v1/activity/domains` (time from focus segments), plus a user time zone setting.
 - [ ] **M5-04 [O · high] Saved-query compiler:** definition schema → parameterized Drizzle query, a field-allowlist projection, aggregate modes, row limits, `statement_timeout`, and aggregate-only enforcement.
-- [ ] **M5-05 [S · medium] Endpoints:** CRUD, `GET /v1/me/:slug`, and a UI with live preview + a copyable `curl`.
+- [ ] **M5-05 [S · medium] {deepseek} Endpoints:** CRUD, `GET /v1/me/:slug`, and a UI with live preview + a copyable `curl`.
 - [ ] **M5-06 [S · high] Tests:** injection attempts through field names and values, limit and timeout, scope escalation (endpoint A's key calling B or `/events`), and cross-tenant.
-- [ ] **M5-07 [H · low] OpenAPI** at `/docs`, and `docs/api.md`.
+- [ ] **M5-07 [H · low] {deepseek} OpenAPI** at `/docs`, and `docs/api.md`.
 - [ ] **M5-R [O · xhigh] Milestone review** (`/code-review` + `/security-review`).
 
 ### M6: Data lifecycle
 
-- [ ] **M6-01 [S · medium] Retention policies:** table, API and UI. `expires_at` is set at insert, with precedence rule `set_retention` > type policy > source policy > default 90 days.
+- [ ] **M6-01 [S · medium] {deepseek} Retention policies:** table, API and UI. `expires_at` is set at insert, with precedence rule `set_retention` > type policy > source policy > default 90 days.
 - [ ] **M6-02 [O · high] Retention jobs:** an hourly batched purge (pg-boss cron, singleton), a recompute job when policies change, and safety while ingest runs concurrently.
-- [ ] **M6-03 [S · medium] Bulk delete:** delete by filter as a job with progress, and "disconnect and delete this integration's data".
+- [ ] **M6-03 [S · medium] {deepseek} Bulk delete:** delete by filter as a job with progress, and "disconnect and delete this integration's data".
 - [ ] **M6-04 [O · high] Account deletion:** every table, key, session and export file. *Done when:* a completeness test that lists tables from the schema finds zero rows left for the user.
-- [ ] **M6-05 [S · medium] Export:** a job producing NDJSON.gz + `manifest.json`, an expiring download link, and a cleanup job.
+- [ ] **M6-05 [S · medium] {deepseek} Export:** a job producing NDJSON.gz + `manifest.json`, an expiring download link, and a cleanup job.
 - [ ] **M6-06 [S · high] Tests:** retention with a fake clock, deletion completeness, and an export round trip (every line validates against `contracts`).
-- [ ] **M6-07 [H · low] Docs:** the export format and a data-lifecycle page.
+- [ ] **M6-07 [H · low] {deepseek} Docs:** the export format and a data-lifecycle page.
 - [ ] **M6-R [O · high] Milestone review.**
 
 ### M7: Hardening and v1.0
@@ -339,9 +340,9 @@ Targets changed on 2026-10-14: Firefox + Edge (free stores only) instead of Chro
 - [ ] **M7-02 [S · high] Route-table-generated suite:** every route checked for unauthenticated, wrong-key-type and cross-tenant access.
 - [ ] **M7-03 [S · medium] Hardening:** rate limits (login, pairing, ingest per key), helmet security headers, and CSRF checks on mutations.
 - [ ] **M7-04 [O · xhigh] Security pass:** `/security-review`, fixes, and a short threat model in `docs/`.
-- [ ] **M7-05 [H · medium] Production packaging:** extension zips for AMO and Edge Add-ons (AMO source-code bundle included), a multi-stage Dockerfile, a compose prod profile, a Caddy example, and dependency audit and license check.
-- [ ] **M7-06 [H · low] Docs:** README quickstart and `self-hosting.md` (TLS, backups, upgrades), with `rule-format.md` and `api.md` finalized.
-- [ ] **M7-07 [H · low] Release prep:** CHANGELOG and version bump. Tagging `v1.0.0` needs the user's approval.
+- [ ] **M7-05 [H · medium] {deepseek} Production packaging:** extension zips for AMO and Edge Add-ons (AMO source-code bundle included), a multi-stage Dockerfile, a compose prod profile, a Caddy example, and dependency audit and license check.
+- [ ] **M7-06 [H · low] {deepseek} Docs:** README quickstart and `self-hosting.md` (TLS, backups, upgrades), with `rule-format.md` and `api.md` finalized.
+- [ ] **M7-07 [H · low] {deepseek} Release prep:** CHANGELOG and version bump. Tagging `v1.0.0` needs the user's approval.
 - [ ] **M7-R [O · xhigh] Final review.**
 
 ### v1.1 and later (explicitly out of v1)
@@ -397,7 +398,8 @@ The subagents live in `.claude/agents/`: `builder`, `test-writer` and `reviewer`
 | --- | --- |
 | `[H · e]` | `builder` on Haiku at effort *e* does the task. Tests, if any, are part of it. |
 | `[S · e]` | `builder` on Sonnet at effort *e* writes the tests and the code. |
-| `[O · e]` | 1. `test-writer` on Sonnet · high writes failing tests from "done when". 2. `builder` on Opus at effort *e* implements until they pass. It must not weaken the tests. 3. `reviewer` on Opus · high reviews the PR. |
+| `[O · e]` | 1. `test-writer` on Sonnet · high writes failing tests from "done when". 2. `builder` on Opus · medium implements until they pass. It must not weaken the tests. 3. `reviewer` on Opus · high reviews the PR. |
+| `{deepseek}` | 1. On `[S]` tasks, `test-writer` on Sonnet at effort *e* writes failing tests first. 2. DeepSeek V4.1 Flash (max) implements through the `opencode-delegate` relay, `--lane deepseek`. 3. `reviewer` on Opus · high reviews the PR; `builder` on Opus · medium fixes the findings. |
 | `Mx-R` | `reviewer` on Opus at the tagged effort reviews the whole milestone diff. |
 
 Around every task, the coordinator:
@@ -407,7 +409,7 @@ Around every task, the coordinator:
 3. Commits, pushes, opens a PR and waits for CI.
 4. Ticks the task's box in this file on the branch, then merges only when you approve (or in `auto-merge` mode).
 
-**Escalation (automatic):** if a builder fails the checks twice, the coordinator retries once more one level up (Haiku → Sonnet, Sonnet → Opus, Opus `high` → `xhigh`). If that fails too, or a subagent reports a design question or anything touching auth, tenant scoping or the privacy invariants, the coordinator stops and asks you.
+**Escalation (automatic):** if a builder fails the checks twice, the coordinator retries once more one level up (DeepSeek → the tag's Claude model, Haiku → Sonnet, Sonnet → Opus · medium; Opus · medium is the top). If that fails too, or a subagent reports a design question or anything touching auth, tenant scoping or the privacy invariants, the coordinator stops and asks you.
 
 Record every reversed decision as an ADR in `docs/adr/`.
 
