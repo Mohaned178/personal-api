@@ -25,15 +25,16 @@ const extensionIdOf = (worker: Worker): string => new URL(worker.url()).hostname
  * headless mode with the built extension. Pass `userDataDir` to reuse a profile (browser restart).
  */
 export async function launchExtension(
-  options: { userDataDir?: string } = {},
+  options: { userDataDir?: string; extensionPath?: string } = {},
 ): Promise<LaunchedExtension> {
+  const extensionPath = options.extensionPath ?? EXTENSION_PATH;
   const owned = options.userDataDir === undefined;
   const userDataDir = options.userDataDir ?? (await mkdtemp(join(tmpdir(), "pa-e2e-")));
   const context = await chromium.launchPersistentContext(userDataDir, {
     // 'chromium' selects new headless mode (extensions work). Never use the old headless shell.
     channel: "chromium",
     headless: true,
-    args: [`--disable-extensions-except=${EXTENSION_PATH}`, `--load-extension=${EXTENSION_PATH}`],
+    args: [`--disable-extensions-except=${extensionPath}`, `--load-extension=${extensionPath}`],
   });
   const worker = await waitForServiceWorker(context);
   return {

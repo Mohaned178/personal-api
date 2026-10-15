@@ -114,15 +114,24 @@ importers:
       '@playwright/test':
         specifier: 1.63.0
         version: 1.63.0
+      '@testcontainers/postgresql':
+        specifier: 12.2.0
+        version: 12.2.0
       '@types/chrome':
         specifier: 0.3.4
         version: 0.3.4
       '@types/node':
         specifier: 24.19.0
         version: 24.19.0
+      '@types/pg':
+        specifier: 8.23.1
+        version: 8.23.1
       '@types/selenium-webdriver':
         specifier: 4.35.7
         version: 4.35.7
+      pg:
+        specifier: 8.23.0
+        version: 8.23.0
       selenium-webdriver:
         specifier: 4.49.0
         version: 4.49.0

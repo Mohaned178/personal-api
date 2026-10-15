@@ -21,7 +21,9 @@ const PAGES: Record<string, string> = {
 export async function startFixtureSite(): Promise<FixtureSite> {
   const server: Server = createServer((req, res) => {
     const path = (req.url ?? "/").split("?")[0] ?? "/";
-    const body = PAGES[path];
+    // /p/<n>: any number of distinct pages, so a test can visit N different paths.
+    const body =
+      PAGES[path] ?? (/^\/p\/\d+$/.test(path) ? page(`Fixture ${path}`, ["/"]) : undefined);
     if (body === undefined) {
       res.writeHead(404, { "content-type": "text/plain" }).end("not found");
       return;

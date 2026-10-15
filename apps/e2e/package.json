@@ -8,15 +8,18 @@
     "typecheck": "tsc --noEmit",
     "e2e:install": "playwright install chromium",
     "test:e2e:firefox": "pnpm --filter @personal-api/spike-mv3-lifecycle build && playwright test --config playwright.firefox.config.ts",
-    "test:e2e:firefox:smoke": "playwright test --config playwright.firefox.config.ts extension-smoke-firefox extension-harness-firefox",
-    "test:e2e": "pnpm --filter @personal-api/contracts build && pnpm --filter extension build && pnpm --filter @personal-api/spike-mv3-lifecycle build && playwright test"
+    "test:e2e:firefox:smoke": "pnpm --filter @personal-api/contracts build && pnpm --filter @personal-api/api build && playwright test --config playwright.firefox.config.ts extension-smoke-firefox extension-harness-firefox extension-pairing-firefox",
+    "test:e2e": "pnpm --filter @personal-api/contracts build && pnpm --filter @personal-api/api build && pnpm --filter extension build && pnpm --filter @personal-api/spike-mv3-lifecycle build && playwright test"
   },
   "devDependencies": {
     "@personal-api/tsconfig": "workspace:*",
     "@playwright/test": "1.63.0",
+    "@testcontainers/postgresql": "12.2.0",
     "@types/chrome": "0.3.4",
     "@types/node": "24.19.0",
+    "@types/pg": "8.23.1",
     "@types/selenium-webdriver": "4.35.7",
+    "pg": "8.23.0",
     "selenium-webdriver": "4.49.0",
     "typescript": "6.0.3"
   }
