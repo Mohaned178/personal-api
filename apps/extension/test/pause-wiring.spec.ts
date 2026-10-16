@@ -11,6 +11,7 @@ import { type BackgroundBrowserApi, wireBackground } from "../lib/queue";
 import {
   connectionFor,
   KEY,
+  mirrorFor,
   ORIGIN,
   ownerOf,
   pageEvents,
@@ -52,7 +53,10 @@ function fakeBrowser(world: World, stored: Record<string, unknown>) {
     runtime: { onStartup: noop, onInstalled: noop },
     storage: {
       session: { get: async () => ({ id: "x" }), set: async () => undefined },
-      local: { get: async (keys: string | string[]) => pick(stored, keys) },
+      local: {
+        get: async (keys: string | string[]) => pick(stored, keys),
+        set: async (items: Record<string, unknown>) => void Object.assign(stored, items),
+      },
     },
   } satisfies BackgroundBrowserApi;
   const fire = (name: string) => Promise.all(alarmListeners.map((l) => l({ name })));
@@ -68,7 +72,9 @@ afterEach(() => world.uninstall());
 
 function wire(options: { connected?: boolean; stored?: Record<string, unknown> } = {}) {
   const stored: Record<string, unknown> = {
-    ...(options.connected === false ? {} : { [CONNECTION_STORAGE_KEY]: connectionFor(KEY) }),
+    ...(options.connected === false
+      ? {}
+      : { [CONNECTION_STORAGE_KEY]: connectionFor(KEY), ...mirrorFor() }),
     ...options.stored,
   };
   const { browser, fire } = fakeBrowser(world, stored);

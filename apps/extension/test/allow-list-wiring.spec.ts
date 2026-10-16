@@ -4,7 +4,7 @@ import { ALLOW_LIST_STORAGE_KEY } from "../lib/allow-list";
 import { CONNECTION_STORAGE_KEY } from "../lib/connect";
 import { PAUSED_STORAGE_KEY } from "../lib/pause";
 import { type BackgroundBrowserApi, wireBackground } from "../lib/queue";
-import { connectionFor, KEY, pick, World } from "./queue/support/world";
+import { connectionFor, KEY, mirrorFor, pick, World } from "./queue/support/world";
 
 let world: World;
 beforeEach(() => {
@@ -16,7 +16,7 @@ afterEach(() => world.uninstall());
 function wire(stored: Record<string, unknown>, connected = true) {
   const noop = { addListener: () => undefined };
   const all: Record<string, unknown> = {
-    ...(connected ? { [CONNECTION_STORAGE_KEY]: connectionFor(KEY) } : {}),
+    ...(connected ? { [CONNECTION_STORAGE_KEY]: connectionFor(KEY), ...mirrorFor() } : {}),
     ...stored,
   };
   const browser = {
@@ -46,7 +46,10 @@ function wire(stored: Record<string, unknown>, connected = true) {
     runtime: { onStartup: noop, onInstalled: noop },
     storage: {
       session: { get: async () => ({ id: "x" }), set: async () => undefined },
-      local: { get: async (keys: string | string[]) => pick(all, keys) },
+      local: {
+        get: async (keys: string | string[]) => pick(all, keys),
+        set: async (items: Record<string, unknown>) => void Object.assign(all, items),
+      },
     },
   } satisfies BackgroundBrowserApi;
   const { store } = world.open();

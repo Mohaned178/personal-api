@@ -6,6 +6,7 @@ import {
   PAIRING_RATE_LIMITED_CODE,
   pairResponseSchema,
 } from "@personal-api/contracts";
+import { GATE_OWNER_STORAGE_KEY, pairedMirror } from "./gate-mirror";
 
 export const CONNECTION_STORAGE_KEY = "connection";
 
@@ -199,7 +200,7 @@ export async function connect(
     integrationId: parsed.data.integration.id,
     integrationName: parsed.data.integration.name,
   };
-  await adoptQueueOwner(deps.queue, connection);
+  await adoptQueueOwner(deps, connection);
   await deps.storage.set({ [CONNECTION_STORAGE_KEY]: connection });
   return connection;
 }
@@ -209,9 +210,15 @@ export async function connect(
  * is discarded so its events can never reach the new server or account, then the new owner is
  * recorded. The same owner keeps its queue. If this fails, the pairing fails and nothing is stored.
  */
-async function adoptQueueOwner(queue: ConnectQueue | undefined, connection: Connection) {
+async function adoptQueueOwner(deps: ConnectDeps, connection: Connection) {
+  const { queue } = deps;
   if (queue === undefined) return;
   const owner = { serverOrigin: connection.serverOrigin, integrationId: connection.integrationId };
+  // The capture gate reads a copy of the owner from storage.local (ADR 0002 decision 3). Drop it
+  // BEFORE the queue changes hands: if a step below fails, the old connection stays stored, and a
+  // copy that still named the old owner would let capture queue events under the new one. A
+  // missing copy denies; the background rewrites it from IndexedDB (lib/gate-mirror.ts).
+  await deps.storage.set({ [GATE_OWNER_STORAGE_KEY]: null });
   const current = await queue.getOwner();
   const same =
     current !== null &&
@@ -219,6 +226,9 @@ async function adoptQueueOwner(queue: ConnectQueue | undefined, connection: Conn
     current.integrationId === owner.integrationId;
   if (!same && (await queue.stats()).depth > 0) await queue.clear();
   await queue.setOwner(owner);
+  // The new owner and no refused key. Written before the connection itself: until that write the
+  // stored connection still names the old owner, so the gate keeps denying.
+  await deps.storage.set(pairedMirror(owner));
 }
 
 /** Removes the stored connection and, best effort, the origin permission. Never throws for that. */

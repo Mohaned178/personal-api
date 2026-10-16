@@ -166,6 +166,7 @@ export function createFlusher(deps: FlushDeps): Flusher {
         lastFailure: null,
       };
       await store.settle({ removeSeqs: [], sync: resumed });
+      await deps.gateMirror?.refresh();
       meta = { ...meta, ...resumed } as SyncMeta;
     }
 
@@ -200,10 +201,14 @@ export function createFlusher(deps: FlushDeps): Flusher {
       const attempt = await sendBatch(connection, rows);
       switch (attempt.kind) {
         case "unauthorized":
+          // The gate's copy first (ADR 0002 decision 3): a kill between the two writes then leaves
+          // capture denied, never allowed. If it fails nothing is settled and the next run retries.
+          await deps.gateMirror?.markDisconnected(marker);
           await store.settle({
             removeSeqs: [],
             sync: { state: "disconnected", disconnectedFor: marker, nextAttemptAt: null },
           });
+          await deps.gateMirror?.refresh();
           await clearRetryAlarm();
           return { status: "disconnected" };
         case "resize":

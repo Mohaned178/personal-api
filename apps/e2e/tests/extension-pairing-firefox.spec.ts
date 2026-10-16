@@ -4,8 +4,9 @@ import { startFlakyProxy } from "../support/flaky-proxy";
 import {
   CONNECTION_KEY,
   countByPath,
+  pairThroughPopupFirefox,
+  type StoredConnection,
   seedAllowListFirefox,
-  setQueueOwnerFirefox,
   triggerFlushFirefox,
   visitedPaths,
 } from "../support/pairing";
@@ -18,10 +19,10 @@ import { LOOPBACK_HOST_PERMISSION, patchBuildWithHostPermissions } from "../supp
 // Always runs in CI.
 //
 // Differences from the Chromium spec, on purpose:
-// - The harness drives the browser through Marionette and cannot click inside a moz-extension page,
-//   so the pairing code is redeemed over HTTP (the same POST /v1/pair the popup sends) and the
-//   result is written to the extension's storage in the shape `connect()` stores. The popup form
-//   itself is covered by the Chromium spec and by the extension's unit tests.
+// - The harness has no click on a moz-extension page through the Marionette chrome context, but
+//   WebDriver element commands (trusted input) work in the popup page opened in a tab, so pairing
+//   goes through the real popup form: connect(), the queue owner adoption and the stored
+//   connection are the shipped code, with no test-only hooks.
 // - The build under test is a copy whose manifest already holds the loopback host permission (see
 //   support/patched-build.ts), because the permission prompt cannot be answered by automation.
 
@@ -44,35 +45,19 @@ test("Firefox: pairs, visits fixture pages and the events land in the database",
     );
     expect(granted, "the temporary add-on must hold the loopback host permission").toBe(true);
 
-    // Pair: a dashboard code, redeemed once, becomes the stored connection.
+    // Pair through the real popup page, the same one the toolbar popup links to (`?tab=1`), driven
+    // with WebDriver element commands (trusted input, so `permissions.request` sees a user
+    // gesture). This runs the shipped connect() and its queue owner adoption, not a copy of them.
     const account = await stack.createPairableAccount("firefox");
-    const paired = await fetch(`${proxy.origin}/v1/pair`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ pairingCode: account.pairingCode }),
-    });
-    expect(paired.status).toBe(200);
-    const body = (await paired.json()) as {
-      ingestKey: { key: string };
-      integration: { id: string; name: string };
-    };
-    expect(body.ingestKey.key).toMatch(/^pa_ing_/);
-    expect(body.integration.id).toBe(account.integrationId);
+    await pairThroughPopupFirefox(firefox, proxy.origin, account.pairingCode);
+
+    const stored = (await firefox.storageGet(CONNECTION_KEY))[CONNECTION_KEY] as
+      | StoredConnection
+      | undefined;
+    expect(stored?.serverOrigin).toBe(proxy.origin);
+    expect(stored?.integrationId).toBe(account.integrationId);
+    expect(stored?.ingestKey).toMatch(/^pa_ing_.{10,}/);
     expect(await stack.pairingCodeUsed(account.integrationId)).toBe(true);
-    // The queue is owner-scoped and only `connect()` sets the owner; do the same before anything is
-    // captured, or the queued rows would be unowned and never sent.
-    await setQueueOwnerFirefox(firefox, {
-      serverOrigin: proxy.origin,
-      integrationId: body.integration.id,
-    });
-    await firefox.storageSet({
-      [CONNECTION_KEY]: {
-        serverOrigin: proxy.origin,
-        ingestKey: body.ingestKey.key,
-        integrationId: body.integration.id,
-        integrationName: body.integration.name,
-      },
-    });
     await seedAllowListFirefox(firefox, [ALLOWED_DOMAIN]);
 
     // Visit the fixture site; the query string must never be stored.
