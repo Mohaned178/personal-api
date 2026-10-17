@@ -22,6 +22,8 @@ export interface FakeBackend {
   integrations?: FakeIntegration[];
   /** Lifetime of the pairing codes the fake issues, in ms. */
   codeTtlMs?: number;
+  /** The fake server's clock (defaults to `Date.now`); sent as the pairing response's `Date` header. */
+  serverNow?: () => number;
   /** Stored events (newest first) for /v1/events. Leave unset and those routes answer 404. */
   events?: FakeEvent[];
   /** Response for GET /v1/diagnostics. Leave unset and that route answers 404. */
@@ -117,8 +119,9 @@ function integrationsRoute(
     target.status = "revoked";
     return json(200, { integration: target });
   }
-  const expiresAt = new Date(Date.now() + (b.codeTtlMs ?? 600_000)).toISOString();
-  return json(201, { pairingCode: PAIRING_CODE, expiresAt });
+  const now = (b.serverNow ?? Date.now)();
+  const expiresAt = new Date(now + (b.codeTtlMs ?? 600_000)).toISOString();
+  return json(201, { pairingCode: PAIRING_CODE, expiresAt }, { date: new Date(now).toUTCString() });
 }
 
 export const USER = { id: "u1", email: "alice@example.test", name: "Alice" };
@@ -128,10 +131,13 @@ export function makeBackend(init: Partial<FakeBackend> = {}): FakeBackend {
   return { authed: false, needsSetup: false, signupOpen: true, calls: [], ...init };
 }
 
-function json(status: number, body: unknown): Response {
+function json(status: number, body: unknown, headers: Record<string, string> = {}): Response {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { "content-type": status >= 400 ? "application/problem+json" : "application/json" },
+    headers: {
+      "content-type": status >= 400 ? "application/problem+json" : "application/json",
+      ...headers,
+    },
   });
 }
 

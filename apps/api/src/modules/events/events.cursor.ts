@@ -1,4 +1,4 @@
-import { EVENTS_CURSOR_INVALID_CODE } from "@personal-api/contracts";
+import { EVENTS_CURSOR_INVALID_CODE, utcDateTimeSchema } from "@personal-api/contracts";
 import { isUuid } from "../../platform/db/uuid";
 import { AppException } from "../../platform/errors/problem";
 
@@ -28,8 +28,10 @@ export function decodeCursor(cursor: string): EventsCursor {
   }
   if (!Array.isArray(parsed) || parsed.length !== 2) throw invalid();
   const [iso, id] = parsed as unknown[];
-  if (typeof iso !== "string" || !isUuid(id)) throw invalid();
-  const occurredAt = new Date(iso);
+  // The contract's date-time check also rejects expanded years (`+010000-...`), which round-trip
+  // through `toISOString()` but which Postgres cannot read as a timestamptz.
+  if (!utcDateTimeSchema.safeParse(iso).success || !isUuid(id)) throw invalid();
+  const occurredAt = new Date(iso as string);
   if (Number.isNaN(occurredAt.getTime()) || occurredAt.toISOString() !== iso) throw invalid();
   return { occurredAt, id };
 }

@@ -18,6 +18,8 @@ describe("events cursor", () => {
     ["wrong length", b64(["2026-10-14T12:00:00.000Z"])],
     ["bad date", b64(["yesterday", ID])],
     ["non-canonical date", b64(["2026-10-14", ID])],
+    ["expanded positive year", b64(["+010000-01-01T00:00:00.000Z", ID])],
+    ["expanded negative year", b64(["-000001-01-01T00:00:00.000Z", ID])],
     ["bad id", b64(["2026-10-14T12:00:00.000Z", "1 or 1=1"])],
     ["non-string date", b64([5, ID])],
   ])("rejects %s with events.cursor_invalid", (_label, cursor) => {

@@ -1,5 +1,6 @@
+import type { QueryClient } from "@tanstack/react-query";
 import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import {
   type FakeBackend,
   type FakeIntegration,
@@ -39,6 +40,15 @@ afterEach(() => {
   vi.unstubAllGlobals();
   for (const s of logSpies.splice(0)) s.mockRestore();
 });
+
+function mutationData(queryClient: QueryClient): string {
+  return JSON.stringify(
+    queryClient
+      .getMutationCache()
+      .getAll()
+      .map((m) => m.state.data),
+  );
+}
 
 async function addIntegration(name: string, kind: RegExp) {
   fireEvent.change(await screen.findByLabelText(/^name/i), { target: { value: name } });
@@ -123,9 +133,46 @@ describe("integrations page", () => {
           .map((q) => q.state.data),
       ),
     ).not.toContain(INGEST_KEY);
+    expect(mutationData(queryClient)).not.toContain(INGEST_KEY);
     fireEvent.click(screen.getByRole("button", { name: /i have copied it/i }));
     expect(screen.queryByTestId("ingest-key")).toBeNull();
     expect(document.body.textContent).not.toContain(INGEST_KEY);
+    // Nor left behind in the mutation cache once the panel is closed.
+    await waitFor(() => expect(mutationData(queryClient)).not.toContain(INGEST_KEY));
+  });
+
+  it("drops the pairing code from the mutation cache when the panel is closed", async () => {
+    backend.integrations = [integration({ name: "Laptop", kind: "browser-extension" })];
+    const { queryClient } = mount("/integrations");
+    fireEvent.click(await screen.findByRole("button", { name: /pairing code for laptop/i }));
+    await screen.findByTestId("pairing-code");
+    fireEvent.click(screen.getByRole("button", { name: /done/i }));
+    expect(screen.queryByTestId("pairing-code")).toBeNull();
+    await waitFor(() => expect(mutationData(queryClient)).not.toContain(PAIRING_CODE));
+  });
+
+  it("drops a revoked integration's pairing code from the mutation cache", async () => {
+    backend.integrations = [integration({ name: "Laptop", kind: "browser-extension" })];
+    const { queryClient } = mount("/integrations");
+    fireEvent.click(await screen.findByRole("button", { name: /pairing code for laptop/i }));
+    await screen.findByTestId("pairing-code");
+    fireEvent.click(screen.getByRole("button", { name: /^revoke laptop/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /confirm revoke/i }));
+    await waitFor(() => expect(screen.queryByTestId("pairing-code")).toBeNull());
+    await waitFor(() => expect(mutationData(queryClient)).not.toContain(PAIRING_CODE));
+  });
+
+  it("counts down from the server's clock, not the browser's", async () => {
+    // The browser runs 5 minutes ahead of the server: a fresh 10-minute code still shows ~10:00.
+    const realNow = Date.now;
+    backend.serverNow = realNow;
+    const skew = vi.spyOn(Date, "now").mockImplementation(() => realNow() + 5 * 60 * 1000);
+    onTestFinished(() => skew.mockRestore());
+    backend.integrations = [integration({ name: "Laptop", kind: "browser-extension" })];
+    mount("/integrations");
+    fireEvent.click(await screen.findByRole("button", { name: /pairing code for laptop/i }));
+    await screen.findByTestId("pairing-code");
+    expect(screen.getByRole("timer").textContent).toMatch(/10:00|9:5\d/);
   });
 
   it("rejects an empty name without calling the API", async () => {

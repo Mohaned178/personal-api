@@ -202,6 +202,15 @@ describe("logout", () => {
     await settle(router, "/login");
     expect(qc.getQueryData(["events"])).toBeUndefined();
   });
+
+  it("clears the query cache on sign-in, so an expired session's data never reaches the next user", async () => {
+    const qc = new QueryClient();
+    qc.setQueryData(["events"], [{ id: "secret" }]);
+    const { router } = mount("/login", qc);
+    await fillAndSubmit({ email: USER.email, password: PASSWORD }, SIGN_IN);
+    await settle(router, "/");
+    expect(qc.getQueryData(["events"])).toBeUndefined();
+  });
 });
 
 describe("logging", () => {

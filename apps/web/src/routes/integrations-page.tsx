@@ -14,7 +14,8 @@ import {
 
 /**
  * Secrets (an ingest key, a pairing code) live in component state only: never in the query cache,
- * storage or logs. Closing the panel drops them for good.
+ * storage or logs (the mutations below resolve to nothing, so their cache never holds one).
+ * Closing the panel drops them for good.
  */
 type Secret =
   | { type: "key"; integrationName: string; key: string }
@@ -42,7 +43,8 @@ async function codeSecret(i: Pick<Integration, "id" | "name">): Promise<CodeSecr
     integrationId: i.id,
     integrationName: i.name,
     code: res.pairingCode,
-    expiresAt: Date.parse(res.expiresAt),
+    // A deadline on the browser's clock, so the countdown below can tick with `Date.now()`.
+    expiresAt: Date.now() + res.remainingMs,
   };
 }
 
@@ -204,7 +206,13 @@ export function IntegrationsPage() {
   const list = useQuery({ queryKey: INTEGRATIONS_KEY, queryFn: listIntegrations });
   const refresh = () => queryClient.invalidateQueries({ queryKey: INTEGRATIONS_KEY });
 
-  const code = useMutation({ mutationFn: codeSecret, onSuccess: setSecret });
+  // Both mutations resolve to nothing: the secret goes straight to component state, so the
+  // mutation cache (which keeps a mutation's result until it is collected) never holds it.
+  const code = useMutation({
+    mutationFn: async (i: Pick<Integration, "id" | "name">): Promise<void> => {
+      setSecret(await codeSecret(i));
+    },
+  });
 
   const create = useMutation({
     mutationFn: async ({
@@ -213,17 +221,15 @@ export function IntegrationsPage() {
     }: {
       name: string;
       kind: "browser-extension" | "http";
-    }): Promise<Secret> => {
+    }): Promise<void> => {
       if (kind === "http") {
         const res = await createHttpIntegration(name);
-        return { type: "key", integrationName: res.integration.name, key: res.ingestKey.key };
+        setSecret({ type: "key", integrationName: res.integration.name, key: res.ingestKey.key });
+        return;
       }
-      return codeSecret(await createExtensionIntegration(name));
+      setSecret(await codeSecret(await createExtensionIntegration(name)));
     },
-    onSuccess: (s) => {
-      setSecret(s);
-      void refresh();
-    },
+    onSuccess: () => void refresh(),
   });
 
   function onSubmit(event: FormEvent<HTMLFormElement>) {

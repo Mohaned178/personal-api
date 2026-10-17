@@ -1,10 +1,6 @@
 import { Controller, Get } from "@nestjs/common";
+import type { SetupStatusResponse } from "@personal-api/contracts";
 import { SignupGate } from "./signup-gate";
-
-export interface SetupStatusResponse {
-  needsSetup: boolean;
-  signupOpen: boolean;
-}
 
 /**
  * Public first-run probe for the dashboard. Two booleans only: no counts, emails or ids. Both

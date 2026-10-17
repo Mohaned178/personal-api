@@ -170,6 +170,7 @@ Errors use RFC 9457 `application/problem+json`. Lists use keyset cursors on `(oc
 | Auth | Endpoint | Purpose |
 | --- | --- | --- |
 | none | `GET /healthz`, `GET /readyz` | Liveness, and DB + queue readiness |
+| none | `GET /v1/setup/status` | Dashboard first-run probe: `needsSetup` and `signupOpen` booleans only |
 | pairing code | `POST /v1/pair` | Exchange a one-time code for an ingest key |
 | ingest key | `POST /v1/ingest/events` | Batch of up to 100 events and 256 KB. Returns per-item results. |
 | ingest key | `GET /v1/ingest/config` | Collect rules, enabled types and rule-set version, with ETag |
@@ -216,7 +217,7 @@ personal-api/
   apps/api/            NestJS: src/main.ts (HTTP) + src/worker.ts (standalone app context, pg-boss consumers)
                        src/modules/{auth,integrations,ingest,rules,events,activity,endpoints,keys,
                                     retention,exports,diagnostics} · src/platform/{db,jobs,logging,config}
-  apps/web/            React dashboard (built into apps/api/public at release)
+  apps/web/            React dashboard (the API serves WEB_DIST_DIR, default apps/web/dist; release path settled in M7-05)
   apps/extension/      WXT MV3 extension (firefox-mv3 + chrome-mv3 builds for Edge)
   apps/e2e/            Playwright e2e (loads the unpacked Edge/Chromium build) + Firefox smoke (web-ext + Selenium) + local fixture site
   packages/contracts/  Zod: envelope, event types, API DTOs, rule + saved-query schemas
@@ -305,7 +306,7 @@ Targets changed on 2026-10-14: Firefox + Edge (free stores only) instead of Chro
 - [x] **M3-05 [S · medium] Events browser UI:** virtualized table, filters (source, type, time range, domain), a detail drawer (JSON, origin, integration) and multi-select delete.
 - [x] **M3-06 [S · medium] Diagnostics API and Health page:** last seen per integration, queue depth from heartbeats, and accepted/duplicate/dropped/rejected charts.
 - [x] **M3-07 [H · low] UI polish:** empty, loading and error states, and copy.
-- [ ] **M3-R [O · medium] Milestone review.**
+- [x] **M3-R [O · medium] Milestone review.**
 
 ### M4: Rules
 
@@ -346,7 +347,7 @@ Targets changed on 2026-10-14: Firefox + Edge (free stores only) instead of Chro
 
 - [ ] **M7-01 [S · high] The full 8-step demo as one Playwright e2e test in CI** (Chromium/Edge build), plus the Firefox smoke passing. This is the v1 definition of done.
 - [ ] **M7-02 [S · high] Route-table-generated suite:** every route checked for unauthenticated, wrong-key-type and cross-tenant access.
-- [ ] **M7-03 [S · medium] Hardening:** rate limits (login, pairing, ingest per key), helmet security headers, and CSRF checks on mutations.
+- [ ] **M7-03 [S · medium] Hardening:** rate limits (login, pairing, ingest per key), helmet security headers, and CSRF checks on mutations (every session-cookie POST/PATCH/DELETE, including `DELETE /v1/events`).
 - [ ] **M7-04 [O · xhigh] Security pass:** `/security-review`, fixes, and a short threat model in `docs/`.
 - [ ] **M7-05 [H · medium] Production packaging:** extension zips for AMO and Edge Add-ons (AMO source-code bundle included), a multi-stage Dockerfile, a compose prod profile, a Caddy example, and dependency audit and license check.
 - [ ] **M7-06 [H · low] Docs:** README quickstart and `self-hosting.md` (TLS, backups, upgrades), with `rule-format.md` and `api.md` finalized.

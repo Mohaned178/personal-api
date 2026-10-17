@@ -115,6 +115,22 @@ describe("events page", () => {
     expect(within(screen.getAllByRole("row")[0] as HTMLElement).getByText("browser.tab_opened"));
   });
 
+  it.each(["https://github.com", "github.com/", "git hub.com"])(
+    "flags a domain like %s next to the field and sends no request",
+    async (value) => {
+      backend.events = [event(0)];
+      mount("/events");
+      await screen.findAllByRole("row");
+      fireEvent.change(screen.getByLabelText(/^domain/i), { target: { value } });
+      fireEvent.click(screen.getByRole("button", { name: /apply filters/i }));
+      expect((await screen.findByRole("alert")).textContent).toMatch(/domain/i);
+      expect(screen.getByLabelText(/^domain/i).getAttribute("aria-invalid")).toBe("true");
+      expect(eventGets()).toHaveLength(1);
+      // The rows from the last good filter stay on screen.
+      expect(rowCount()).toBe(1);
+    },
+  );
+
   it("opens a detail drawer with the JSON, origin and integration name", async () => {
     backend.events = [event(0, { origin: "imported" })];
     mount("/events");
