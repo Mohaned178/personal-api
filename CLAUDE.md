@@ -1,6 +1,6 @@
 # Personal API
 
-A self-hosted, multi-account personal data platform. A browser extension for Firefox and Edge (and later other sources) sends events. User-defined rules decide what is collected and kept. Users query their data through built-in endpoints and their own saved-query endpoints.
+A self-hosted, multi-account personal data platform. A browser extension (Firefox first, then Edge; Chrome after v1), and later other sources, sends events. User-defined rules decide what is collected and kept. Users query their data through built-in endpoints and their own saved-query endpoints.
 
 **Source of truth:** `docs/PLAN.md` holds the architecture, data model, rule format, API and the task list with model tags. Read the relevant section before starting a task, and tick the task's box when it merges. If code and plan disagree, stop and ask. Don't silently follow either.
 
@@ -10,8 +10,8 @@ TypeScript (strict) everywhere · Node 24 LTS · pnpm workspaces + Turborepo · 
 
 - `apps/api`: NestJS 11 (Express 5 platform), Drizzle ORM, PostgreSQL 18, pg-boss, Better Auth, nestjs-zod, nestjs-pino
 - `apps/web`: Vite, React 19, TanStack Router + Query, shadcn/ui, Tailwind v4
-- `apps/extension`: WXT (MV3, Firefox + Edge builds; no Chrome Web Store)
-- `apps/e2e`: Playwright (loads the unpacked Edge/Chromium build); Firefox smoke via web-ext + Selenium (from M2-00c)
+- `apps/extension`: WXT (MV3, `firefox-mv3` is the primary build, `chrome-mv3` for Edge; the Chrome Web Store comes after v1)
+- `apps/e2e`: Firefox is the primary e2e (web-ext + Selenium/geckodriver); Edge smoke via Playwright loading the unpacked Chromium build. Until M4-00 lands, the scripts below still run Playwright/Chromium as `test:e2e`
 - `packages/contracts`: Zod schemas shared by everything (envelope, event types, DTOs, rule and saved-query formats)
 - `packages/rules`: pure rule engine used by both the extension and the API
 
@@ -73,7 +73,7 @@ Before calling a task done, run `pnpm lint && pnpm typecheck && pnpm test` in th
 - **Lists:** keyset cursor on `(occurred_at, id)`, never offset.
 - **Ingest:** at-least-once in, effectively-once stored through `UNIQUE (user_id, integration_id, client_event_id)` with `ON CONFLICT DO NOTHING`. Job handlers must be idempotent.
 - **`packages/rules`** stays pure, with no Node, DOM, chrome or I/O imports, so the extension and server give identical results.
-- **Extension:** the MV3 background (Edge service worker, Firefox event page) can be killed at any time. Use WXT's `browser.*`, never raw `chrome.*`. Persist state to IndexedDB or `browser.storage`, use `browser.alarms` (never `setTimeout`/`setInterval` for anything important), and register every listener at the top level.
+- **Extension:** Firefox is the reference browser: verify behaviour there first, then Edge. The MV3 background (Firefox event page, Edge service worker) can be killed at any time. Use WXT's `browser.*`, never raw `chrome.*`. Persist state to IndexedDB or `browser.storage`, use `browser.alarms` (never `setTimeout`/`setInterval` for anything important), and register every listener at the top level.
 - Prefer small, boring code over abstractions. Don't add dependencies without a reason in the PR description.
 
 ## Testing

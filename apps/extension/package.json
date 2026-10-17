@@ -7,6 +7,7 @@
   "scripts": {
     "postinstall": "wxt prepare",
     "dev": "wxt",
+    "dev:firefox": "wxt -b firefox --mv3",
     "build": "wxt build && wxt build -b firefox --mv3",
     "build:chrome": "wxt build",
     "build:firefox": "wxt build -b firefox --mv3",
