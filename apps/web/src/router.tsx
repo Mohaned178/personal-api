@@ -4,6 +4,7 @@ import { fetchIsAuthenticated, fetchSetupStatus } from "@/lib/auth";
 import { RootLayout } from "@/routes/__root";
 import { LoginPage, SetupPage, SignupPage } from "@/routes/auth-pages";
 import { IndexPage } from "@/routes/index";
+import { IntegrationsPage } from "@/routes/integrations-page";
 
 /**
  * File-less, code-based routes on purpose: no codegen step, so `vite build` and `vitest` need no
@@ -18,15 +19,24 @@ async function redirectIfAuthenticated(): Promise<void> {
   if (await fetchIsAuthenticated()) throw redirect({ to: "/" });
 }
 
+async function requireAuth(): Promise<void> {
+  if (await fetchIsAuthenticated()) return;
+  const status = await fetchSetupStatus();
+  throw redirect({ to: status?.needsSetup ? "/setup" : "/login" });
+}
+
 const indexRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/",
-  beforeLoad: async () => {
-    if (await fetchIsAuthenticated()) return;
-    const status = await fetchSetupStatus();
-    throw redirect({ to: status?.needsSetup ? "/setup" : "/login" });
-  },
+  beforeLoad: requireAuth,
   component: IndexPage,
+});
+
+const integrationsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/integrations",
+  beforeLoad: requireAuth,
+  component: IntegrationsPage,
 });
 
 const loginRoute = createRoute({
@@ -65,7 +75,13 @@ const setupRoute = createRoute({
   component: SetupPage,
 });
 
-export const routeTree = rootRoute.addChildren([indexRoute, loginRoute, signupRoute, setupRoute]);
+export const routeTree = rootRoute.addChildren([
+  indexRoute,
+  integrationsRoute,
+  loginRoute,
+  signupRoute,
+  setupRoute,
+]);
 
 /** `history` is only passed in tests (a memory history); the app uses the browser default. */
 export function createAppRouter(history?: RouterHistory) {
