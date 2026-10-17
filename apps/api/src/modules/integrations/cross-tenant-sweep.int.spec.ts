@@ -71,6 +71,18 @@ const cookiePatch = (u: FixtureUser, path: string, body?: unknown) =>
     .patch(path)
     .set("Cookie", u.cookie)
     .send(body as object);
+const cookieDelete = (u: FixtureUser, body: unknown) =>
+  http()
+    .delete("/v1/events")
+    .set("Cookie", u.cookie)
+    .send(body as object);
+async function firstEventId(u: FixtureUser): Promise<string> {
+  const { rows } = await h.testDb.pool.query<{ id: string }>(
+    "select id from events where user_id = $1 order by id limit 1",
+    [u.userId],
+  );
+  return (rows[0] as { id: string }).id;
+}
 const keyPost = (u: FixtureUser, path: string, body: unknown, query = "") =>
   http()
     .post(`${path}${query}`)
@@ -450,6 +462,83 @@ const ROUTES: Route[] = [
       expect((await postHeartbeat(h.app, owner.ingestKey, heartbeatBody)).status).toBe(204);
     },
   },
+  {
+    route: "GET /v1/events",
+    attacks: [
+      {
+        label: "listing while the victim has events, naming the victim in query and headers",
+        run: async (attacker, victim) => {
+          const res = await cookieGet(attacker, `/v1/events?source=${victim.integrationId}`).set(
+            "X-User-Id",
+            victim.userId,
+          );
+          expect(res.status).toBe(200);
+          expect(res.body.events).toEqual([]);
+          const all = await cookieGet(attacker, "/v1/events");
+          const text = JSON.stringify(all.body);
+          for (const secret of [victim.userId, victim.integrationId]) {
+            expect(text).not.toContain(secret);
+          }
+          const named = await cookieGet(attacker, `/v1/events?userId=${victim.userId}`);
+          expectProblem(named, 400, "request.invalid");
+        },
+      },
+    ],
+    control: async (owner) => {
+      const res = await cookieGet(owner, "/v1/events");
+      expect(res.status).toBe(200);
+      expect(res.body.events.length).toBeGreaterThan(0);
+    },
+  },
+  {
+    route: "GET /v1/events/:id",
+    attacks: [
+      {
+        label: "reading the victim's event",
+        run: async (attacker, victim) => {
+          const id = await firstEventId(victim);
+          const res = await cookieGet(attacker, `/v1/events/${id}`);
+          expectProblem(res, 404, "event.not_found");
+          await expectSameAsUnknown(res, await cookieGet(attacker, `/v1/events/${missing}`));
+        },
+      },
+    ],
+    control: async (owner) => {
+      const res = await cookieGet(owner, `/v1/events/${await firstEventId(owner)}`);
+      expect(res.status).toBe(200);
+      expect(res.body.event.integrationId).toBe(owner.integrationId);
+    },
+  },
+  {
+    route: "DELETE /v1/events",
+    attacks: [
+      {
+        label: "deleting the victim's event by id",
+        run: async (attacker, victim) => {
+          const res = await cookieDelete(attacker, { ids: [await firstEventId(victim)] });
+          expect(res.status).toBe(200);
+          expect(res.body).toEqual({ deleted: 0 });
+          // The victim's rows are compared before and after by the loop.
+        },
+      },
+      {
+        label: "naming the victim as owner in the body",
+        run: async (attacker, victim) => {
+          const res = await cookieDelete(attacker, {
+            ids: [await firstEventId(victim)],
+            userId: victim.userId,
+          });
+          expectProblem(res, 400, "request.invalid");
+          expect(JSON.stringify(res.body)).not.toContain(victim.userId);
+        },
+      },
+    ],
+    control: async (owner) => {
+      const res = await cookieDelete(owner, { ids: [await firstEventId(owner)] });
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual({ deleted: 1 });
+    },
+  },
 ];
 
 /**
@@ -532,9 +621,10 @@ describe("the table covers every M1 route, and each refuses a missing or wrong-k
     const [method, path] = route.split(" ") as [string, string];
     const url = path.replace(":id", h.a.integrationId);
     const agent = http();
-    const req =
-      method === "GET" ? agent.get(url) : method === "PATCH" ? agent.patch(url) : agent.post(url);
-    return req;
+    if (method === "GET") return agent.get(url);
+    if (method === "PATCH") return agent.patch(url);
+    if (method === "DELETE") return agent.delete(url);
+    return agent.post(url);
   }
   const body = (route: string): object => {
     if (route.includes("/events")) return { events: [pageVisit()] };
