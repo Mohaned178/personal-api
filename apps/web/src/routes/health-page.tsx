@@ -121,7 +121,7 @@ export function HealthPage() {
       {diagnostics.isPending && <p role="status">Loading…</p>}
       {diagnostics.isError && (
         <p role="alert" className="text-sm text-destructive">
-          Could not load diagnostics.
+          Could not load diagnostics. Reload the page to try again.
         </p>
       )}
 
@@ -130,7 +130,9 @@ export function HealthPage() {
           <section aria-label="Sources" className="flex flex-col gap-2">
             <h2 className="text-lg font-medium">Sources</h2>
             {data.integrations.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No sources yet.</p>
+              <p className="text-sm text-muted-foreground">
+                No sources yet. Add one on the Integrations page to see its health here.
+              </p>
             ) : (
               <ul className="flex flex-col gap-2">
                 {data.integrations.map((i) => (
@@ -143,7 +145,9 @@ export function HealthPage() {
           <section className="flex flex-col gap-2">
             <h2 className="text-lg font-medium">Ingestion, last {data.ingestion.length} hours</h2>
             {noTraffic && (
-              <p className="text-sm text-muted-foreground">No events received in this window.</p>
+              <p className="text-sm text-muted-foreground">
+                No events received in this window. Charts fill in as sources send events.
+              </p>
             )}
             <IngestionChart buckets={data.ingestion} />
           </section>
