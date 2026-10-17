@@ -4,6 +4,8 @@ import { defineConfig } from "wxt";
 // through optional_host_permissions; there are no content scripts and no <all_urls>.
 // Targets: `chrome-mv3` (Chrome-family, including Edge) and `firefox-mv3`.
 export default defineConfig({
+  // The API uses 3000 (and the web dev server proxies to it), so the WXT dev server stays off it.
+  dev: { server: { port: 3100, origin: "http://localhost:3100" } },
   manifest: ({ browser }) => ({
     name: "Personal API",
     description:

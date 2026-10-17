@@ -16,7 +16,7 @@
 | Default URL capture | **Domain and path only.** The query string and `#fragment` are always stripped unless a rule opts a domain in. |
 | Default collection policy | **Deny by default.** A fresh extension collects nothing until the user allows a site. This matches demo step 3 and "explicitly configure what may be collected". |
 | Element interactions | **Deferred to v1.1.** v1 uses only the tabs and idle APIs, with no content scripts. |
-| Browsers | **Firefox and Edge**, two MV3 builds from one WXT codebase (`firefox-mv3` with an event-page background, `chrome-mv3` for Edge). Distributed only through free stores: Firefox Add-ons (AMO) and Edge Add-ons. The Chrome Web Store (paid developer fee) is not a target; Chrome, Brave and Opera can still load the Edge build but are untested. Changed 2026-10-14. |
+| Browsers | **Firefox first, then Edge, then Chrome.** Two MV3 builds from one WXT codebase (`firefox-mv3` with an event-page background, `chrome-mv3` for Edge, and later Chrome). Firefox is the primary target: the full demo e2e runs on it, and Firefox-specific behaviour wins when the browsers differ. Edge is second: a smoke e2e in CI. v1 ships through Firefox Add-ons (AMO) first, then Edge Add-ons (both free). Chrome comes after v1 (v1.1): a Chrome smoke e2e and a Chrome Web Store listing. Until then Chrome, Brave and Opera can load the Edge build but are untested. Changed 2026-10-14 (Firefox + Edge) and 2026-10-18 (Firefox first, Chrome after v1). |
 | Event storage model | **Fixed envelope columns plus a `data` JSONB payload validated against a versioned schema per event type.** This gives one common table and still keeps payloads strict. |
 | Pace | Near full-time. Milestones are about 1 week each. |
 
@@ -39,7 +39,7 @@ The whole project uses TypeScript in strict mode. Coming from JavaScript, this i
 | Extension | **WXT** (Vite-based, MV3) + TypeScript; IndexedDB queue via `idb` | Best DX for MV3: hot reload, manifest generation, and one codebase for the Firefox and Edge builds (`browser.*` API through WXT, never raw `chrome.*`). |
 | Dashboard | **Vite + React 19 + TanStack Router/Query + shadcn/ui + Tailwind v4** | A logged-in SPA needs no SSR. The API serves it as static files, so it's same-origin with simple cookies and no CORS. |
 | Lint/format | **Biome** | One fast tool for lint and format. |
-| Tests | **Vitest** (with SWC for Nest decorators), **supertest** against the Nest app, **Testcontainers** (Postgres), **fast-check** (rule properties), **Playwright** (loads the unpacked Edge/Chromium build for e2e), **web-ext + Selenium/geckodriver** (Firefox smoke) | The full demo runs as an automated e2e test in CI on Chromium; Firefox gets an automated smoke test. |
+| Tests | **Vitest** (with SWC for Nest decorators), **supertest** against the Nest app, **Testcontainers** (Postgres), **fast-check** (rule properties), **web-ext + Selenium/geckodriver** under the Playwright test runner (Firefox e2e, the primary suite), **Playwright** (loads the unpacked Edge/Chromium build for the Edge smoke) | The full demo runs as an automated e2e test in CI on Firefox; Edge gets an automated smoke test (and Chrome too, after v1). |
 | Deploy | **docker compose**: `postgres`, `api`, `worker` (same image, different command). Optional **Caddy** for TLS on a VPS. | One documented command. |
 
 Pin exact versions when scaffolding in M0, using releases at least 14 days old. The dev Postgres runs on **port 5433** so it never touches a Postgres already on 5432.
@@ -49,7 +49,7 @@ Pin exact versions when scaffolding in M0, using releases at least 14 days old. 
 ## 3. Architecture
 
 ```text
-┌───── Browser extension (Firefox + Edge, MV3, WXT) ───┐        ┌──── other sources (v1: any HTTP client) ───┐
+┌─── Browser extension (Firefox → Edge, MV3, WXT) ─────┐        ┌──── other sources (v1: any HTTP client) ───┐
 │ tabs/idle listeners → normalize → sanitize URL       │        │ curl / scripts / future GitHub integration │
 │ → collect-rules (shared engine, cached, fail-closed) │        └───────────────────┬────────────────────────┘
 │ → IndexedDB queue → batch flush (alarms + backoff)   │                            │
@@ -219,7 +219,7 @@ personal-api/
                                     retention,exports,diagnostics} · src/platform/{db,jobs,logging,config}
   apps/web/            React dashboard (the API serves WEB_DIST_DIR, default apps/web/dist; release path settled in M7-05)
   apps/extension/      WXT MV3 extension (firefox-mv3 + chrome-mv3 builds for Edge)
-  apps/e2e/            Playwright e2e (loads the unpacked Edge/Chromium build) + Firefox smoke (web-ext + Selenium) + local fixture site
+  apps/e2e/            Firefox e2e (web-ext + Selenium, primary) + Edge smoke (Playwright, unpacked Chromium build) + local fixture site
   packages/contracts/  Zod: envelope, event types, API DTOs, rule + saved-query schemas
   packages/rules/      Pure rule engine + saved-query validator (no Node/DOM deps)
   packages/tsconfig/   Shared TS config
@@ -248,7 +248,7 @@ Each milestone ends with something demoable, green CI and a short demo note in t
 
 | Implementer | Tasks | Review |
 | --- | --- | --- |
-| **Sonnet** (any effort) | M2-05, M2-08 · M4-01, M4-02, M4-03, M4-05, M4-06, M4-09 · M5-01, M5-04, M5-06 · M6-02, M6-04, M6-06 · M7-01, M7-02, M7-03, plus the tests (low/medium) for every high-effort and `{deepseek}` task, plus fixing review findings | Opus at `Mx-R` only |
+| **Sonnet** (any effort) | M2-05, M2-08 · M4-00, M4-01, M4-02, M4-03, M4-05, M4-06, M4-09 · M5-01, M5-04, M5-06 · M6-02, M6-04, M6-06 · M7-01, M7-02, M7-03, plus the tests (low/medium) for every high-effort and `{deepseek}` task, plus fixing review findings | Opus at `Mx-R` only |
 | **Opus · high / xhigh** (review only) | M2-R, M3-R, M4-R, M5-R, M6-R, M7-04, M7-R | — |
 
 
@@ -281,7 +281,7 @@ Each milestone ends with something demoable, green CI and a short demo note in t
 
 ### M2: Extension capture and delivery
 
-Targets changed on 2026-10-14: Firefox + Edge (free stores only) instead of Chrome. Every M2 extension task must build and pass its unit tests for both `firefox-mv3` and `chrome-mv3`.
+Targets changed on 2026-10-14: Firefox + Edge (free stores only) instead of Chrome. Every M2 extension task must build and pass its unit tests for both `firefox-mv3` and `chrome-mv3`. (On 2026-10-18 the order became Firefox first, then Edge, then Chrome after v1; see §2 and M4-00.)
 
 - [x] **M2-00a [S · medium] Cross-browser build:** WXT targets `firefox-mv3` and `chrome-mv3` (`build`, `build:firefox`, `zip` for both), `browser_specific_settings.gecko` (id + `strict_min_version`) and Firefox `data_collection_permissions` in the manifest, and the M0-08 manifest test extended to both outputs. Rename the integration kind `chrome-extension` → `browser-extension` (contracts, schema, migration, tests). *Done when:* both builds succeed in CI, both manifest tests assert exactly `tabs`, `idle`, `storage`, `alarms` + `optional_host_permissions`, no content scripts, incognito not allowed; `pnpm test:int` covers the migrated constraint.
 - [x] **M2-00b [O · high] Spike C, Firefox lifecycle:** re-run the Spike A design (ADR 0002 option B) on a Firefox MV3 event page with web-ext + Selenium/geckodriver: forced background suspension during capture, idle, lock (Firefox may not report `locked`), window blur and browser restart. *Done when:* an automated test suspends/reloads the background 20× during capture with zero lost or duplicated events (or the PR explains why Firefox can't force this and what was measured instead), blur/tab-switch segments are off by less than 2 s, and ADR 0002 gains a Firefox section with go/no-go and any per-browser differences M2-04/M2-05 must handle.
@@ -310,6 +310,7 @@ Targets changed on 2026-10-14: Firefox + Edge (free stores only) instead of Chro
 
 ### M4: Rules
 
+- [ ] **M4-00 [S · medium] Firefox becomes the primary e2e:** bring the Selenium/geckodriver harness to parity with the Playwright one (pairing, fixture visits, DB reads, offline and reconnect), port the M2-08 offline → reconnect test to Firefox, and keep Edge/Chromium as a smoke suite (pair → visit fixture → events in the DB). Rename the scripts so `pnpm test:e2e` runs Firefox and `test:e2e:edge:smoke` runs Edge, and update CI and `CLAUDE.md`. *Done when:* CI runs the Firefox suite (including offline → reconnect, with nothing lost or duplicated) and the Edge smoke as separate jobs, both green.
 - [ ] **M4-01 [S · high] Rule format:** the Zod schema in `contracts`, a per-type field registry (which fields conditions may use), and a draft of `docs/rule-format.md`.
 - [ ] **M4-02 [S · high] Engine (`packages/rules`):** `evaluate(event, rules, policy) → {decision, event, trace}` with the ops, actions, priority and drop-beats-allow semantics from §5. Pure, with no I/O.
 - [ ] **M4-03 [S · high] Engine tests:** table tests per op and action, plus fast-check properties (drop dominance, determinism, idempotent transforms, invalid input → fail closed).
@@ -318,7 +319,7 @@ Targets changed on 2026-10-14: Firefox + Edge (free stores only) instead of Chro
 - [ ] **M4-06 [S · high] Extension rule sync:** `GET /v1/ingest/config` with ETag, alarm-based sync, fail closed when rules are missing or invalid, removal of the M2-07 list, and the current-tab verdict in the popup.
 - [ ] **M4-07 [S · medium] Rules UI:** list with priority ordering, form builder, JSON toggle with inline errors, test against a sample event, and drop counts.
 - [ ] **M4-08 [S · medium] Explainability:** the "why is this here" view on events, and onboarding starter templates.
-- [ ] **M4-09 [S · high] e2e:** demo steps 3 and 7 (add a rule → collected; change the rule → later events behave differently).
+- [ ] **M4-09 [S · high] e2e (Firefox):** demo steps 3 and 7 (add a rule → collected; change the rule → later events behave differently).
 - [ ] **M4-R [O · xhigh] Milestone review** (`/code-review` + `/security-review`).
 
 ### M5: Query API and user endpoints
@@ -345,18 +346,18 @@ Targets changed on 2026-10-14: Firefox + Edge (free stores only) instead of Chro
 
 ### M7: Hardening and v1.0
 
-- [ ] **M7-01 [S · high] The full 8-step demo as one Playwright e2e test in CI** (Chromium/Edge build), plus the Firefox smoke passing. This is the v1 definition of done.
+- [ ] **M7-01 [S · high] The full 8-step demo as one Firefox e2e test in CI** (`firefox-mv3` build, web-ext + Selenium), plus the Edge smoke passing. This is the v1 definition of done.
 - [ ] **M7-02 [S · high] Route-table-generated suite:** every route checked for unauthenticated, wrong-key-type and cross-tenant access.
 - [ ] **M7-03 [S · medium] Hardening:** rate limits (login, pairing, ingest per key), helmet security headers, and CSRF checks on mutations (every session-cookie POST/PATCH/DELETE, including `DELETE /v1/events`).
 - [ ] **M7-04 [O · xhigh] Security pass:** `/security-review`, fixes, and a short threat model in `docs/`.
-- [ ] **M7-05 [H · medium] Production packaging:** extension zips for AMO and Edge Add-ons (AMO source-code bundle included), a multi-stage Dockerfile, a compose prod profile, a Caddy example, and dependency audit and license check.
+- [ ] **M7-05 [H · medium] Production packaging:** extension zips for AMO (first, with its source-code bundle) and then Edge Add-ons, a multi-stage Dockerfile, a compose prod profile, a Caddy example, and dependency audit and license check.
 - [ ] **M7-06 [H · low] Docs:** README quickstart and `self-hosting.md` (TLS, backups, upgrades), with `rule-format.md` and `api.md` finalized.
 - [ ] **M7-07 [H · low] Release prep:** CHANGELOG and version bump. Tagging `v1.0.0` needs the user's approval.
 - [ ] **M7-R [O · xhigh] Final review.**
 
 ### v1.1 and later (explicitly out of v1)
 
-Webhook `forward` action (HMAC-signed, retries, SSRF guard), a GitHub integration (webhooks for commits and PRs, which proves a second real source), content-script interactions for one site, Postgres RLS, user-defined event types with JSON Schema, a Chrome Web Store listing, monthly partitioning if volume needs it.
+Webhook `forward` action (HMAC-signed, retries, SSRF guard), a GitHub integration (webhooks for commits and PRs, which proves a second real source), content-script interactions for one site, Postgres RLS, user-defined event types with JSON Schema, Chrome support (the third browser: a Chrome smoke e2e in CI and a Chrome Web Store listing, which has a one-time developer fee), monthly partitioning if volume needs it.
 
 ---
 
@@ -365,11 +366,11 @@ Webhook `forward` action (HMAC-signed, retries, SSRF guard), a GitHub integratio
 | Risk | Mitigation |
 | --- | --- |
 | MV3 background gets killed (Edge service worker, Firefox event page), so in-memory state is lost | Persist everything to IndexedDB at capture. Use alarms, not timers. Spike A (Chromium) and Spike C (Firefox) prove this before anything is built on it. |
-| Firefox and Edge APIs differ (idle/lock states, background lifecycle, permission prompts) | One `browser.*` codebase via WXT; Spike C records the differences; unit tests run for both builds; Firefox smoke e2e in CI. |
+| Firefox and Edge APIs differ (idle/lock states, background lifecycle, permission prompts) | One `browser.*` codebase via WXT; Spike C records the differences; unit tests run for both builds; the full e2e runs on Firefox and an Edge smoke e2e runs in CI. When the two differ, the Firefox behaviour is the reference. |
 | Time-on-site inflates from missed "end" events | Send closed `focus_segment` intervals. Idle, lock and blur close the open segment. Cap any single segment at 30 minutes. |
 | Rules change while events sit in the queue | The server always re-applies current collect rules, and the stricter outcome wins. `meta.ruleSetVersion` is recorded for debugging. |
 | Rule bugs widen collection | Deny by default, fail closed, property tests on the engine, and the dry-run preview before saving. |
-| The `tabs` permission shows a "read browsing history" warning | Unavoidable for this product. Explain it on the onboarding screen. Distribute v1 through Firefox Add-ons and Edge Add-ons (both free), or unpacked. |
+| The `tabs` permission shows a "read browsing history" warning | Unavoidable for this product. Explain it on the onboarding screen. Distribute v1 through Firefox Add-ons first, then Edge Add-ons (both free), or unpacked; the Chrome Web Store follows in v1.1. |
 | Client clock skew | Store both `occurredAt` and `receivedAt`. Clamp future timestamps and flag them. |
 | Scope creep from the big vision | Anything not on the M0–M7 list goes to v1.1 or later. |
 
@@ -426,4 +427,4 @@ Record every reversed decision as an ADR in `docs/adr/`.
 ## 13. Open items for the user
 
 - ~~Git repo~~ → resolved: `github.com/Mohaned178/personal-api` (empty when this plan was written).
-- **Project name and extension name** for the Web Store listing (can wait until M7).
+- **Project name and extension name** for the AMO and Edge Add-ons listings (can wait until M7; the Chrome Web Store listing reuses them in v1.1).
