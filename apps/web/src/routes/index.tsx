@@ -1,5 +1,5 @@
 import { useQueryClient } from "@tanstack/react-query";
-import { useNavigate } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 import { Button } from "@/components/ui/button";
 import { signOut } from "@/lib/auth";
 
@@ -22,6 +22,9 @@ export function IndexPage() {
           Your Data. Your Endpoints. Your Rules.
         </p>
       </div>
+      <Link to="/integrations" className="text-sm underline">
+        Integrations
+      </Link>
       <Button variant="outline" onClick={onSignOut}>
         Sign out
       </Button>

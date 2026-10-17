@@ -18,7 +18,61 @@ export interface FakeBackend {
   /** Override sign-in / sign-up outcomes with an error status. */
   signInStatus?: number | undefined;
   signUpStatus?: number | undefined;
+  /** Integrations store for /v1/integrations. Leave unset and those routes answer 404. */
+  integrations?: FakeIntegration[];
+  /** Lifetime of the pairing codes the fake issues, in ms. */
+  codeTtlMs?: number;
   calls: { method: string; path: string; body: unknown }[];
+}
+
+export interface FakeIntegration {
+  id: string;
+  kind: "http" | "browser-extension";
+  name: string;
+  defaultPolicy: "deny";
+  status: "active" | "revoked";
+  lastSeenAt: string | null;
+  createdAt: string;
+}
+
+export const PAIRING_CODE = "ABCD-EFGH-JKLM-NPQR-STUV";
+export const INGEST_KEY = "pa_ing_secretsecretsecret";
+
+function integrationsRoute(
+  b: FakeBackend,
+  method: string,
+  pathname: string,
+  body: unknown,
+): Response | null {
+  const list = b.integrations;
+  if (!list) return null;
+  const route = `${method} ${pathname}`;
+  if (route === "GET /v1/integrations") return json(200, { integrations: list });
+  if (route === "POST /v1/integrations") {
+    const { kind, name } = body as Pick<FakeIntegration, "kind" | "name">;
+    const integration: FakeIntegration = {
+      id: crypto.randomUUID(),
+      kind,
+      name,
+      defaultPolicy: "deny",
+      status: "active",
+      lastSeenAt: null,
+      createdAt: "2026-10-17T00:00:00.000Z",
+    };
+    list.push(integration);
+    if (kind !== "http") return json(201, { integration });
+    const ingestKey = { id: crypto.randomUUID(), key: INGEST_KEY, prefix: "pa_ing_secr" };
+    return json(201, { integration, ingestKey });
+  }
+  const m = /^\/v1\/integrations\/([^/]+)\/(pairing-code|revoke)$/.exec(pathname);
+  const target = m && method === "POST" ? list.find((i) => i.id === m[1]) : undefined;
+  if (!m || !target) return null;
+  if (m[2] === "revoke") {
+    target.status = "revoked";
+    return json(200, { integration: target });
+  }
+  const expiresAt = new Date(Date.now() + (b.codeTtlMs ?? 600_000)).toISOString();
+  return json(201, { pairingCode: PAIRING_CODE, expiresAt });
 }
 
 export const USER = { id: "u1", email: "alice@example.test", name: "Alice" };
@@ -74,7 +128,7 @@ export function installFetch(b: FakeBackend) {
         b.authed = false;
         return json(200, { success: true });
       default:
-        return json(404, { code: "not_found" });
+        return integrationsRoute(b, method, url.pathname, body) ?? json(404, { code: "not_found" });
     }
   });
   vi.stubGlobal("fetch", fn);
