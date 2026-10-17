@@ -11,6 +11,7 @@ import { AUTH_ROUTE, createAuthRequestHandler } from "./auth.http";
 import { AUTH } from "./auth.tokens";
 import { MeController } from "./me.controller";
 import { SessionGuard } from "./session.guard";
+import { SetupController } from "./setup.controller";
 import { SignupGate } from "./signup-gate";
 
 /**
@@ -24,7 +25,7 @@ import { SignupGate } from "./signup-gate";
  * below.
  */
 @Module({
-  controllers: [MeController],
+  controllers: [MeController, SetupController],
   providers: [
     SignupGate,
     {

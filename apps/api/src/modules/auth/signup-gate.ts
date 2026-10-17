@@ -37,6 +37,11 @@ export class SignupGate {
     @Inject(PG_POOL) private readonly pool: Pool,
   ) {}
 
+  /** True while no account exists, so the dashboard should offer first-run setup. */
+  async needsSetup(): Promise<boolean> {
+    return !(await anyUserExists(this.pool));
+  }
+
   /** A point-in-time answer, used as the backstop inside Better Auth's user-create hook. */
   async isOpen(): Promise<boolean> {
     if (this.config.ALLOW_SIGNUP === true) return true;

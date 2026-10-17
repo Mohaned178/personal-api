@@ -188,6 +188,33 @@ const ROUTES: Route[] = [
     },
   },
   {
+    route: "GET /v1/setup/status",
+    attacks: [
+      {
+        label: "naming the victim in query and headers (public route, answers the same for all)",
+        run: async (attacker, victim) => {
+          const plain = await http().get("/v1/setup/status");
+          const res = await http()
+            .get(`/v1/setup/status?userId=${victim.userId}`)
+            .set("X-User-Id", victim.userId)
+            .set("X-Integration-Id", victim.integrationId);
+          expect(res.status).toBe(200);
+          expect(res.body).toEqual(plain.body);
+          expect(Object.keys(res.body).sort()).toEqual(["needsSetup", "signupOpen"]);
+          const text = JSON.stringify(res.body);
+          for (const id of [victim.userId, victim.integrationId, attacker.userId]) {
+            expect(text).not.toContain(id);
+          }
+        },
+      },
+    ],
+    control: async () => {
+      const res = await http().get("/v1/setup/status");
+      expect(res.status).toBe(200);
+      expect(res.body.needsSetup).toBe(false);
+    },
+  },
+  {
     route: "GET /v1/me",
     attacks: [
       {
@@ -494,7 +521,10 @@ describe("the table covers every M1 route, and each refuses a missing or wrong-k
   });
 
   const sessionRoutes = ROUTES.filter(
-    (r) => !r.route.includes("/v1/ingest/") && r.route !== "POST /v1/pair",
+    (r) =>
+      !r.route.includes("/v1/ingest/") &&
+      r.route !== "POST /v1/pair" &&
+      r.route !== "GET /v1/setup/status",
   );
   const ingestRoutes = ROUTES.filter((r) => r.route.includes("/v1/ingest/"));
 
