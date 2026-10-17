@@ -286,7 +286,7 @@ export function IntegrationsPage() {
         </fieldset>
         {(formError || create.isError) && (
           <p role="alert" className="text-sm text-destructive">
-            {formError ?? "Could not add the integration."}
+            {formError ?? "Could not add the integration. Check the name and try again."}
           </p>
         )}
         <div>
@@ -296,14 +296,16 @@ export function IntegrationsPage() {
         </div>
       </form>
 
-      {list.isPending && <p className="text-sm text-muted-foreground">Loading...</p>}
+      {list.isPending && <p className="text-sm text-muted-foreground">Loading…</p>}
       {list.isError && (
         <p role="alert" className="text-sm text-destructive">
-          Could not load integrations.
+          Could not load integrations. Reload the page to try again.
         </p>
       )}
       {list.data && list.data.length === 0 && (
-        <p className="text-sm text-muted-foreground">No integrations yet.</p>
+        <p className="text-sm text-muted-foreground">
+          No integrations yet. Add a browser extension or an HTTP source above to start collecting.
+        </p>
       )}
       {list.data && list.data.length > 0 && (
         <ul className="flex flex-col gap-2">

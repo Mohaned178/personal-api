@@ -270,14 +270,16 @@ export function EventsPage() {
         </div>
       )}
 
-      {events.isPending && <p className="text-sm text-muted-foreground">Loading...</p>}
+      {events.isPending && <p className="text-sm text-muted-foreground">Loading…</p>}
       {events.isError && (
         <p role="alert" className="text-sm text-destructive">
-          Could not load events.
+          Could not load events. Reload the page to try again.
         </p>
       )}
       {events.data && rows.length === 0 && (
-        <p className="text-sm text-muted-foreground">No events match.</p>
+        <p className="text-sm text-muted-foreground">
+          No events match these filters. Widen the time range or clear a filter.
+        </p>
       )}
       {rows.length > 0 && (
         <div
@@ -336,7 +338,7 @@ export function EventsPage() {
           </div>
         </div>
       )}
-      {isFetchingNextPage && <p className="text-sm text-muted-foreground">Loading more...</p>}
+      {isFetchingNextPage && <p className="text-sm text-muted-foreground">Loading more…</p>}
 
       {open && (
         <EventDetail

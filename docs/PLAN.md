@@ -304,7 +304,7 @@ Targets changed on 2026-10-14: Firefox + Edge (free stores only) instead of Chro
 - [x] **M3-04 [S · medium] Platform events API (session):** list with filters + keyset cursor, get one, delete by ids, including cross-tenant tests.
 - [x] **M3-05 [S · medium] Events browser UI:** virtualized table, filters (source, type, time range, domain), a detail drawer (JSON, origin, integration) and multi-select delete.
 - [x] **M3-06 [S · medium] Diagnostics API and Health page:** last seen per integration, queue depth from heartbeats, and accepted/duplicate/dropped/rejected charts.
-- [ ] **M3-07 [H · low] UI polish:** empty, loading and error states, and copy.
+- [x] **M3-07 [H · low] UI polish:** empty, loading and error states, and copy.
 - [ ] **M3-R [O · medium] Milestone review.**
 
 ### M4: Rules
