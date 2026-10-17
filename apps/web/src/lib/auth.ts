@@ -1,11 +1,10 @@
+import { type SetupStatusResponse, setupStatusResponseSchema } from "@personal-api/contracts";
+
 /**
  * Dashboard auth calls. Same-origin fetches with the session cookie; nothing here logs, and no
  * request or response body is kept beyond what the caller needs.
  */
-export interface SetupStatus {
-  needsSetup: boolean;
-  signupOpen: boolean;
-}
+export type SetupStatus = SetupStatusResponse;
 
 /** Any failure (401, 5xx, network) counts as signed out, so a broken check never opens a page. */
 export async function fetchIsAuthenticated(): Promise<boolean> {
@@ -22,9 +21,8 @@ export async function fetchSetupStatus(): Promise<SetupStatus | null> {
   try {
     const res = await fetch("/v1/setup/status", { credentials: "same-origin" });
     if (!res.ok) return null;
-    const body = (await res.json()) as Partial<SetupStatus>;
-    if (typeof body.needsSetup !== "boolean" || typeof body.signupOpen !== "boolean") return null;
-    return { needsSetup: body.needsSetup, signupOpen: body.signupOpen };
+    const parsed = setupStatusResponseSchema.safeParse(await res.json());
+    return parsed.success ? parsed.data : null;
   } catch {
     return null;
   }

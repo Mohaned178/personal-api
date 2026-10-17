@@ -1,4 +1,4 @@
-import { EVENT_TYPES, EVENTS_DELETE_MAX_IDS } from "@personal-api/contracts";
+import { domainSchema, EVENT_TYPES, EVENTS_DELETE_MAX_IDS } from "@personal-api/contracts";
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
@@ -75,6 +75,8 @@ function FilterForm({
   integrations: { id: string; name: string }[];
   onApply: (filters: EventFilters) => void;
 }) {
+  const [domainError, setDomainError] = useState(false);
+
   function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const data = new FormData(event.currentTarget);
@@ -82,7 +84,12 @@ function FilterForm({
     const filters: EventFilters = {};
     if (text("source")) filters.source = text("source");
     if (text("type")) filters.type = text("type");
-    if (text("domain")) filters.domain = text("domain").toLowerCase();
+    const domain = text("domain").toLowerCase();
+    // The API would answer 400 for anything but a bare hostname; say so here instead.
+    const badDomain = domain !== "" && !domainSchema.safeParse(domain).success;
+    setDomainError(badDomain);
+    if (badDomain) return;
+    if (domain) filters.domain = domain;
     const from = localToUtc(text("from"));
     const to = localToUtc(text("to"));
     if (from) filters.from = from;
@@ -136,7 +143,14 @@ function FilterForm({
           type="text"
           placeholder="example.com"
           maxLength={253}
+          aria-invalid={domainError}
+          aria-describedby={domainError ? "events-domain-error" : undefined}
         />
+        {domainError && (
+          <span id="events-domain-error" role="alert" className="text-sm text-destructive">
+            Enter a domain only, like example.com: no https://, path or spaces.
+          </span>
+        )}
       </label>
       <div className="sm:col-span-2">
         <Button type="submit">Apply filters</Button>

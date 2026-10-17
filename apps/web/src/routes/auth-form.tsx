@@ -1,3 +1,4 @@
+import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { type FormEvent, type ReactNode, useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -17,6 +18,7 @@ interface AuthFormProps {
 /** One form for login, signup and first-run setup. Validates locally, then calls the API. */
 export function AuthForm({ title, description, mode, submitLabel, footer }: AuthFormProps) {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -43,6 +45,8 @@ export function AuthForm({ title, description, mode, submitLabel, footer }: Auth
       setError(result.message);
       return;
     }
+    // A session that expired leaves its cache behind; the account signing in now must not see it.
+    queryClient.clear();
     await navigate({ to: "/" });
   }
 

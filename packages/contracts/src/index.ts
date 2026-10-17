@@ -19,3 +19,4 @@ export * from "./pairing.js";
 export * from "./parse-event.js";
 export * from "./primitives.js";
 export * from "./registry.js";
+export * from "./setup.js";
