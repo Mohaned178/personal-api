@@ -1,6 +1,19 @@
+import { useQueryClient } from "@tanstack/react-query";
+import { useNavigate } from "@tanstack/react-router";
 import { Button } from "@/components/ui/button";
+import { signOut } from "@/lib/auth";
 
 export function IndexPage() {
+  const queryClient = useQueryClient();
+  const navigate = useNavigate();
+
+  async function onSignOut() {
+    await signOut();
+    // Drop every cached query so the next user on this browser never sees the last one's data.
+    queryClient.clear();
+    await navigate({ to: "/login" });
+  }
+
   return (
     <main className="flex min-h-screen flex-col items-center justify-center gap-6 p-8">
       <div className="flex flex-col items-center gap-2 text-center">
@@ -9,7 +22,9 @@ export function IndexPage() {
           Your Data. Your Endpoints. Your Rules.
         </p>
       </div>
-      <Button>Sign in coming soon</Button>
+      <Button variant="outline" onClick={onSignOut}>
+        Sign out
+      </Button>
     </main>
   );
 }
