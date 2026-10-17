@@ -25,6 +25,9 @@ export function IndexPage() {
       <Link to="/events" className="text-sm underline">
         Events
       </Link>
+      <Link to="/health" className="text-sm underline">
+        Health
+      </Link>
       <Link to="/integrations" className="text-sm underline">
         Integrations
       </Link>

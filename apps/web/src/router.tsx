@@ -4,6 +4,7 @@ import { fetchIsAuthenticated, fetchSetupStatus } from "@/lib/auth";
 import { RootLayout } from "@/routes/__root";
 import { LoginPage, SetupPage, SignupPage } from "@/routes/auth-pages";
 import { EventsPage } from "@/routes/events-page";
+import { HealthPage } from "@/routes/health-page";
 import { IndexPage } from "@/routes/index";
 import { IntegrationsPage } from "@/routes/integrations-page";
 
@@ -47,6 +48,13 @@ const eventsRoute = createRoute({
   component: EventsPage,
 });
 
+const healthRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/health",
+  beforeLoad: requireAuth,
+  component: HealthPage,
+});
+
 const loginRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/login",
@@ -87,6 +95,7 @@ export const routeTree = rootRoute.addChildren([
   indexRoute,
   integrationsRoute,
   eventsRoute,
+  healthRoute,
   loginRoute,
   signupRoute,
   setupRoute,

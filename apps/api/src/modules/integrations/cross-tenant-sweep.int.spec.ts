@@ -491,6 +491,30 @@ const ROUTES: Route[] = [
     },
   },
   {
+    route: "GET /v1/diagnostics",
+    attacks: [
+      {
+        label:
+          "reading diagnostics while the victim has sources, naming the victim in query and headers",
+        run: async (attacker, victim) => {
+          const res = await cookieGet(attacker, "/v1/diagnostics").set("X-User-Id", victim.userId);
+          expect(res.status).toBe(200);
+          const text = JSON.stringify(res.body);
+          for (const secret of [victim.userId, victim.integrationId]) {
+            expect(text).not.toContain(secret);
+          }
+          const named = await cookieGet(attacker, `/v1/diagnostics?userId=${victim.userId}`);
+          expectProblem(named, 400, "request.invalid");
+        },
+      },
+    ],
+    control: async (owner) => {
+      const res = await cookieGet(owner, "/v1/diagnostics");
+      expect(res.status).toBe(200);
+      expect(res.body.integrations.map((i: { id: string }) => i.id)).toContain(owner.integrationId);
+    },
+  },
+  {
     route: "GET /v1/events/:id",
     attacks: [
       {
