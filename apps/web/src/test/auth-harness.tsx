@@ -24,6 +24,8 @@ export interface FakeBackend {
   codeTtlMs?: number;
   /** Stored events (newest first) for /v1/events. Leave unset and those routes answer 404. */
   events?: FakeEvent[];
+  /** Response for GET /v1/diagnostics. Leave unset and that route answers 404. */
+  diagnostics?: unknown;
   calls: { method: string; path: string; body: unknown; search?: string }[];
 }
 
@@ -171,6 +173,10 @@ export function installFetch(b: FakeBackend) {
       case "POST /api/auth/sign-out":
         b.authed = false;
         return json(200, { success: true });
+      case "GET /v1/diagnostics":
+        return b.diagnostics === undefined
+          ? json(404, { code: "not_found" })
+          : json(200, b.diagnostics);
       default:
         return (
           eventsRoute(b, method, url, body) ??

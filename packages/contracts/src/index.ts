@@ -3,6 +3,7 @@
  * A new event type, DTO or format starts here, and both sides import it.
  */
 export * from "./browser-events.js";
+export * from "./diagnostics.js";
 export * from "./envelope.js";
 export {
   type ContractIssue,
