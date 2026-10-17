@@ -24,9 +24,10 @@ pnpm install
 pnpm db:up / pnpm db:down     # Postgres in Docker on localhost:5433
 pnpm db:migrate               # apply Drizzle migrations
 pnpm db:generate              # create a migration from schema changes (no-op if none)
-pnpm dev                      # api + web + extension in watch mode (from M3-01; not defined yet)
+pnpm dev                      # api + web + extension in watch mode (not defined yet)
 pnpm --filter api dev         # api only: tsc watch (compiles to dist/, does not start the server yet)
 pnpm --filter api start       # run the built API (dist/main.js) with ../../.env; run `pnpm --filter api build` first
+pnpm --filter web dev         # dashboard only: Vite dev server, proxies /api and /v1 to the API on :3000
 pnpm --filter extension dev   # extension only: WXT dev build (load .output/chrome-mv3 unpacked)
 pnpm worker                   # pg-boss worker (needs the env below; fails closed without it)
 pnpm lint / pnpm format       # Biome (format writes files)

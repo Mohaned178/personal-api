@@ -67,6 +67,8 @@ export const configSchema = z
       protocol: /^https?$/,
       message: "BETTER_AUTH_URL must be an http(s) URL",
     }),
+    /** Directory with the built dashboard. Defaults to apps/web/dist next to the API package. */
+    WEB_DIST_DIR: z.string().min(1).optional(),
   })
   .refine(
     (config) => config.NODE_ENV !== "production" || isSecureOrLoopback(config.BETTER_AUTH_URL),
