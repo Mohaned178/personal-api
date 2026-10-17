@@ -22,7 +22,51 @@ export interface FakeBackend {
   integrations?: FakeIntegration[];
   /** Lifetime of the pairing codes the fake issues, in ms. */
   codeTtlMs?: number;
-  calls: { method: string; path: string; body: unknown }[];
+  /** Stored events (newest first) for /v1/events. Leave unset and those routes answer 404. */
+  events?: FakeEvent[];
+  calls: { method: string; path: string; body: unknown; search?: string }[];
+}
+
+export interface FakeEvent {
+  id: string;
+  integrationId: string;
+  type: string;
+  typeVersion: number;
+  occurredAt: string;
+  receivedAt: string;
+  origin: "collected" | "imported" | "derived";
+  data: Record<string, unknown>;
+  tags: string[];
+}
+
+export const EVENTS_PAGE_SIZE = 50;
+
+/** Filters like the API does; the cursor is the offset of the next row (opaque to the page). */
+function eventsRoute(b: FakeBackend, method: string, url: URL, body: unknown): Response | null {
+  const list = b.events;
+  if (!list || url.pathname !== "/v1/events") return null;
+  if (method === "DELETE") {
+    const ids = new Set((body as { ids: string[] }).ids);
+    const before = list.length;
+    b.events = list.filter((e) => !ids.has(e.id));
+    return json(200, { deleted: before - b.events.length });
+  }
+  if (method !== "GET") return null;
+  const q = url.searchParams;
+  const rows = list.filter(
+    (e) =>
+      (!q.get("source") || e.integrationId === q.get("source")) &&
+      (!q.get("type") || e.type === q.get("type")) &&
+      (!q.get("domain") || e.data.domain === q.get("domain")) &&
+      (!q.get("from") || e.occurredAt >= (q.get("from") as string)) &&
+      (!q.get("to") || e.occurredAt < (q.get("to") as string)),
+  );
+  const start = Number(q.get("cursor") ?? 0);
+  const end = start + EVENTS_PAGE_SIZE;
+  return json(200, {
+    events: rows.slice(start, end),
+    nextCursor: end < rows.length ? String(end) : null,
+  });
 }
 
 export interface FakeIntegration {
@@ -106,7 +150,7 @@ export function installFetch(b: FakeBackend) {
         body = raw;
       }
     }
-    b.calls.push({ method, path: url.pathname, body });
+    b.calls.push({ method, path: url.pathname, body, search: url.search });
     switch (`${method} ${url.pathname}`) {
       case "GET /v1/me":
         if (b.meNetworkError) throw new TypeError("network down");
@@ -128,7 +172,11 @@ export function installFetch(b: FakeBackend) {
         b.authed = false;
         return json(200, { success: true });
       default:
-        return integrationsRoute(b, method, url.pathname, body) ?? json(404, { code: "not_found" });
+        return (
+          eventsRoute(b, method, url, body) ??
+          integrationsRoute(b, method, url.pathname, body) ??
+          json(404, { code: "not_found" })
+        );
     }
   });
   vi.stubGlobal("fetch", fn);

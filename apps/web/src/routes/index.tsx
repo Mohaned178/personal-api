@@ -22,6 +22,9 @@ export function IndexPage() {
           Your Data. Your Endpoints. Your Rules.
         </p>
       </div>
+      <Link to="/events" className="text-sm underline">
+        Events
+      </Link>
       <Link to="/integrations" className="text-sm underline">
         Integrations
       </Link>
