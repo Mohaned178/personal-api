@@ -3,6 +3,7 @@ import { createRootRoute, createRoute, createRouter, redirect } from "@tanstack/
 import { fetchIsAuthenticated, fetchSetupStatus } from "@/lib/auth";
 import { RootLayout } from "@/routes/__root";
 import { LoginPage, SetupPage, SignupPage } from "@/routes/auth-pages";
+import { EventsPage } from "@/routes/events-page";
 import { IndexPage } from "@/routes/index";
 import { IntegrationsPage } from "@/routes/integrations-page";
 
@@ -37,6 +38,13 @@ const integrationsRoute = createRoute({
   path: "/integrations",
   beforeLoad: requireAuth,
   component: IntegrationsPage,
+});
+
+const eventsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/events",
+  beforeLoad: requireAuth,
+  component: EventsPage,
 });
 
 const loginRoute = createRoute({
@@ -78,6 +86,7 @@ const setupRoute = createRoute({
 export const routeTree = rootRoute.addChildren([
   indexRoute,
   integrationsRoute,
+  eventsRoute,
   loginRoute,
   signupRoute,
   setupRoute,
