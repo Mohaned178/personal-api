@@ -566,13 +566,17 @@ describe("the capture gate's reads", () => {
     });
 
     it("rewrites a stale mirror from the IndexedDB sync state (a kill between the two writes)", async () => {
-      const { wired, store, stored } = wireWith();
-      await store.setOwner(ownerOf(connectionFor(KEY)));
+      // The killed background wrote the sync state but not the mirror. Seeded before the new one
+      // is wired, so its start-up cannot read IndexedDB ahead of these writes.
+      const dead = world.open();
+      await dead.store.setOwner(ownerOf(connectionFor(KEY)));
       const marker = await keyMarker(KEY);
-      await store.settle({
+      await dead.store.settle({
         removeSeqs: [],
         sync: { state: "disconnected", disconnectedFor: marker, nextAttemptAt: null },
       });
+      world.kill(dead);
+      const { wired, stored } = wireWith();
       expect(stored[GATE_DISCONNECT_STORAGE_KEY]).toEqual({ disconnectedFor: null }); // stale
       await wired.ready;
       expect(stored[GATE_DISCONNECT_STORAGE_KEY]).toEqual({ disconnectedFor: marker });
