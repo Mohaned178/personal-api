@@ -1,6 +1,6 @@
 ---
 name: test-writer
-description: Writes failing tests for an [O] task or an [S] {deepseek} task in docs/PLAN.md before Sonnet or DeepSeek implements it. The tests come only from the task's "done when" criteria and the plan, never from an implementation.
+description: Writes failing tests for a task in docs/PLAN.md before it is implemented (only on request; /task writes tests inline). The tests come only from the task's "done when" criteria and the plan, never from an implementation.
 model: sonnet
 ---
 

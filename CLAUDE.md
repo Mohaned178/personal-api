@@ -78,7 +78,7 @@ Before calling a task done, run `pnpm lint && pnpm typecheck && pnpm test` in th
 
 ## Testing
 
-- **Sonnet writes the tests** (effort `low` or `medium`). On `high`/`xhigh`/security-touching tasks and `{deepseek}` tasks, tests come first, written from the task's "done when" criteria in `docs/PLAN.md`, before the implementer starts.
+- **Sonnet writes the tests** (effort `low` or `medium`). On `high`/`xhigh`/security-touching tasks, tests come first, written from the task's "done when" criteria in `docs/PLAN.md`, before the implementer starts.
 - Unit: Vitest. API: supertest against the Nest app. DB: Testcontainers (each run gets a fresh database).
 - Rule engine and URL sanitizer: fast-check property tests are required.
 - Fixed clocks for anything time-based (retention, focus segments, pairing expiry).
@@ -101,11 +101,13 @@ Each task in `docs/PLAN.md` §10 is tagged `[model · effort]`:
 
 Effort is `low` / `medium` / `high` / `xhigh`. Sonnet may use any of them for implementation; test-writing uses `low` or `medium`.
 
-Run work with `/task <ID>` or `/milestone <Mx>` (`.claude/skills/`). The session itself is just a **coordinator** (keep it on Sonnet · medium). It launches the `builder`, `test-writer` and `reviewer` subagents (`.claude/agents/`) with the tag's exact model and effort, so nobody switches `/model` or `/effort` by hand. `test-writer` (Sonnet · low/medium) writes the failing tests first where the task needs them.
+Run work with `/task <ID>` or `/milestone <Mx>` (`.claude/skills/`). **The session does the work itself**: it implements and writes the tests inline, with no `builder` or `test-writer` subagent per task. Only `Mx-R` reviews launch a `reviewer` subagent (Opus). Run the session on the tag's model (Sonnet for `S`, Haiku for `H`).
 
-**Opus never implements** (rule from 2026-10-16). Opus reviews at milestone level (`Mx-R`, security pass) at `high`/`xhigh`; there is **no per-task review** unless the user asks. Subagents other than the Sonnet `builder` and `test-writer` use Haiku or DeepSeek. Tasks marked `{deepseek}` after the tag are implemented by DeepSeek V4.1 Flash (max) through the `opencode-delegate` skill's `deepseek` lane, with no model question asked. Sonnet writes their tests first on `[S]` tasks.
+**Read before you implement.** At the start of every task, read in this order and don't write code before finishing: this `CLAUDE.md`, the task line and its "done when" criteria in `docs/PLAN.md` §10, every other `docs/PLAN.md` section the task relies on, the ADRs in `docs/adr/` that touch the area, and the existing code and tests next to the files you'll change. If the plan is missing something the task needs, or code and plan disagree, stop and ask the user.
 
-If you're a Haiku or Sonnet builder and hit a design question, an unexplained failure, or anything touching auth, tenant scoping or the invariants above, **report `needs-opus`**. Don't guess. The coordinator does not escalate on its own: it tells the user, who decides whether Opus joins to fix it.
+**Opus never implements** (rule from 2026-10-16). Opus reviews at milestone level (`Mx-R`, security pass) at `high`/`xhigh`; there is **no per-task review** unless the user asks. **DeepSeek is not used** for implementation (rule from 2026-10-17); ignore any leftover `{deepseek}` marker and treat the task as its `[model · effort]` tag says.
+
+If you hit a design question, an unexplained failure, or anything touching auth, tenant scoping or the invariants above, **stop and tell the user** with the evidence. Don't guess. The user decides whether Opus joins to fix it.
 
 ## Context limit
 
