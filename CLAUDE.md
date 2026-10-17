@@ -28,7 +28,8 @@ pnpm dev                      # api + web + extension in watch mode (not defined
 pnpm --filter api dev         # api only: tsc watch (compiles to dist/, does not start the server yet)
 pnpm --filter api start       # run the built API (dist/main.js) with ../../.env; run `pnpm --filter api build` first
 pnpm --filter web dev         # dashboard only: Vite dev server, proxies /api and /v1 to the API on :3000
-pnpm --filter extension dev   # extension only: WXT dev build (load .output/chrome-mv3 unpacked)
+pnpm --filter extension dev:firefox # extension in Firefox: WXT dev build, opens Firefox with it loaded (dev server on :3100)
+pnpm --filter extension dev   # extension for Edge: WXT dev build (load .output/chrome-mv3 unpacked)
 pnpm worker                   # pg-boss worker (needs the env below; fails closed without it)
 pnpm lint / pnpm format       # Biome (format writes files)
 pnpm typecheck
