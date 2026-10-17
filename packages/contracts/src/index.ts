@@ -11,6 +11,7 @@ export {
   ingestErrorCodeSchema,
   toContractIssues,
 } from "./errors.js";
+export * from "./events.js";
 export * from "./ingest.js";
 export * from "./integrations.js";
 export * from "./pairing.js";

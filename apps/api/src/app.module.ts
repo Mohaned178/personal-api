@@ -6,6 +6,7 @@ import type { AppConfig } from "./config/config";
 import { APP_CONFIG, ConfigModule } from "./config/config.module";
 import { isAuthPath } from "./modules/auth/auth.http";
 import { AuthModule } from "./modules/auth/auth.module";
+import { EventsModule } from "./modules/events/events.module";
 import { INGEST_EVENTS_PATH } from "./modules/ingest/ingest.controller";
 import { IngestModule } from "./modules/ingest/ingest.module";
 import { IntegrationsModule } from "./modules/integrations/integrations.module";
@@ -44,6 +45,7 @@ import { buildPinoHttpOptions } from "./platform/logging/logging";
     AuthModule,
     KeysModule,
     IntegrationsModule,
+    EventsModule,
     IngestModule,
     PairingModule,
   ],

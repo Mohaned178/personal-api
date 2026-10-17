@@ -301,7 +301,7 @@ Targets changed on 2026-10-14: Firefox + Edge (free stores only) instead of Chro
 - [x] **M3-01 [H · medium] `apps/web` scaffold:** Vite, React 19, TanStack Router + Query, Tailwind v4 and shadcn/ui. The API serves the build statically, with a dev proxy to the API.
 - [x] **M3-02 [S · medium] Auth pages:** first-run setup, signup, login, logout, and route guards.
 - [x] **M3-03 [S · medium] Integrations page:** list, add extension (shows the pairing code with a countdown), add HTTP integration (key shown once), and revoke with confirmation.
-- [ ] **M3-04 [S · medium] Platform events API (session):** list with filters + keyset cursor, get one, delete by ids, including cross-tenant tests.
+- [x] **M3-04 [S · medium] Platform events API (session):** list with filters + keyset cursor, get one, delete by ids, including cross-tenant tests.
 - [ ] **M3-05 [S · medium] Events browser UI:** virtualized table, filters (source, type, time range, domain), a detail drawer (JSON, origin, integration) and multi-select delete.
 - [ ] **M3-06 [S · medium] Diagnostics API and Health page:** last seen per integration, queue depth from heartbeats, and accepted/duplicate/dropped/rejected charts.
 - [ ] **M3-07 [H · low] UI polish:** empty, loading and error states, and copy.
