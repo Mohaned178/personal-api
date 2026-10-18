@@ -65,7 +65,7 @@
       }
     },
     {
-      "includes": ["packages/contracts/src/rules.ts", "packages/contracts/src/rules.spec.ts"],
+      "includes": ["packages/contracts/src/rule*.ts", "packages/rules/src/**"],
       "linter": {
         "rules": {
           "suspicious": {

@@ -39,6 +39,17 @@ export const RULE_LIMITS = {
 /** Action names kept for later versions. A rule that uses one is rejected, never ignored. */
 export const RESERVED_ACTIONS = ["forward"] as const;
 
+/** Every action a rule can use, in the order the docs list them. A test keeps it in step with `ruleActionSchema`. */
+export const RULE_ACTION_NAMES = [
+  "allow",
+  "drop",
+  "keep_query",
+  "redact",
+  "coarsen",
+  "tag",
+  "set_retention",
+] as const;
+
 /** The actions each stage accepts. Collect rules decide and reshape; process rules only label. */
 export const RULE_ACTIONS_BY_STAGE = {
   collect: ["allow", "drop", "redact", "coarsen", "keep_query"],
@@ -292,3 +303,22 @@ export const ruleSchema = z
   .strictObject({ id: z.uuid(), ...ruleBaseShape })
   .superRefine(validateRule);
 export type Rule = z.output<typeof ruleSchema>;
+
+const DUPLICATE_RULE_ID = safeMessage("Duplicate rule id");
+
+/**
+ * A user's rules at one version: what the engine runs and what the extension fetches (M4-06).
+ * The number of rules per user is capped by the rules API (M4-04), not here.
+ */
+export const ruleSetSchema = z
+  .strictObject({ version: z.int().min(0), rules: z.array(ruleSchema) })
+  .superRefine((ruleSet, ctx) => {
+    const seen = new Set<string>();
+    ruleSet.rules.forEach((rule, index) => {
+      if (seen.has(rule.id)) {
+        ctx.addIssue({ code: "custom", path: ["rules", index, "id"], message: DUPLICATE_RULE_ID });
+      }
+      seen.add(rule.id);
+    });
+  });
+export type RuleSet = z.output<typeof ruleSetSchema>;
