@@ -9,6 +9,9 @@ import { utcDateTimeSchema } from "./primitives.js";
 
 export const INTEGRATION_NAME_MAX_LENGTH = 80;
 
+/** The kinds of source an integration can be. Rules select on these too (`when.source`). */
+export const INTEGRATION_KINDS = ["browser-extension", "http"] as const;
+
 /** What the user calls the source ("Work laptop"). Trimmed, 1 to 80 characters. */
 export const integrationNameSchema = z.string().trim().min(1).max(INTEGRATION_NAME_MAX_LENGTH);
 
@@ -18,7 +21,7 @@ export const integrationNameSchema = z.string().trim().min(1).max(INTEGRATION_NA
  * the dashboard never shows a key for the user to copy by hand.
  */
 export const createIntegrationRequestSchema = z.strictObject({
-  kind: z.enum(["http", "browser-extension"]),
+  kind: z.enum(INTEGRATION_KINDS),
   name: integrationNameSchema,
 });
 export type CreateIntegrationRequest = z.output<typeof createIntegrationRequestSchema>;
@@ -34,7 +37,7 @@ export type RenameIntegrationRequest = z.output<typeof renameIntegrationRequestS
  */
 export const integrationSchema = z.strictObject({
   id: z.uuid(),
-  kind: z.enum(["browser-extension", "http"]),
+  kind: z.enum(INTEGRATION_KINDS),
   name: z.string(),
   defaultPolicy: z.enum(["deny", "allow"]),
   status: z.enum(["active", "revoked"]),
