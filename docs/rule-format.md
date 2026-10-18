@@ -300,7 +300,9 @@ threw, for example a malformed rule set). `evaluate` never throws.
    has to keep that and make an allowed output re-evaluate to `allow`. Options for the owner: the
    server skips the rules that the extension already applied (trust `meta.ruleSetVersion`), or the
    save-time validation refuses a rule that reads a field it rewrites, or the server re-checks
-   only `drop` rules. `evaluate` is pinned by a "known limitation" test until then.
+   only `drop` rules. `evaluate` is pinned by a "known limitation" test until then. The M4-03 property tests claim a
+   stable *event* on re-evaluation only for rule sets whose conditions read fields no rule rewrites
+   (`evaluate.property.spec.ts`); the transforms are idempotent unconditionally.
 2. **`keep_query` has nowhere to put the query (before M4-05 and M4-06).** The action exists and
    takes no parameters, and the engine reports `keepQuery: true`. But every event schema is
    strict and `path` rejects `?` and `#`. Keeping a query needs an event-schema change (for

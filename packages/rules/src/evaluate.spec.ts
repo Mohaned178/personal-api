@@ -254,7 +254,7 @@ describe("evaluate: conditions on a missing field", () => {
   });
 });
 
-describe("evaluate: each op, once (the full tables are M4-03)", () => {
+describe("evaluate: each op, once (the full tables: evaluate.tables.spec.ts)", () => {
   const holds = (cond: Record<string, unknown>, event = pageVisited()) =>
     evaluate(event, compile([rule(1, { when: { all: [cond] } })]), "deny", EXT).decision ===
     "allow";
