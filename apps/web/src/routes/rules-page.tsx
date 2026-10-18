@@ -47,11 +47,6 @@ const DIAGNOSTICS_KEY = ["diagnostics", "rule-drops"] as const;
 const selectClass =
   "h-9 rounded-md border bg-background px-2 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50";
 
-const ALL_ACTIONS: ActionName[] = [
-  ...RULE_ACTIONS_BY_STAGE.collect,
-  ...RULE_ACTIONS_BY_STAGE.process,
-];
-
 function summarize(rule: Rule): string {
   return rule.then.map((a) => a.action).join(", ");
 }
@@ -155,11 +150,13 @@ function ConditionRow({
 }
 
 function ActionRow({
+  stage,
   index,
   action,
   onChange,
   onRemove,
 }: {
+  stage: RuleDraft["stage"];
   index: number;
   action: ActionDraft;
   onChange: (next: ActionDraft) => void;
@@ -174,7 +171,7 @@ function ActionRow({
         value={action.action}
         onChange={(e) => onChange({ action: e.target.value as ActionName, param: "" })}
       >
-        {ALL_ACTIONS.map((name) => (
+        {RULE_ACTIONS_BY_STAGE[stage].map((name) => (
           <option key={name} value={name}>
             {name}
           </option>
@@ -345,6 +342,7 @@ function RuleForm({ draft, onChange }: { draft: RuleDraft; onChange: (next: Rule
         <ul className="flex flex-col gap-2">
           {draft.then.map((a, i) => (
             <ActionRow
+              stage={draft.stage}
               // biome-ignore lint/suspicious/noArrayIndexKey: rows have no identity of their own
               key={i}
               index={i}
