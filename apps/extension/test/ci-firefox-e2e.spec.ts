@@ -69,6 +69,15 @@ describe("CI job e2e-firefox", () => {
     expect(build).toBeLessThan(run);
   });
 
+  it("builds the workspace packages the extension imports (contracts and rules) before it", () => {
+    const build = block.indexOf("pnpm --filter extension build:firefox");
+    for (const pkg of ["contracts", "rules"]) {
+      const step = block.indexOf(`pnpm --filter @personal-api/${pkg} build`);
+      expect(step, `${pkg} is built`).toBeGreaterThan(-1);
+      expect(step, `${pkg} is built before the extension`).toBeLessThan(build);
+    }
+  });
+
   it("runs the Firefox Playwright config, headless through the harness (no xvfb)", () => {
     expect(block).toMatch(FIREFOX_RUN);
     expect(block).not.toMatch(/xvfb/i);

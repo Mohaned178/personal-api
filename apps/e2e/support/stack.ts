@@ -35,7 +35,20 @@ export interface StoredEvent {
   client_event_id: string;
   type: string;
   data: Record<string, unknown>;
+  /** Why the server kept the event: the rule-set version and the rules that matched (M4-05). */
+  trace: { ruleSetVersion: number; matched: { ruleId: string }[]; decidedBy: string } | null;
   occurred_at: Date;
+}
+
+/** A rule document as the dashboard saves it (rule-format.md); the server sets `id` and owner. */
+export type RuleDocument = Record<string, unknown>;
+
+/** The user's rules, changed over HTTP with the user's session, exactly as the dashboard does. */
+export interface AccountRules {
+  /** Saves a new rule. Returns its id and the rule-set version after the change. */
+  create(rule: RuleDocument): Promise<{ id: string; version: number }>;
+  /** Replaces a saved rule with a whole new definition. Returns the new rule-set version. */
+  replace(id: string, rule: RuleDocument): Promise<{ version: number }>;
 }
 
 export interface PairedAccount {
@@ -43,6 +56,7 @@ export interface PairedAccount {
   integrationId: string;
   /** Plaintext pairing code exactly as the dashboard shows it (10-minute, single use). */
   pairingCode: string;
+  rules: AccountRules;
 }
 
 export interface E2eStack {
@@ -54,6 +68,7 @@ export interface E2eStack {
    * A fresh user (own session) with a fresh browser-extension integration and a fresh code. The
    * user gets one rule that allows page events of `allowedDomains` (default `127.0.0.1`, the
    * fixture site), which the extension fetches when it pairs; everything else is denied by default.
+   * With an empty `allowedDomains` the user has no rule at all. `rules` changes the rules later.
    */
   createPairableAccount(label?: string, allowedDomains?: string[]): Promise<PairedAccount>;
   /** Every stored event of an integration, oldest first. */
@@ -64,6 +79,16 @@ export interface E2eStack {
   pairingCodeUsed(integrationId: string): Promise<boolean>;
   stop(): Promise<void>;
 }
+
+/** The one rule `createPairableAccount` saves: allow page events of these domains. */
+export const allowDomainsRule = (domains: string[]): RuleDocument => ({
+  name: "e2e: allow the fixture site",
+  enabled: true,
+  priority: 100,
+  stage: "collect",
+  when: { all: [{ field: "data.domain", op: "in", value: domains }] },
+  then: [{ action: "allow" }],
+});
 
 async function freePort(): Promise<number> {
   return new Promise((resolvePort, reject) => {
@@ -215,24 +240,35 @@ export async function startStack(): Promise<E2eStack> {
     const integrationId = ((await created.json()) as { integration: { id: string } }).integration
       .id;
 
+    const rules: AccountRules = {
+      create: async (definition) => {
+        const res = await fetch(`${apiOrigin}/v1/rules`, {
+          method: "POST",
+          headers: session,
+          body: JSON.stringify(definition),
+        });
+        if (res.status !== 201)
+          throw new Error(`e2e: create rule ${res.status} ${await res.text()}`);
+        const body = (await res.json()) as { rule: { id: string }; version: number };
+        return { id: body.rule.id, version: body.version };
+      },
+      replace: async (id, definition) => {
+        const res = await fetch(`${apiOrigin}/v1/rules/${id}`, {
+          method: "PUT",
+          headers: session,
+          body: JSON.stringify(definition),
+        });
+        if (res.status !== 200)
+          throw new Error(`e2e: replace rule ${res.status} ${await res.text()}`);
+        return { version: ((await res.json()) as { version: number }).version };
+      },
+    };
+
     // The user's rules decide what is collected, in the extension (M4-06: it fetches them when it
     // pairs) and again on the server (M4-05). A new extension denies by default, so allow page
     // events of these domains. Events without a domain (tab_opened without one, sessions) stay
     // denied.
-    const rule = await fetch(`${apiOrigin}/v1/rules`, {
-      method: "POST",
-      headers: session,
-      body: JSON.stringify({
-        name: "e2e: allow the fixture site",
-        enabled: true,
-        priority: 100,
-        stage: "collect",
-        when: { all: [{ field: "data.domain", op: "in", value: allowedDomains }] },
-        then: [{ action: "allow" }],
-      }),
-    });
-    if (rule.status !== 201)
-      throw new Error(`e2e: create rule ${rule.status} ${await rule.text()}`);
+    if (allowedDomains.length > 0) await rules.create(allowDomainsRule(allowedDomains));
 
     const issued = await fetch(`${apiOrigin}/v1/integrations/${integrationId}/pairing-code`, {
       method: "POST",
@@ -243,7 +279,7 @@ export async function startStack(): Promise<E2eStack> {
         `e2e: pairing code ${issued.status} ${await issued.text()} for ${integrationId}`,
       );
     const { pairingCode } = (await issued.json()) as { pairingCode: string };
-    return { userId, integrationId, pairingCode };
+    return { userId, integrationId, pairingCode, rules };
   };
 
   return {
@@ -253,7 +289,7 @@ export async function startStack(): Promise<E2eStack> {
     eventsOf: async (integrationId) =>
       (
         await pool.query<StoredEvent>(
-          `select id, user_id, integration_id, client_event_id, type, data, occurred_at
+          `select id, user_id, integration_id, client_event_id, type, data, trace, occurred_at
              from events where integration_id = $1 order by occurred_at, id`,
           [integrationId],
         )
