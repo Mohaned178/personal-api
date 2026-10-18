@@ -12,7 +12,7 @@ import {
   parseEvent,
   toContractIssues,
 } from "@personal-api/contracts";
-import { evaluate } from "@personal-api/rules";
+import { canTrustCollected, evaluate } from "@personal-api/rules";
 import type { z } from "zod";
 import { CLOCK, type Clock } from "../../platform/clock/clock";
 import { assertUserScope } from "../../platform/db/tenant-scope";
@@ -122,12 +122,14 @@ type Allowed = Extract<ReturnType<typeof evaluate>, { decision: "allow" }>;
  * not be loaded are `ingest.rule_error`.
  *
  * `collected` (docs/rule-format.md, open item 1) is set only when the DB says the sender is a
- * browser extension, the event names the server's current rule-set version, and that version has
- * collect rules. The extension then already applied this version's rules to the event, so an event
- * that no rule decides is not left to the default policy (it may have been rewritten out of its
- * own rule's reach). A user with no rules (version 0), a stale version or an `http` sender gets the
- * full evaluation. `keepQuery` is ignored: events have no place for a query string yet, so it stays
- * stripped (open item 2).
+ * browser extension, the event names the server's current rule-set version, that version has
+ * collect rules, and `canTrustCollected` says the rules need it: an `allow` rule reads a field that
+ * a collect transform rewrites. The extension then already applied this version's rules to the
+ * event, so an event that no rule decides is not left to the default policy (it may have been
+ * rewritten out of its own rule's reach). Every other event (a user with no rules, a stale
+ * version, an `http` sender, rules that rewrite nothing an `allow` rule reads) gets the full
+ * evaluation and the default policy. `keepQuery` is ignored: events have no place for a query
+ * string yet, so it stays stripped (open item 2).
  */
 function enforce(
   event: { id: string; meta?: { ruleSetVersion: number } | undefined },
@@ -139,7 +141,8 @@ function enforce(
     caller.kind === "browser-extension" &&
     compiled.version >= 1 &&
     compiled.collect.length > 0 &&
-    event.meta?.ruleSetVersion === compiled.version;
+    event.meta?.ruleSetVersion === compiled.version &&
+    canTrustCollected(compiled);
   const result = evaluate(event, compiled, caller.defaultPolicy, {
     source: caller.kind,
     collected,

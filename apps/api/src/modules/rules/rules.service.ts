@@ -1,8 +1,8 @@
 import { Inject, Injectable } from "@nestjs/common";
 import {
   type DeleteRuleResponse,
-  RULE_NOT_FOUND_CODE,
   RULE_LIMIT_REACHED_CODE,
+  RULE_NOT_FOUND_CODE,
   RULES_PER_USER_MAX,
   type Rule,
   type RuleDefinition,

@@ -295,9 +295,12 @@ describe("planBatch: the rules", () => {
       meta: { ruleSetVersion, client: "pa-extension/1" },
     });
     const extension: Caller = { kind: "browser-extension", defaultPolicy: "deny" };
+    // The rule rewrites the path it reads, so the extension's output no longer matches it (S3).
     const workOnly = rule(RULE_A, {
       when: { all: [{ field: "data.path", op: "starts_with", value: "/work/" }] },
+      then: [{ action: "coarsen", segments: 1 }, { action: "allow" }],
     });
+    const pathRead = { field: "data.path", op: "starts_with", value: "/work/" } as const;
     const rewritten = (version: number) =>
       visit({ data: { domain: "example.com", path: "/work" }, ...meta(version) });
 
@@ -311,6 +314,33 @@ describe("planBatch: the rules", () => {
         rules: rulesOf(2, [workOnly]),
       });
       expect(item?.kind).toBe(expected);
+    });
+
+    it.each([
+      ["rules that rewrite nothing", [rule(RULE_A, { when: { all: [pathRead] } })]],
+      [
+        "a rewrite that no allow rule reads",
+        [
+          rule(RULE_A, {
+            when: { all: [{ field: "data.domain", op: "eq", value: "other.example" }] },
+          }),
+          rule(RULE_B, { when: {}, then: [{ action: "coarsen", segments: 1 }] }),
+        ],
+      ],
+      [
+        "a rewritten field that only a drop rule reads",
+        [
+          rule(RULE_A, { when: { all: [pathRead] }, then: [{ action: "drop" }] }),
+          rule(RULE_B, { when: {}, then: [{ action: "coarsen", segments: 1 }] }),
+        ],
+      ],
+    ])("is not trusted for %s, even at the current version (M4-R S3)", (_name, rules) => {
+      const [item] = planBatch([rewritten(2)], NOW, {
+        caller: extension,
+        rules: rulesOf(2, rules),
+      });
+      expect(item?.kind).toBe("dropped");
+      expect(item).toMatchObject({ decidedBy: "default_policy" });
     });
 
     it("is not trusted at version 0, with no collect rules, from an http source, or with no meta", () => {

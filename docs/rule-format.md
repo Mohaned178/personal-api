@@ -315,13 +315,17 @@ authenticated integration row, never from the body (invariant 4).
 ### Events the extension already decided
 
 Evaluation uses `context.collected` when the integration is a `browser-extension`, the event's
-`meta.ruleSetVersion` equals the server's current version, that version is at least 1, and the set
-has at least one collect rule. Then an event that **no collect rule decides** is allowed instead of
+`meta.ruleSetVersion` equals the server's current version, that version is at least 1, the set
+has at least one collect rule, **and the rules need it**: an `allow` rule reads a field that a
+collect transform rewrites (`data.path` when any rule has a `coarsen`, or a field some rule
+`redact`s). That is `canTrustCollected` in `packages/rules`, computed once per compiled set. Without
+such a rule a re-evaluation is stable, so the event gets the full evaluation and the default policy
+still decides. Then an event that **no collect rule decides** is allowed instead of
 following `default_policy` (its trace says `decidedBy: "client"`). A rule that matches and decides
 still decides, in the same order, so a `drop` rule still drops. Transforms and the process stage
-still run. The trade-off: a client that claims the current version skips the server's default-deny
-for events no rule decides. Rules still decide the rest, and version 0 (a user with no rules) is
-never trusted.
+still run. The trade-off: with such a rule set, a client that claims the current version skips the server's
+default-deny for events no rule decides. Rules still decide the rest, and version 0 (a user with
+no rules) is never trusted.
 
 ## Extension sync (M4-06)
 
