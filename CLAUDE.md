@@ -11,7 +11,7 @@ TypeScript (strict) everywhere · Node 24 LTS · pnpm workspaces + Turborepo · 
 - `apps/api`: NestJS 11 (Express 5 platform), Drizzle ORM, PostgreSQL 18, pg-boss, Better Auth, nestjs-zod, nestjs-pino
 - `apps/web`: Vite, React 19, TanStack Router + Query, shadcn/ui, Tailwind v4
 - `apps/extension`: WXT (MV3, `firefox-mv3` is the primary build, `chrome-mv3` for Edge; the Chrome Web Store comes after v1)
-- `apps/e2e`: Firefox is the primary e2e (web-ext + Selenium/geckodriver); Edge smoke via Playwright loading the unpacked Chromium build. Until M4-00 lands, the scripts below still run Playwright/Chromium as `test:e2e`
+- `apps/e2e`: Firefox is the primary e2e (web-ext + Selenium/geckodriver); Edge smoke via Playwright loading the unpacked Chromium build.
 - `packages/contracts`: Zod schemas shared by everything (envelope, event types, DTOs, rule and saved-query formats)
 - `packages/rules`: pure rule engine used by both the extension and the API
 
@@ -35,9 +35,11 @@ pnpm lint / pnpm format       # Biome (format writes files)
 pnpm typecheck
 pnpm test                     # unit tests (no Docker needed)
 pnpm test:int                 # integration tests (Testcontainers, needs Docker)
-pnpm e2e:install              # once per machine: Playwright's bundled Chromium
-pnpm test:e2e                 # Playwright; builds the extension and the spike first
-pnpm --filter @personal-api/e2e test:e2e:firefox:smoke # Firefox smoke (Selenium + geckodriver); build firefox-mv3 first
+pnpm e2e:install              # once per machine: Playwright's bundled Chromium (Edge smoke only)
+pnpm test:e2e                 # Firefox e2e (Selenium + geckodriver); builds contracts, api and firefox-mv3 first
+pnpm --filter @personal-api/e2e test:e2e:edge:smoke # Edge smoke (Playwright + Chromium); builds the extension first
+pnpm --filter @personal-api/e2e test:e2e:edge # all Chromium specs (local only)
+pnpm --filter @personal-api/e2e test:e2e:firefox:spike # Spike C on Firefox (not in CI)
 pnpm --filter extension build # builds chrome-mv3 (Edge) and firefox-mv3 into apps/extension/.output
 pnpm --filter extension build:firefox # Firefox only (load .output/firefox-mv3 via about:debugging)
 pnpm --filter extension zip   # store zips for both targets

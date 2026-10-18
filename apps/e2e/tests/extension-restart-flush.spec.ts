@@ -32,7 +32,7 @@ import type { PairedAccount } from "../support/stack";
 // visited path is in the database exactly once, all client_event_ids are distinct, none lost.
 //
 // Needs Docker (Testcontainers) or E2E_DATABASE_URL, the built API and the built extension
-// (`pnpm test:e2e` builds them). Always runs in CI. The Firefox counterpart is
+// (`pnpm test:e2e:edge` builds them). Not part of the Edge smoke, so CI does not run it. The Firefox counterpart is
 // extension-restart-flush-firefox.spec.ts.
 
 const ALLOWED_DOMAIN = "127.0.0.1";

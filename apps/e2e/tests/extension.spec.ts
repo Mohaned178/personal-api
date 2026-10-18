@@ -9,7 +9,7 @@ import {
 } from "../support/extension";
 import { expect, test } from "../support/fixtures";
 
-test("loads the extension and exposes the expected manifest", async ({
+test("loads the extension and exposes the expected manifest @smoke", async ({
   extension,
   serviceWorker,
 }) => {
