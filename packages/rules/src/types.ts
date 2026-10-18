@@ -1,6 +1,7 @@
 import type {
   ContractIssue,
   DEFAULT_POLICIES,
+  EVALUATION_ERROR_REASONS,
   INTEGRATION_KINDS,
   KnownEvent,
   Rule,
@@ -46,11 +47,7 @@ export interface EvaluateContext {
 }
 
 /** Why evaluation failed. The event is not collected or stored (invariant 1). */
-export type EvaluationErrorReason =
-  | "invalid_context"
-  | "invalid_event"
-  | "invalid_result"
-  | "failed";
+export type EvaluationErrorReason = (typeof EVALUATION_ERROR_REASONS)[number];
 
 export type EvaluationResult =
   | {
@@ -60,7 +57,7 @@ export type EvaluationResult =
       tags: string[];
       /** Smallest `set_retention` of the matching process rules, or null for none. */
       retentionDays: number | null;
-      /** A `keep_query` rule matched. See `docs/rule-format.md`, open item 1. */
+      /** A `keep_query` rule matched. See `docs/rule-format.md`, open item 2. */
       keepQuery: boolean;
       trace: RuleTrace;
     }

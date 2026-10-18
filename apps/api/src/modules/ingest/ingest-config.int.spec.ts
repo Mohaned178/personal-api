@@ -7,7 +7,8 @@
  * disabled rules, in evaluation order); the answer carries a strong ETag and `If-None-Match`
  * (also weak, a list, `*`) gives 304 with no body; a rule change or a policy change gives a new
  * ETag; two users never see each other's rules; a rule set that cannot be loaded is a 409
- * `ingest.rule_error` with no rules in it; a key without ingest rights is refused.
+ * `ingest.rule_error` with no rules in it; a key without ingest rights is refused; the key of an
+ * `http` integration is refused too, since only a browser extension applies rules (M4-R S2).
  */
 import type { RuleDefinition } from "@personal-api/contracts";
 import { ingestConfigResponseSchema } from "@personal-api/contracts";
@@ -34,9 +35,19 @@ afterAll(async () => {
   await h?.stop();
 });
 
+/** The fixture's integrations are `http`; the config route is for browser extensions. */
+async function setKind(integrationId: string, kind: "browser-extension" | "http") {
+  await h.testDb.pool.query("update integrations set kind = $1 where id = $2", [
+    kind,
+    integrationId,
+  ]);
+}
+
 beforeEach(async () => {
   await h.reset();
   await setDefaultPolicy(h.testDb.pool, "deny");
+  await setKind(h.a.integrationId, "browser-extension");
+  await setKind(h.b.integrationId, "browser-extension");
 });
 
 function ruleFor(name: string, overrides: Partial<RuleDefinition> = {}): RuleDefinition {
@@ -94,6 +105,20 @@ describe("GET /v1/ingest/config", () => {
     await setDefaultPolicy(h.testDb.pool, "allow", h.a.integrationId);
     expect((await getConfig(h.a.ingestKey)).body.defaultPolicy).toBe("allow");
     expect((await getConfig(h.b.ingestKey)).body.defaultPolicy).toBe("deny");
+  });
+});
+
+describe("who may ask", () => {
+  it("refuses the key of an http integration with 403 ingest.config_unsupported", async () => {
+    await addRule(h.a.userId, ruleFor("one"));
+    await setKind(h.a.integrationId, "http");
+    const res = await getConfig(h.a.ingestKey);
+    expect(res.status).toBe(403);
+    expect(res.headers["content-type"]).toMatch(PROBLEM_JSON);
+    expect(res.body.code).toBe("ingest.config_unsupported");
+    expect(JSON.stringify(res.body)).not.toContain("one");
+    // The other user's extension key still works.
+    expect((await getConfig(h.b.ingestKey)).status).toBe(200);
   });
 });
 

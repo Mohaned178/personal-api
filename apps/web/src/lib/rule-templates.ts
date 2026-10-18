@@ -13,6 +13,8 @@ export interface RuleTemplate {
 }
 
 const SITE = { field: "data.domain", op: "domain_matches", value: "example.com" } as const;
+/** `*.example.com` does not match `example.com` itself, so a block needs both (rule-format.md). */
+const SUBDOMAINS = { ...SITE, value: "*.example.com" } as const;
 
 export const RULE_TEMPLATES: readonly RuleTemplate[] = [
   {
@@ -65,13 +67,14 @@ export const RULE_TEMPLATES: readonly RuleTemplate[] = [
   {
     id: "never-site",
     title: "Never collect a site",
-    description: "Drop everything from a site, even if another rule would allow it.",
+    description:
+      "Drop everything from a site and its subdomains, even if another rule would allow it.",
     rule: {
       name: "Never collect example.com",
       enabled: true,
       priority: 0,
       stage: "collect",
-      when: { all: [SITE] },
+      when: { any: [SITE, SUBDOMAINS] },
       then: [{ action: "drop" }],
     },
   },

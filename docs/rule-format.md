@@ -213,7 +213,7 @@ Ops by kind: **domain** all text ops plus `domain_matches`; **path** all text op
 | Tag length                    | 32         |
 | `set_retention` days          | 1 to 3650  |
 
-A user can have at most 100 rules (`RULES_PER_USER_MAX`); the rules API refuses the 101st with `409 rules.limit_reached`.
+A user can have at most 100 rules (`RULES_PER_USER_MAX`); the rules API refuses the 101st with `409 rule.limit_reached`.
 
 ## Evaluation
 

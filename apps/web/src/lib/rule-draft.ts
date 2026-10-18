@@ -51,8 +51,6 @@ export interface RuleDraft {
   then: ActionDraft[];
 }
 
-export const SOURCES = ["browser-extension", "http"] as const;
-
 /** Every field name a condition can use, across all event types, with the kind of its first spec. */
 export const CONDITION_FIELDS: readonly { field: string; kind: RuleFieldKind }[] = (() => {
   const seen = new Map<string, RuleFieldKind>();

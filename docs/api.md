@@ -139,7 +139,9 @@ curl -s -o /dev/null -w "%{http_code}\n" -X POST "$BASE/v1/ingest/heartbeat" \
 ### The rules the extension runs
 
 `GET /v1/ingest/config` (same Bearer ingest key) returns your enabled collect rules, the rule-set
-version and the integration's default policy, with a strong `ETag`. The browser extension polls it
+version and the integration's default policy, with a strong `ETag`. Only the key of a
+`browser-extension` integration may call it: an `http` integration's key gets
+`403 ingest.config_unsupported`, because only an extension applies rules itself. The browser extension polls it
 with `If-None-Match`; a match is `304` with no body. The format and the extension's behaviour are
 in [rule-format.md](rule-format.md#extension-sync-m4-06).
 
@@ -178,7 +180,7 @@ curl -s -X DELETE "$BASE/v1/rules/<rule-id>" -b "$JAR"   # { "version": 3 }
   every create, replace and delete (never on a refused change). The same transaction writes a
   `rule_history` snapshot of all the user's rules at that version, so an old event's trace stays
   explainable after a rule changed or was deleted.
-- **Limit.** A user can have 100 rules; the 101st is `409 rules.limit_reached`.
+- **Limit.** A user can have 100 rules; the 101st is `409 rule.limit_reached`.
 - **Validation** is the contracts' `ruleDefinitionSchema`, the same one the engine and the extension use.
   `400 request.invalid` lists `issues` (path and fixed message, never the rule's values).
 
@@ -246,9 +248,10 @@ Errors are `application/problem+json` (RFC 9457) with a stable `code`:
 | 401  | `auth.invalid_key`         | The Bearer ingest key is missing, malformed, unknown or revoked.                       |
 | 401  | `auth.unauthenticated`     | A dashboard route was called without a valid session cookie.                           |
 | 403  | `auth.signup_disabled`     | Sign-up is closed (`ALLOW_SIGNUP=false` and an account already exists).                 |
+| 403  | `ingest.config_unsupported` | `GET /v1/ingest/config` only: the key belongs to an `http` integration, not a browser extension. |
 | 404  | `integration.not_found`    | The integration id is unknown, belongs to another user, or is malformed (all look the same). |
 | 404  | `rule.not_found`           | The rule id is unknown, belongs to another user, or is malformed (all look the same). |
-| 409  | `rules.limit_reached`      | The user already has 100 rules.                                                        |
+| 409  | `rule.limit_reached`       | The user already has 100 rules.                                                        |
 | 409  | `ingest.rule_error`        | `GET /v1/ingest/config` only: a stored rule is invalid, so no rules are sent.          |
 | 413  | `http.payload_too_large`   | The body is over the route's limit (100 KB, or 256 KB for `/v1/ingest/events`), or has no declared length on the auth routes. |
 | 500  | `internal.error`           | Unexpected failure. Details are logged, not returned.                                  |

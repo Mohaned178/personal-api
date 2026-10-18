@@ -2,7 +2,7 @@
 // It asks the same engine with the same stored rules as capture does (a `page_visited` probe for
 // the sanitized page), so the popup cannot disagree with what is collected. It never shows the URL.
 
-import { evaluate } from "@personal-api/rules";
+import { type EvaluationResult, evaluate } from "@personal-api/rules";
 import { sanitizeUrl } from "../sanitize-url";
 import type { ActiveRules } from "./active-rules";
 import { probeEvents } from "./gate";
@@ -27,6 +27,12 @@ export interface VerdictTab {
   incognito?: boolean;
 }
 
+function reasonOf(decidedBy: string, active: ActiveRules): VerdictReason {
+  return decidedBy === "default_policy"
+    ? { by: "default_policy" }
+    : { by: "rule", ruleName: active.ruleNames.get(decidedBy) ?? "a rule" };
+}
+
 export function currentTabVerdict(
   tab: VerdictTab | undefined,
   active: ActiveRules | null,
@@ -37,19 +43,22 @@ export function currentTabVerdict(
     const page = sanitizeUrl(tab.url);
     if (page === null) return { kind: "unsupported" };
     if (active === null) return { kind: "no_rules" };
-    const [visit] = probeEvents(page);
-    if (visit === undefined) return { kind: "error" };
-    const result = evaluate(visit, active.ruleSet, active.defaultPolicy, {
-      source: "browser-extension",
-      process: false,
-    });
-    if (result.decision === "error") return { kind: "error" };
-    const decidedBy = result.trace.decidedBy;
-    const reason: VerdictReason =
-      decidedBy === "default_policy"
-        ? { by: "default_policy" }
-        : { by: "rule", ruleName: active.ruleNames.get(decidedBy) ?? "a rule" };
-    return { kind: result.decision === "allow" ? "collected" : "blocked", reason };
+    // The same probe set as `mayCollect`, which admits a page when ANY probe event is allowed: a
+    // rule that allows only `focus_segment` collects the page, so the popup must say so. Without
+    // an allowed probe, the page-visit probe (the first) says who blocked it.
+    let blocked: EvaluationResult | undefined;
+    for (const probe of probeEvents(page)) {
+      const result = evaluate(probe, active.ruleSet, active.defaultPolicy, {
+        source: "browser-extension",
+        process: false,
+      });
+      if (result.decision === "allow") {
+        return { kind: "collected", reason: reasonOf(result.trace.decidedBy, active) };
+      }
+      blocked ??= result;
+    }
+    if (blocked === undefined || blocked.decision === "error") return { kind: "error" };
+    return { kind: "blocked", reason: reasonOf(blocked.trace.decidedBy, active) };
   } catch {
     return { kind: "error" };
   }

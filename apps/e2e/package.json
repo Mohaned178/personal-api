@@ -13,6 +13,7 @@
     "test:e2e:edge:smoke": "pnpm --filter @personal-api/contracts build && pnpm --filter @personal-api/rules build && pnpm --filter @personal-api/api build && pnpm --filter extension build && playwright test --grep @smoke"
   },
   "devDependencies": {
+    "@personal-api/contracts": "workspace:*",
     "@personal-api/tsconfig": "workspace:*",
     "@playwright/test": "1.63.0",
     "@testcontainers/postgresql": "12.2.0",

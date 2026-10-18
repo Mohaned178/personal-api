@@ -125,7 +125,7 @@ function columnsOf(definition: RuleDefinition) {
  * rule the dashboard or the extension would run in a different shape (invariant 1).
  */
 function toRule(row: RuleRow): Rule {
-  return ruleSchema.parse({ id: row.id, ...(row.definition as object) });
+  return ruleSchema.parse({ ...(row.definition as object), id: row.id });
 }
 
 async function readVersion(scope: TenantScope): Promise<number> {

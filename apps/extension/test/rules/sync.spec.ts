@@ -278,6 +278,34 @@ describe("the alarm", () => {
     expect(t.alarms.get(RULES_SYNC_ALARM_NAME)?.periodInMinutes).toBe(99);
   });
 
+  it("start removes the allow list key that M2-07 left in storage (M4-R nit)", async () => {
+    const t = setup({
+      respond: () => json(config),
+      stored: { allowList: ["github.com"], paused: false },
+    });
+    await t.sync.start();
+    expect(t.storage.stored).not.toHaveProperty("allowList");
+    expect(t.storage.stored.paused).toBe(false);
+  });
+
+  it("start still syncs when the old key cannot be removed", async () => {
+    const storage = memoryStorage();
+    const sync = createRulesSync({
+      getConnection: async () => connectionFor(),
+      storage: {
+        ...storage,
+        remove: async (key: string) => {
+          if (key === "allowList") throw new Error("storage unavailable");
+          delete storage.stored[key];
+        },
+      },
+      fetch: async () => json(config),
+      alarms: { get: async () => undefined, create: () => undefined },
+    });
+    await sync.start();
+    expect(parseStoredRules(storage.stored[RULES_STORAGE_KEY])?.config.ruleSetVersion).toBe(3);
+  });
+
   it("start never rejects, even when the alarms API fails", async () => {
     const sync = createRulesSync({
       getConnection: async () => null,

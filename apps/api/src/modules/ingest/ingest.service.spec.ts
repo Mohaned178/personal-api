@@ -543,3 +543,38 @@ describe("IngestService", () => {
     expect((error as AppException).code).toBe("auth.invalid_key");
   });
 });
+
+describe("IngestService.getConfig (M4-R S2)", () => {
+  function serviceFor(caller: Caller) {
+    const repository = {
+      async loadCaller() {
+        return caller;
+      },
+    } as unknown as IngestRepository;
+    const loaded: string[] = [];
+    const rules = {
+      get: async (userId: string) => {
+        loaded.push(userId);
+        return rulesOf(3, [rule(RULE_A)]);
+      },
+    } as unknown as RuleSetProvider;
+    return { ingest: new IngestService(repository, rules, new FakeClock(NOW)), loaded };
+  }
+
+  it("answers a browser extension's key with the rules, the version and its policy", async () => {
+    const { ingest } = serviceFor({ kind: "browser-extension", defaultPolicy: "deny" });
+    const { config } = await ingest.getConfig(USER, INTEGRATION);
+    expect(config.ruleSetVersion).toBe(3);
+    expect(config.defaultPolicy).toBe("deny");
+    expect(config.rules.map((r) => r.id)).toEqual([RULE_A]);
+  });
+
+  it("refuses an http integration's key with a 403 problem and reads no rules", async () => {
+    const { ingest, loaded } = serviceFor({ kind: "http", defaultPolicy: "allow" });
+    const error = await ingest.getConfig(USER, INTEGRATION).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(AppException);
+    expect((error as AppException).getStatus()).toBe(403);
+    expect((error as AppException).code).toBe("ingest.config_unsupported");
+    expect(loaded).toEqual([]);
+  });
+});

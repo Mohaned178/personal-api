@@ -6,6 +6,7 @@ import { createServer } from "node:net";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
+import type { RuleTrace } from "@personal-api/contracts";
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
 import { Pool } from "pg";
 
@@ -36,7 +37,7 @@ export interface StoredEvent {
   type: string;
   data: Record<string, unknown>;
   /** Why the server kept the event: the rule-set version and the rules that matched (M4-05). */
-  trace: { ruleSetVersion: number; matched: { ruleId: string }[]; decidedBy: string } | null;
+  trace: RuleTrace | null;
   occurred_at: Date;
 }
 

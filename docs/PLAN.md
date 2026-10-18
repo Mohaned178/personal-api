@@ -60,7 +60,7 @@ Pin exact versions when scaffolding in M0, using releases at least 14 days old. 
 │   auth key → envelope + per-type payload validation → collect-rules again (defense in depth)      │
 │   → process-rules (tag, retention) → ONE tx: INSERT … ON CONFLICT DO NOTHING + ingestion log      │
 │   → per-item result {accepted | duplicate | dropped(rule) | rejected(error)}                       │
-│ GET /v1/ingest/config  (rules + enabled types, ETag) · POST /v1/ingest/heartbeat                  │
+│ GET /v1/ingest/config  (rules + default policy, ETag) · POST /v1/ingest/heartbeat                  │
 │ Platform API (session cookie) · Read API (session or pa_read_ key) · /v1/me/:slug saved queries  │
 │ Serves the dashboard SPA as static files                                                          │
 └──────────────────────────────────────────┬───────────────────────────────────────────────────────┘
@@ -173,7 +173,7 @@ Errors use RFC 9457 `application/problem+json`. Lists use keyset cursors on `(oc
 | none | `GET /v1/setup/status` | Dashboard first-run probe: `needsSetup` and `signupOpen` booleans only |
 | pairing code | `POST /v1/pair` | Exchange a one-time code for an ingest key |
 | ingest key | `POST /v1/ingest/events` | Batch of up to 100 events and 256 KB. Returns per-item results. |
-| ingest key | `GET /v1/ingest/config` | Collect rules, enabled types and rule-set version, with ETag |
+| ingest key | `GET /v1/ingest/config` | Collect rules, rule-set version and the integration's `defaultPolicy`, with ETag. `browser-extension` integrations only; an `http` key gets `403 ingest.config_unsupported` |
 | ingest key | `POST /v1/ingest/heartbeat` | Queue depth, oldest queued age, version |
 | session | `/v1/integrations` (CRUD, pairing code, revoke) | Connect and disconnect sources |
 | session | `/v1/rules` (CRUD), `POST /v1/rules/test` | Manage rules and dry-run them against a sample event |
