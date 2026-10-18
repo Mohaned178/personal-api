@@ -186,7 +186,7 @@ export interface IngestHarness {
   clock: FakeClock;
   a: FixtureUser;
   b: FixtureUser;
-  /** Empties events and ingestion_log and puts the clock back to FIXED_NOW. Users stay. */
+  /** Empties events, ingestion_log, pairing codes and rules, and puts the clock back to FIXED_NOW. Users stay. */
   reset: () => Promise<void>;
   stop: () => Promise<void>;
 }
@@ -204,7 +204,9 @@ export async function startIngestHarness(): Promise<IngestHarness> {
     a,
     b,
     reset: async () => {
-      await testDb.pool.query("truncate events, ingestion_log, pairing_codes restart identity");
+      await testDb.pool.query(
+        "truncate events, ingestion_log, pairing_codes, rules, rule_sets, rule_history restart identity",
+      );
       clock.set(FIXED_NOW);
       // Every request in a test run comes from one address, so forget the pairing throttle.
       app.get<RateLimiter>(PAIRING_RATE_LIMITER).reset();

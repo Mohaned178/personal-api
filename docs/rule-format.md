@@ -211,7 +211,7 @@ Ops by kind: **domain** all text ops plus `domain_matches`; **path** all text op
 | Tag length                    | 32         |
 | `set_retention` days          | 1 to 3650  |
 
-A cap on the number of rules per user belongs to the rules API (M4-04).
+A user can have at most 100 rules (`RULES_PER_USER_MAX`); the rules API refuses the 101st with `409 rules.limit_reached`.
 
 ## Evaluation
 
@@ -308,7 +308,7 @@ threw, for example a malformed rule set). `evaluate` never throws.
    strict and `path` rejects `?` and `#`. Keeping a query needs an event-schema change (for
    example a new optional field, or `typeVersion` 2 for `browser.page_visited`). Until it is
    decided, the extension keeps stripping queries.
-3. **Rule-set size cap** per user (M4-04). `ruleSetSchema` has none.
+3. ~~Rule-set size cap~~ Done in M4-04: 100 rules per user, enforced by the rules API (`ruleSetSchema` itself has no cap).
 4. **Server wiring (M4-05).** `policy` and `context.source` must come from the authenticated
    integration row, never from the request body (invariant 4). The `error` decision becomes `rejected(rule_error)`, which also
    needs `ingest.rule_error` in `INGEST_ERROR_CODES`. The extension wiring is M4-06.

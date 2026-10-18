@@ -13,6 +13,7 @@ import { IngestModule } from "./modules/ingest/ingest.module";
 import { IntegrationsModule } from "./modules/integrations/integrations.module";
 import { KeysModule } from "./modules/keys/keys.module";
 import { PairingModule } from "./modules/pairing/pairing.module";
+import { RulesModule } from "./modules/rules/rules.module";
 import { ClockModule } from "./platform/clock/clock.module";
 import { DbModule } from "./platform/db/db.module";
 import { ProblemFilter } from "./platform/errors/problem.filter";
@@ -50,6 +51,7 @@ import { buildPinoHttpOptions } from "./platform/logging/logging";
     EventsModule,
     IngestModule,
     PairingModule,
+    RulesModule,
   ],
   providers: [
     { provide: APP_FILTER, useClass: ProblemFilter },
