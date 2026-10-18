@@ -83,6 +83,16 @@ describe("globMatches: `*` is the only wildcard", () => {
     expect(performance.now() - started).toBeLessThan(250);
   });
 
+  it("stays fast when the pieces between the stars are searched too (M4-R S1)", () => {
+    const text = "a".repeat(2000);
+    const piece = `${"a".repeat(120)}b`;
+    for (const pattern of [`*${piece}*`, `*${piece}*${piece}*`, `a*${piece}*${piece}*a`]) {
+      const started = performance.now();
+      for (let i = 0; i < 200; i++) expect(globMatches(pattern, text)).toBe(false);
+      expect(performance.now() - started).toBeLessThan(250);
+    }
+  });
+
   it("agrees with a plain dynamic-programming matcher", () => {
     const reference = (pattern: string, text: string): boolean => {
       let row = [true, ...Array<boolean>(text.length).fill(false)];

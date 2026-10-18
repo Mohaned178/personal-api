@@ -146,8 +146,10 @@ with `If-None-Match`; a match is `304` with no body. The format and the extensio
 in [rule-format.md](rule-format.md#extension-sync-m4-06).
 
 ```bash
-curl -s "$BASE/v1/ingest/config" -H "Authorization: Bearer $KEY"
+# $EXT_KEY: the ingest key of a browser-extension integration (the extension gets it when it pairs)
+curl -s "$BASE/v1/ingest/config" -H "Authorization: Bearer $EXT_KEY"
 # {"ruleSetVersion":0,"defaultPolicy":"deny","rules":[]}
+# With $KEY from the `http` integration above: 403 {"code":"ingest.config_unsupported", ...}
 ```
 
 ## 5. Read an integration (dashboard)

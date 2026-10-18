@@ -362,7 +362,8 @@ no rules) is never trusted.
 ## Open items
 
 1. **Re-evaluating a rewritten event can change the decision.** *Decided in M4-05: the server
-   passes `context.collected` for an extension event that carries the current rule-set version, see
+   passes `context.collected` for an extension event that carries the current rule-set version,
+   and only when an `allow` rule reads a field that a collect transform rewrites (M4-R S3), see
    [Server enforcement](#server-enforcement-m4-05). `evaluate` without it is unchanged and still
    pinned by the "known limitation" test.* The server
    re-applies the collect rules to events the extension already transformed (PLAN §3). Conditions
