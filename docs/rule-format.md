@@ -1,9 +1,10 @@
-# Rule format (draft)
+# Rule format
 
-> **Status:** draft. The schema (M4-01) is real: `packages/contracts/src/rules.ts`,
-> `rule-fields.ts`, `rule-glob.ts`, and the API will validate with it on save. The engine (M4-02) is
-> `packages/rules`; the [Evaluation](#evaluation) section describes what it does. Items marked ⚑
-> were chosen in M4-01 and went in with it; they are open to change until the rules API (M4-04).
+> **Status:** implemented through M4. The schema is `packages/contracts/src/rules.ts`,
+> `rule-fields.ts` and `rule-glob.ts` (M4-01), validated on save by the rules API (M4-04). The
+> engine is `packages/rules` (M4-02, M4-03), run by the server at ingest (M4-05) and by the
+> extension (M4-06). Items marked ⚑ were chosen in M4-01 and are still open to change; the
+> [Open items](#open-items) section lists what is unresolved.
 
 A rule says which events it applies to (`when`) and what to do with them (`then`). Users edit it
 in the dashboard form or as JSON. The same document is stored, sent to the extension and run by
@@ -103,8 +104,9 @@ Value rules checked on save:
 Used by `matches_glob` and by `when.type`. `*` matches any run of characters, including none
 and including `/`. Every other character is literal (`?`, `[`, `.` and `(` have no special
 meaning). At most 8 `*` per pattern. Case-sensitive. One function
-(`globMatches`, in `contracts`) is used on both sides, and it is not regex-based, so it has no
-ReDoS risk.
+(`globMatches`, in `contracts`) is used on both sides. It is not regex-based and does no
+backtracking: it splits the pattern on `*` and places each literal piece once, so the work is
+linear in the text per piece (a test pins the worst case, 2000 evaluations of one 2 KB path).
 
 `when.type` patterns use only lowercase letters, digits, `_`, `.` and `*`, up to 128
 characters. **Each pattern must match at least one registered event type**, so a typo such as

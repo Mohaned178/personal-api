@@ -73,4 +73,39 @@ describe("globMatches: `*` is the only wildcard", () => {
       }),
     );
   });
+
+  it("stays fast on the worst case a rule set can hold (M4-R S1)", () => {
+    // 100 rules x 20 `matches_glob` conditions is 2000 evaluations of one 2 KB path.
+    const text = "a".repeat(2000);
+    const pattern = `*${"a".repeat(254)}b`;
+    const started = performance.now();
+    for (let i = 0; i < 2000; i++) expect(globMatches(pattern, text)).toBe(false);
+    expect(performance.now() - started).toBeLessThan(250);
+  });
+
+  it("agrees with a plain dynamic-programming matcher", () => {
+    const reference = (pattern: string, text: string): boolean => {
+      let row = [true, ...Array<boolean>(text.length).fill(false)];
+      for (const ch of pattern) {
+        const next = [ch === "*" ? row[0] === true : false];
+        for (let j = 1; j <= text.length; j++) {
+          next.push(
+            ch === "*"
+              ? row[j] === true || next[j - 1] === true
+              : row[j - 1] === true && text[j - 1] === ch,
+          );
+        }
+        row = next;
+      }
+      return row[text.length] === true;
+    };
+    const small = fc.string({ unit: fc.constantFrom("a", "b", "*"), maxLength: 12 });
+    const letters = fc.string({ unit: fc.constantFrom("a", "b"), maxLength: 14 });
+    fc.assert(
+      fc.property(small, letters, (pattern, text) => {
+        expect(globMatches(pattern, text)).toBe(reference(pattern, text));
+      }),
+      { numRuns: 2000 },
+    );
+  });
 });
