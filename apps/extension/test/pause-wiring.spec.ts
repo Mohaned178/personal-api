@@ -56,6 +56,9 @@ function fakeBrowser(world: World, stored: Record<string, unknown>) {
       local: {
         get: async (keys: string | string[]) => pick(stored, keys),
         set: async (items: Record<string, unknown>) => void Object.assign(stored, items),
+        remove: async (keys: string | string[]) => {
+          for (const key of [keys].flat()) delete stored[key];
+        },
       },
     },
   } satisfies BackgroundBrowserApi;

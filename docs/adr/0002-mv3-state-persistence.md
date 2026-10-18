@@ -321,16 +321,17 @@ commit. (As first built, the gate also awaited an IndexedDB read; it is now a si
 browser-session id, then the capture gate (`lib/queue/wire.ts`), then commits. The gate was four
 sequential reads: `flusher.getSyncStatus()` (a `storage.local` read of the connection, then an
 IndexedDB read of the sync state, then a SHA-256 of the key when the state says `disconnected`),
-`getPaused()` (a second `storage.local` read) and the allow list (a third). That widened the window
+`getPaused()` (a second `storage.local` read) and the M2-07 allow list (a third). That widened the window
 between event delivery and commit, which is the window option B exists to shrink.
 
 Now (`wireBackground` in `lib/queue/wire.ts`, `lib/gate-mirror.ts`):
 
-- **Exactly one `browser.storage.local.get`**, with the keys `connection`, `paused`, `allowList`,
+- **Exactly one `browser.storage.local.get`**, with the keys `connection`, `paused`, `rulesConfig`,
   `gateOwner` and `gateDisconnect`, and **no IndexedDB read**. Decision 3 is met for the gate: the
   gate awaits that one read and, only when the mirrored marker says a key was refused, a SHA-256 of
-  the ingest key (`crypto.subtle`, not a browser API). The collect gate is the allow list, read
-  through the same snapshot. (A custom `collectGate` passed by tests or later milestones may do its
+  the ingest key (`crypto.subtle`, not a browser API). The collect gate is the page-level rules gate
+  (`lib/rules/gate.ts`; the M2-07 allow list it replaced was removed in M4-06), read through the
+  same snapshot. (A custom `collectGate` passed by tests or later milestones may do its
   own reads; the default does not.)
 - **The two facts that lived in IndexedDB are mirrored into `storage.local`.** IndexedDB stays the
   source of truth for the queue owner and the sync state; the mirror is only ever read by the gate.
@@ -360,7 +361,7 @@ Now (`wireBackground` in `lib/queue/wire.ts`, `lib/gate-mirror.ts`):
 - **No caching.** Every decision reads fresh, so a pause or a removed domain applies on the next
   navigation.
 - **Same parsers.** The one read is handed to the existing `getConnection`, `getPaused` and
-  `getAllowList` (through the allow-list gate) as a snapshot, so each keeps its own rule.
+  `readActiveRules` (through the rules gate) as a snapshot, so each keeps its own rule.
   Tests: `apps/extension/test/queue/wire.spec.ts` ("the capture gate's reads"),
   `apps/extension/test/gate-mirror.spec.ts`.
 - The collect gate is called in parallel with the other parsers rather than after them, so it also
@@ -585,3 +586,22 @@ The protocol's results table has not been filled in yet. These outcomes would ch
 - **No-go:** after a real Firefox quit or crash (F4, F4b), queued events are missing or duplicated.
 - **Redesign of the focus or idle source:** a real OS blur does not leave the main window
   unfocused (F3), or idle events do not wake a suspended page in time (F1).
+
+## Update (M4-06): rules replace the allow list
+
+The page gate is now the user's collect rules, fetched from `GET /v1/ingest/config` and stored in
+`storage.local` under `rulesConfig` (bound to the server and integration they were fetched for).
+Rules decide on events, the gate on pages, so there are two layers (`lib/rules`):
+
+1. **Page gate** (`createRulesGate`): asks the rules about probe events for the page. It only keeps
+   a denied page out of the engine's IndexedDB state; it can collect less than a rule says (for
+   example a rule on a `durationMs` the probes do not cover), never more.
+2. **Rule store** (`createRuleStore`): wraps the store the engine commits to. The rules are read
+   before the transaction (the callback must stay synchronous); inside it `applyRules` runs
+   `evaluate()` on every event the engine produced, keeps only `allow` results (redacted and
+   coarsened), and stamps `meta.ruleSetVersion` and `meta.client`. The stamp is made at commit, so it
+   names the rules that decided the event, not the rules at flush time.
+
+Decision 3 still holds for layer one (one `storage.local.get`). Layer two adds one `get` inside the
+commit path, after the gate and before the transaction; it is the price of applying `redact` and
+`coarsen` to the real event.

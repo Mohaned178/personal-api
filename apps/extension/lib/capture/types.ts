@@ -73,7 +73,7 @@ export interface CaptureStore {
  *   events) be collected?
  *
  * Anything other than the boolean `true` (false, a throw, a rejection, any other value) is a deny.
- * Pausing capture is a gate that denies. M2-07 supplies the first real gate.
+ * Pausing capture is a gate that denies. The rules gate (lib/rules/gate.ts, M4-06) is the real one.
  */
 export interface CaptureGate {
   allows(page: SanitizedUrl | null): boolean | Promise<boolean>;

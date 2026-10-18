@@ -17,9 +17,9 @@ import type { AddressInfo } from "node:net";
  * - `drop-responses`: forwards the request, the API handles it, and then the connection is reset
  *   instead of relaying the response. The server stored the batch but the client never learns it:
  *   the at-least-once retry that follows is what the dedupe key has to absorb.
- * - `hold-requests`: an ingest request (`/v1/ingest/...`) is read in full and then PARKED, not
+ * - `hold-requests`: an events request (`/v1/ingest/events`) is read in full and then PARKED, not
  *   forwarded: the batch is in flight and the API has not seen it. Other paths are forwarded.
- * - `hold-responses`: an ingest request is forwarded and the API stores it, then the response is
+ * - `hold-responses`: an events request is forwarded and the API stores it, then the response is
  *   PARKED: the batch is in flight, already stored, and the client does not know.
  *
  * Parked requests give a test a stable "a flush is in flight right now" moment to kill the
@@ -64,7 +64,9 @@ export interface FlakyProxy {
   close(): Promise<void>;
 }
 
-const INGEST_PREFIX = "/v1/ingest";
+// Only the events flush is parked. The rules sync (`GET /v1/ingest/config`, M4-06) also runs when an
+// event page wakes, and parking it would stand in for the flush the tests are waiting for.
+const INGEST_PREFIX = "/v1/ingest/events";
 
 export async function startFlakyProxy(target: string): Promise<FlakyProxy> {
   const upstream = new URL(target);

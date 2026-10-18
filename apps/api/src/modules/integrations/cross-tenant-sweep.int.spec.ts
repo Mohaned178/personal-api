@@ -89,6 +89,8 @@ async function firstEventId(u: FixtureUser): Promise<string> {
   );
   return (rows[0] as { id: string }).id;
 }
+const keyGet = (u: FixtureUser, path: string, query = "") =>
+  http().get(`${path}${query}`).set("Authorization", `Bearer ${u.ingestKey}`);
 const keyPost = (u: FixtureUser, path: string, body: unknown, query = "") =>
   http()
     .post(`${path}${query}`)
@@ -478,6 +480,40 @@ const ROUTES: Route[] = [
     ],
     control: async (owner) => {
       expect((await postHeartbeat(h.app, owner.ingestKey, heartbeatBody)).status).toBe(204);
+    },
+  },
+  {
+    route: "GET /v1/ingest/config",
+    attacks: [
+      {
+        label: "naming the victim in query and headers",
+        run: async (attacker, victim) => {
+          const res = await keyGet(
+            attacker,
+            "/v1/ingest/config",
+            `?userId=${victim.userId}&integrationId=${victim.integrationId}`,
+          ).set("X-User-Id", victim.userId);
+          expect(res.status).toBe(200);
+          expect(res.body.rules.map((r: { id: string }) => r.id)).toEqual([
+            ruleIds.get(attacker.userId),
+          ]);
+          expect(JSON.stringify(res.body)).not.toContain(ruleIds.get(victim.userId));
+        },
+      },
+      {
+        label: "sending the victim's ETag to learn whether their rules are unchanged",
+        run: async (attacker, victim) => {
+          const victimTag = (await keyGet(victim, "/v1/ingest/config")).headers.etag as string;
+          const res = await keyGet(attacker, "/v1/ingest/config").set("If-None-Match", victimTag);
+          expect(res.status).toBe(200);
+          expect(res.headers.etag).not.toBe(victimTag);
+        },
+      },
+    ],
+    control: async (owner) => {
+      const res = await keyGet(owner, "/v1/ingest/config");
+      expect(res.status).toBe(200);
+      expect(res.body.rules).toHaveLength(1);
     },
   },
   {

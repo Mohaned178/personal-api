@@ -14,7 +14,6 @@ import {
   pairThroughPopup,
   readConnectionChromium,
   type StoredConnection,
-  seedAllowListChromium,
   triggerFlushChromium,
   visitedPaths,
 } from "../support/pairing";
@@ -66,7 +65,6 @@ const test = base.extend<{ unpaired: Omit<Paired, "account">; paired: Paired }>(
   paired: async ({ unpaired, stack }, use) => {
     const account = await stack.createPairableAccount("chromium");
     await pairThroughPopup(unpaired.extension, unpaired.proxy.origin, account.pairingCode);
-    await seedAllowListChromium(unpaired.worker, [ALLOWED_DOMAIN]);
     await use({ ...unpaired, account });
   },
 });
@@ -150,13 +148,9 @@ test.describe("Chromium: pair, collect, sync", () => {
     expect(counts["/b"]).toBe(1);
   });
 
-  test("stores nothing for a domain that is not on the allow list", async ({
-    paired,
-    stack,
-    site,
-  }) => {
+  test("stores nothing for a domain no rule allows", async ({ paired, stack, site }) => {
     const port = new URL(site.origin).port;
-    // Same server, different hostname: not on the allow list, so deny by default applies.
+    // Same server, different hostname: no rule allows it, so deny by default applies.
     await visit(paired.page, `http://localhost:${port}/p/90`);
     await visit(paired.page, `${site.origin}/p/91`);
     await triggerFlushChromium(paired.worker);

@@ -67,11 +67,23 @@ function fakeBrowser(world: World, stored: Record<string, unknown>) {
       local: {
         get: async (keys: string | string[]) => pick(stored, keys),
         set: async (items: Record<string, unknown>) => void Object.assign(stored, items),
+        remove: async (keys: string | string[]) => {
+          for (const key of [keys].flat()) delete stored[key];
+        },
       },
     },
   } satisfies BackgroundBrowserApi;
   return { browser, listeners };
 }
+
+/**
+ * The fake ingest server, except the rules route: the rules sync (M4-06) runs at start and is not
+ * what these tests count, so it gets a 404 that is not recorded as a server call.
+ */
+const serverFetch = (url: string, init: RequestInit): Promise<Response> =>
+  url.endsWith("/v1/ingest/config")
+    ? Promise.resolve(new Response(null, { status: 404 }))
+    : world.server.fetch(url, init);
 
 let world: World;
 beforeEach(() => {
@@ -93,7 +105,7 @@ function wire(options: { allow?: boolean | null; connected?: boolean } = {}) {
   const wired = wireBackground({
     browser,
     store,
-    fetch: world.server.fetch,
+    fetch: serverFetch,
     now: world.now,
     random: () => 0,
     newId: () => "0192f1c2-7c1e-7a3b-9f00-000000000001",
@@ -118,7 +130,8 @@ describe("wireBackground", () => {
     ]) {
       expect(listeners.get(name), name).toHaveLength(1);
     }
-    expect(listeners.get("alarms.onAlarm")).toHaveLength(3);
+    // flush, server heartbeat, rules sync, plus the capture engine's own heartbeat tick.
+    expect(listeners.get("alarms.onAlarm")).toHaveLength(4);
   });
 
   it("ready settles", async () => {
@@ -144,7 +157,7 @@ describe("wireBackground", () => {
       browser: fakeBrowser(world, { [CONNECTION_STORAGE_KEY]: connectionFor(KEY), ...mirrorFor() })
         .browser,
       store: notTrue.store,
-      fetch: world.server.fetch,
+      fetch: serverFetch,
       now: world.now,
       random: () => 0,
       newId: () => "0192f1c2-7c1e-7a3b-9f00-000000000001",
@@ -157,7 +170,7 @@ describe("wireBackground", () => {
       browser: fakeBrowser(world, { [CONNECTION_STORAGE_KEY]: connectionFor(KEY), ...mirrorFor() })
         .browser,
       store: notTrue.store,
-      fetch: world.server.fetch,
+      fetch: serverFetch,
       now: world.now,
       random: () => 0,
       newId: () => "0192f1c2-7c1e-7a3b-9f00-000000000001",
@@ -206,13 +219,14 @@ describe("the capture gate's reads", () => {
   type StorageLocal = {
     get(keys: string | string[]): Promise<Record<string, unknown>>;
     set(items: Record<string, unknown>): Promise<void>;
+    remove(keys: string | string[]): Promise<void>;
   };
   type Store = ReturnType<World["open"]>["store"];
 
   const GATE_KEYS = [
     "connection",
     "paused",
-    "allowList",
+    "rulesConfig",
     GATE_OWNER_STORAGE_KEY,
     GATE_DISCONNECT_STORAGE_KEY,
   ];
@@ -241,6 +255,9 @@ describe("the capture gate's reads", () => {
         if (options.failSet?.(items)) throw new Error("storage unavailable");
         Object.assign(stored, items);
       },
+      remove: async (keys) => {
+        for (const key of [keys].flat()) delete stored[key];
+      },
     };
     const session = options.sessionGet
       ? { ...browser.storage.session, get: options.sessionGet }
@@ -249,7 +266,7 @@ describe("the capture gate's reads", () => {
     const wired = wireBackground({
       browser: { ...browser, storage: { session, local } },
       store: options.store ? options.store(opened.store) : opened.store,
-      fetch: world.server.fetch,
+      fetch: serverFetch,
       now: world.now,
       random: () => 0,
       newId: () => "0192f1c2-7c1e-7a3b-9f00-000000000001",
@@ -263,7 +280,7 @@ describe("the capture gate's reads", () => {
     expect(await wireWith().wired.gate.allows(null)).toBe(true);
   });
 
-  it("is ONE storage call for connection, pause, allow list and the mirror, and reads no IndexedDB", async () => {
+  it("is ONE storage call for connection, pause, rules and the mirror, and reads no IndexedDB", async () => {
     const calls: (string | string[])[] = [];
     let held: Promise<void> | null = null;
     let release = () => {};

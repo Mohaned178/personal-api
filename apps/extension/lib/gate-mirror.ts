@@ -3,7 +3,7 @@
 // IndexedDB stays the source of truth for the queue owner and the "disconnected after a 401"
 // marker. The capture gate must not await IndexedDB (the window between event delivery and commit
 // is what option B shrinks), so a copy of both is kept in `browser.storage.local`, where the gate
-// reads it in the SAME single `get` as the connection, the pause flag and the allow list. The
+// reads it in the SAME single `get` as the connection, the pause flag and the rules. The
 // mirror is written next to the IndexedDB write and is only ever READ by the gate; nothing else
 // trusts it. Two keys, so two writers never overwrite each other's field (no read-modify-write).
 //

@@ -4,6 +4,7 @@ import {
   type HeartbeatRequest,
   INGEST_BATCH_INVALID_CODE,
   type IngestBatchResponse,
+  type IngestConfigResponse,
   type IngestErrorCode,
   type IngestItemResult,
   ingestBatchRequestSchema,
@@ -18,6 +19,7 @@ import { assertUserScope } from "../../platform/db/tenant-scope";
 import { AppException } from "../../platform/errors/problem";
 import { INVALID_KEY_CODE } from "../keys/ingest-key.guard";
 import { type LoadedRuleSet, RuleSetProvider } from "../rules/rule-set.provider";
+import { etagOf } from "./etag";
 import {
   type Caller,
   type IngestionCounts,
@@ -256,6 +258,33 @@ export class IngestService {
       LAST_SEEN_UPDATE_INTERVAL_MS,
     );
     return { results: toResults(plan, stored) };
+  }
+
+  /**
+   * `GET /v1/ingest/config`: what the caller's extension needs to apply the user's rules itself.
+   * The rules and their version come from ONE compiled set (`RuleSetProvider`), so they always
+   * belong together; only enabled `collect` rules are sent (process rules are server-only). The
+   * policy is the integration's own and is part of the ETag. A stored rule that no longer fits the
+   * schema is a 409 `ingest.rule_error` (the client then collects nothing, invariant 1). The user
+   * and integration come from the ingest AuthContext only (invariant 4). Nothing here logs.
+   */
+  async getConfig(
+    userId: string,
+    integrationId: string,
+  ): Promise<{ config: IngestConfigResponse; etag: string }> {
+    assertUserScope(userId);
+    const caller = await this.repository.loadCaller(userId, integrationId);
+    if (caller === null) throw new AppException(401, INVALID_KEY_CODE, "Invalid API key");
+    const { compiled } = await this.ruleSets.get(userId);
+    if (compiled === null) {
+      throw new AppException(409, "ingest.rule_error", "The rules could not be loaded");
+    }
+    const config: IngestConfigResponse = {
+      ruleSetVersion: compiled.version,
+      defaultPolicy: caller.defaultPolicy,
+      rules: [...compiled.collect],
+    };
+    return { config, etag: etagOf(config) };
   }
 
   /**

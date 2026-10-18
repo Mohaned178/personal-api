@@ -136,6 +136,18 @@ curl -s -o /dev/null -w "%{http_code}\n" -X POST "$BASE/v1/ingest/heartbeat" \
   -d '{"queueDepth":0,"oldestQueuedAgeMs":0,"droppedCount":0,"clientVersion":"0.1.0"}'
 ```
 
+### The rules the extension runs
+
+`GET /v1/ingest/config` (same Bearer ingest key) returns your enabled collect rules, the rule-set
+version and the integration's default policy, with a strong `ETag`. The browser extension polls it
+with `If-None-Match`; a match is `304` with no body. The format and the extension's behaviour are
+in [rule-format.md](rule-format.md#extension-sync-m4-06).
+
+```bash
+curl -s "$BASE/v1/ingest/config" -H "Authorization: Bearer $KEY"
+# {"ruleSetVersion":0,"defaultPolicy":"deny","rules":[]}
+```
+
 ## 5. Read an integration (dashboard)
 
 ```bash
@@ -223,5 +235,6 @@ Errors are `application/problem+json` (RFC 9457) with a stable `code`:
 | 404  | `integration.not_found`    | The integration id is unknown, belongs to another user, or is malformed (all look the same). |
 | 404  | `rule.not_found`           | The rule id is unknown, belongs to another user, or is malformed (all look the same). |
 | 409  | `rules.limit_reached`      | The user already has 100 rules.                                                        |
+| 409  | `ingest.rule_error`        | `GET /v1/ingest/config` only: a stored rule is invalid, so no rules are sent.          |
 | 413  | `http.payload_too_large`   | The body is over the route's limit (100 KB, or 256 KB for `/v1/ingest/events`), or has no declared length on the auth routes. |
 | 500  | `internal.error`           | Unexpected failure. Details are logged, not returned.                                  |

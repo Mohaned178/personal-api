@@ -4,7 +4,6 @@ import { startFlakyProxy } from "../support/flaky-proxy";
 import {
   countByPath,
   pairThroughPopupFirefox,
-  seedAllowListFirefox,
   triggerFlushFirefox,
   visitedPaths,
 } from "../support/pairing";
@@ -44,7 +43,6 @@ test("Firefox: 20 event page terminations while a flush is in flight lose nothin
   try {
     const account = await stack.createPairableAccount("firefox-restart");
     await pairThroughPopupFirefox(firefox, proxy.origin, account.pairingCode);
-    await seedAllowListFirefox(firefox, [ALLOWED_DOMAIN]);
 
     const stored = async (): Promise<string[]> =>
       visitedPaths(await stack.eventsOf(account.integrationId), ALLOWED_DOMAIN);

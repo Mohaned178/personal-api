@@ -10,6 +10,7 @@ import type {
   CaptureStore,
 } from "../capture";
 import type { Connection } from "../connect";
+import type { RulesSync } from "../rules/sync";
 
 /**
  * Who the queued events belong to: the server and the integration they were captured for. Events
@@ -216,8 +217,10 @@ export type BackgroundBrowserApi = CaptureBrowserApi &
     storage: {
       local: {
         get(keys: string | string[]): Promise<Record<string, unknown>>;
-        /** Only for the gate mirror (lib/gate-mirror.ts); the capture gate itself never writes. */
+        /** Only for the gate mirror (lib/gate-mirror.ts) and the rules sync; the capture gate never writes. */
         set(items: Record<string, unknown>): Promise<void>;
+        /** Only for the rules sync, when the server refuses or sends rules that do not validate. */
+        remove(keys: string | string[]): Promise<void>;
       };
     };
   };
@@ -231,9 +234,9 @@ export interface BackgroundDeps {
   newId(): string;
   newTabRef(): string;
   /**
-   * The rule gate. When omitted, the wiring falls back to the M2-07 temporary allow list in
-   * `browser.storage.local` (read-only); an explicit gate wins (tests, later milestones). Deny by
-   * default either way (invariant 1).
+   * The rule gate. When omitted (always, in production), the wiring uses the rules fetched from
+   * the server (lib/rules): a page gate, and every event decided inside the commit. An explicit gate
+   * replaces both (tests). Deny by default either way (invariant 1).
    */
   collectGate?: CaptureGate;
 }
@@ -241,6 +244,8 @@ export interface BackgroundDeps {
 export interface WiredBackground {
   engine: CaptureEngine;
   flusher: Flusher;
+  /** Fetches the rules; `sync()` is also what pairing triggers. */
+  rulesSync: RulesSync;
   /** The gate the engine uses: connected AND not disconnected AND `collectGate` allows (anything but `true` denies). */
   gate: CaptureGate;
   /** Settles (never rejects) once `engine.start()` and `flusher.start()` have settled. */
