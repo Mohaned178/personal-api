@@ -349,3 +349,5 @@ never trusted.
 4. ~~**Server wiring (M4-05).**~~ Done in M4-05 (`ingest.rule_error` is in `INGEST_ERROR_CODES`). `policy` and `context.source` must come from the authenticated
    integration row, never from the request body (invariant 4). The `error` decision becomes `rejected(rule_error)`, which also
    needs `ingest.rule_error` in `INGEST_ERROR_CODES`. The extension wiring is M4-06.
+
+5. **The extension config must carry `default_policy` (M4-06).** The server trusts an extension event that names the current rule-set version (see [Server enforcement](#server-enforcement-m4-05)), which includes the extension's own default-policy decision. Changing an integration's `default_policy` does not bump the rule-set version today, and nothing changes it yet. When M4-06 builds `GET /v1/ingest/config`, put `default_policy` in it and in the ETag, and make a policy change invalidate the version the server trusts (bump it, or compare it).
