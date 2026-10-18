@@ -225,7 +225,7 @@ describe("CRUD and versioning", () => {
     );
   });
 
-  it(`refuses rule ${RULES_PER_USER_MAX + 1} with 409 rules.limit_reached and no change`, async () => {
+  it(`refuses rule ${RULES_PER_USER_MAX + 1} with 409 rule.limit_reached and no change`, async () => {
     const repository = app.get(RulesRepository);
     for (let i = 0; i < RULES_PER_USER_MAX; i += 1) {
       await repository.create(a.userId, rule({ name: `r${i}` }) as never, new Date(NOW));
@@ -234,7 +234,7 @@ describe("CRUD and versioning", () => {
     const res = await as(a).post("/v1/rules", rule());
     expect(res.status).toBe(409);
     expect(String(res.headers["content-type"])).toMatch(PROBLEM_JSON);
-    expect(res.body.code).toBe("rules.limit_reached");
+    expect(res.body.code).toBe("rule.limit_reached");
     expect(await versionRows(a.userId)).toEqual([{ version: RULES_PER_USER_MAX }]);
     expect(await tenantState(testDb.pool, a.userId)).toEqual(before);
     // The other user is not affected by A's count, and A can still edit and delete.
@@ -242,6 +242,18 @@ describe("CRUD and versioning", () => {
     const list = ruleListResponseSchema.parse((await as(a).get("/v1/rules")).body);
     expect((await as(a).delete(`/v1/rules/${list.rules[0]?.id}`)).status).toBe(200);
     expect((await as(a).post("/v1/rules", rule())).status).toBe(201);
+  });
+});
+
+describe("a stored definition", () => {
+  it("never overrides the row's id (M4-R nit)", async () => {
+    const created = await create(a);
+    await testDb.pool.query(
+      `update rules set definition = definition || jsonb_build_object('id', $2::text) where id = $1`,
+      [created.rule.id, MISSING],
+    );
+    const list = ruleListResponseSchema.parse((await as(a).get("/v1/rules")).body);
+    expect(list.rules.map((r) => r.id)).toEqual([created.rule.id]);
   });
 });
 

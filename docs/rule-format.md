@@ -1,9 +1,10 @@
-# Rule format (draft)
+# Rule format
 
-> **Status:** draft. The schema (M4-01) is real: `packages/contracts/src/rules.ts`,
-> `rule-fields.ts`, `rule-glob.ts`, and the API will validate with it on save. The engine (M4-02) is
-> `packages/rules`; the [Evaluation](#evaluation) section describes what it does. Items marked ⚑
-> were chosen in M4-01 and went in with it; they are open to change until the rules API (M4-04).
+> **Status:** implemented through M4. The schema is `packages/contracts/src/rules.ts`,
+> `rule-fields.ts` and `rule-glob.ts` (M4-01), validated on save by the rules API (M4-04). The
+> engine is `packages/rules` (M4-02, M4-03), run by the server at ingest (M4-05) and by the
+> extension (M4-06). Items marked ⚑ were chosen in M4-01 and are still open to change; the
+> [Open items](#open-items) section lists what is unresolved.
 
 A rule says which events it applies to (`when`) and what to do with them (`then`). Users edit it
 in the dashboard form or as JSON. The same document is stored, sent to the extension and run by
@@ -103,8 +104,9 @@ Value rules checked on save:
 Used by `matches_glob` and by `when.type`. `*` matches any run of characters, including none
 and including `/`. Every other character is literal (`?`, `[`, `.` and `(` have no special
 meaning). At most 8 `*` per pattern. Case-sensitive. One function
-(`globMatches`, in `contracts`) is used on both sides, and it is not regex-based, so it has no
-ReDoS risk.
+(`globMatches`, in `contracts`) is used on both sides. It is not regex-based and does no
+backtracking: it splits the pattern on `*` and places each literal piece once, so the work is
+linear in the text per piece (a test pins the worst case, 2000 evaluations of one 2 KB path).
 
 `when.type` patterns use only lowercase letters, digits, `_`, `.` and `*`, up to 128
 characters. **Each pattern must match at least one registered event type**, so a typo such as
@@ -211,7 +213,7 @@ Ops by kind: **domain** all text ops plus `domain_matches`; **path** all text op
 | Tag length                    | 32         |
 | `set_retention` days          | 1 to 3650  |
 
-A user can have at most 100 rules (`RULES_PER_USER_MAX`); the rules API refuses the 101st with `409 rules.limit_reached`.
+A user can have at most 100 rules (`RULES_PER_USER_MAX`); the rules API refuses the 101st with `409 rule.limit_reached`.
 
 ## Evaluation
 
@@ -313,13 +315,17 @@ authenticated integration row, never from the body (invariant 4).
 ### Events the extension already decided
 
 Evaluation uses `context.collected` when the integration is a `browser-extension`, the event's
-`meta.ruleSetVersion` equals the server's current version, that version is at least 1, and the set
-has at least one collect rule. Then an event that **no collect rule decides** is allowed instead of
+`meta.ruleSetVersion` equals the server's current version, that version is at least 1, the set
+has at least one collect rule, **and the rules need it**: an `allow` rule reads a field that a
+collect transform rewrites (`data.path` when any rule has a `coarsen`, or a field some rule
+`redact`s). That is `canTrustCollected` in `packages/rules`, computed once per compiled set. Without
+such a rule a re-evaluation is stable, so the event gets the full evaluation and the default policy
+still decides. Then an event that **no collect rule decides** is allowed instead of
 following `default_policy` (its trace says `decidedBy: "client"`). A rule that matches and decides
 still decides, in the same order, so a `drop` rule still drops. Transforms and the process stage
-still run. The trade-off: a client that claims the current version skips the server's default-deny
-for events no rule decides. Rules still decide the rest, and version 0 (a user with no rules) is
-never trusted.
+still run. The trade-off: with such a rule set, a client that claims the current version skips the server's
+default-deny for events no rule decides. Rules still decide the rest, and version 0 (a user with
+no rules) is never trusted.
 
 ## Extension sync (M4-06)
 
@@ -356,7 +362,8 @@ never trusted.
 ## Open items
 
 1. **Re-evaluating a rewritten event can change the decision.** *Decided in M4-05: the server
-   passes `context.collected` for an extension event that carries the current rule-set version, see
+   passes `context.collected` for an extension event that carries the current rule-set version,
+   and only when an `allow` rule reads a field that a collect transform rewrites (M4-R S3), see
    [Server enforcement](#server-enforcement-m4-05). `evaluate` without it is unchanged and still
    pinned by the "known limitation" test.* The server
    re-applies the collect rules to events the extension already transformed (PLAN §3). Conditions

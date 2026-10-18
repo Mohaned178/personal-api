@@ -295,9 +295,12 @@ describe("planBatch: the rules", () => {
       meta: { ruleSetVersion, client: "pa-extension/1" },
     });
     const extension: Caller = { kind: "browser-extension", defaultPolicy: "deny" };
+    // The rule rewrites the path it reads, so the extension's output no longer matches it (S3).
     const workOnly = rule(RULE_A, {
       when: { all: [{ field: "data.path", op: "starts_with", value: "/work/" }] },
+      then: [{ action: "coarsen", segments: 1 }, { action: "allow" }],
     });
+    const pathRead = { field: "data.path", op: "starts_with", value: "/work/" } as const;
     const rewritten = (version: number) =>
       visit({ data: { domain: "example.com", path: "/work" }, ...meta(version) });
 
@@ -311,6 +314,33 @@ describe("planBatch: the rules", () => {
         rules: rulesOf(2, [workOnly]),
       });
       expect(item?.kind).toBe(expected);
+    });
+
+    it.each([
+      ["rules that rewrite nothing", [rule(RULE_A, { when: { all: [pathRead] } })]],
+      [
+        "a rewrite that no allow rule reads",
+        [
+          rule(RULE_A, {
+            when: { all: [{ field: "data.domain", op: "eq", value: "other.example" }] },
+          }),
+          rule(RULE_B, { when: {}, then: [{ action: "coarsen", segments: 1 }] }),
+        ],
+      ],
+      [
+        "a rewritten field that only a drop rule reads",
+        [
+          rule(RULE_A, { when: { all: [pathRead] }, then: [{ action: "drop" }] }),
+          rule(RULE_B, { when: {}, then: [{ action: "coarsen", segments: 1 }] }),
+        ],
+      ],
+    ])("is not trusted for %s, even at the current version (M4-R S3)", (_name, rules) => {
+      const [item] = planBatch([rewritten(2)], NOW, {
+        caller: extension,
+        rules: rulesOf(2, rules),
+      });
+      expect(item?.kind).toBe("dropped");
+      expect(item).toMatchObject({ decidedBy: "default_policy" });
     });
 
     it("is not trusted at version 0, with no collect rules, from an http source, or with no meta", () => {
@@ -541,5 +571,40 @@ describe("IngestService", () => {
       .catch((e: unknown) => e);
     expect((error as AppException).getStatus()).toBe(401);
     expect((error as AppException).code).toBe("auth.invalid_key");
+  });
+});
+
+describe("IngestService.getConfig (M4-R S2)", () => {
+  function serviceFor(caller: Caller) {
+    const repository = {
+      async loadCaller() {
+        return caller;
+      },
+    } as unknown as IngestRepository;
+    const loaded: string[] = [];
+    const rules = {
+      get: async (userId: string) => {
+        loaded.push(userId);
+        return rulesOf(3, [rule(RULE_A)]);
+      },
+    } as unknown as RuleSetProvider;
+    return { ingest: new IngestService(repository, rules, new FakeClock(NOW)), loaded };
+  }
+
+  it("answers a browser extension's key with the rules, the version and its policy", async () => {
+    const { ingest } = serviceFor({ kind: "browser-extension", defaultPolicy: "deny" });
+    const { config } = await ingest.getConfig(USER, INTEGRATION);
+    expect(config.ruleSetVersion).toBe(3);
+    expect(config.defaultPolicy).toBe("deny");
+    expect(config.rules.map((r) => r.id)).toEqual([RULE_A]);
+  });
+
+  it("refuses an http integration's key with a 403 problem and reads no rules", async () => {
+    const { ingest, loaded } = serviceFor({ kind: "http", defaultPolicy: "allow" });
+    const error = await ingest.getConfig(USER, INTEGRATION).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(AppException);
+    expect((error as AppException).getStatus()).toBe(403);
+    expect((error as AppException).code).toBe("ingest.config_unsupported");
+    expect(loaded).toEqual([]);
   });
 });

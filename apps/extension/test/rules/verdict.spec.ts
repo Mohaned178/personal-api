@@ -42,6 +42,42 @@ describe("currentTabVerdict", () => {
     });
   });
 
+  // M4-R S4: capture admits a page when ANY probe event is allowed (`mayCollect`), so the verdict
+  // must not look at the page_visited probe alone.
+  it("is collected when a rule allows only focus segments, naming that rule", () => {
+    const focusOnly = domainRule("Time on GitHub", "github.com", "allow", {
+      when: {
+        type: ["browser.focus_segment"],
+        all: [{ field: "data.domain", op: "eq", value: "github.com" }],
+      },
+    });
+    expect(currentTabVerdict(tab("https://github.com/org"), active(configOf([focusOnly])))).toEqual(
+      {
+        kind: "collected",
+        reason: { by: "rule", ruleName: "Time on GitHub" },
+      },
+    );
+  });
+
+  it("names the first allowed probe's rule when page visits are dropped but time is allowed", () => {
+    const noVisits = domainRule("No visits", "github.com", "drop", {
+      priority: 1,
+      when: {
+        type: ["browser.page_visited"],
+        all: [{ field: "data.domain", op: "eq", value: "github.com" }],
+      },
+    });
+    const focusOnly = domainRule("Time on GitHub", "github.com", "allow", {
+      when: {
+        type: ["browser.focus_segment"],
+        all: [{ field: "data.domain", op: "eq", value: "github.com" }],
+      },
+    });
+    expect(
+      currentTabVerdict(tab("https://github.com/"), active(configOf([noVisits, focusOnly]))),
+    ).toEqual({ kind: "collected", reason: { by: "rule", ruleName: "Time on GitHub" } });
+  });
+
   it("is no_rules without valid rules", () => {
     expect(currentTabVerdict(tab("https://github.com/"), null)).toEqual({ kind: "no_rules" });
   });

@@ -794,6 +794,10 @@ const ROUTES: Route[] = [
  */
 async function seedActivity() {
   for (const user of [h.a, h.b]) {
+    // `GET /v1/ingest/config` is for browser extensions, so the fixture's integration is one.
+    await h.testDb.pool.query("update integrations set kind = 'browser-extension' where id = $1", [
+      user.integrationId,
+    ]);
     const integrationId = await createExtension(h.app, user, "sweep extension");
     const { pairingCode } = await issueCode(h.app, user, integrationId);
     pending.set(user.userId, { integrationId, pairingCode });

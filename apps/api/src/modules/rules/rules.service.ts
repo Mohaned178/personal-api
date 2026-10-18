@@ -1,8 +1,8 @@
 import { Inject, Injectable } from "@nestjs/common";
 import {
   type DeleteRuleResponse,
+  RULE_LIMIT_REACHED_CODE,
   RULE_NOT_FOUND_CODE,
-  RULES_LIMIT_REACHED_CODE,
   RULES_PER_USER_MAX,
   type Rule,
   type RuleDefinition,
@@ -115,7 +115,7 @@ function changed(result: RuleChangeResult): { rule: Rule; version: number } {
   if (result === "limit_reached") {
     throw new AppException(
       409,
-      RULES_LIMIT_REACHED_CODE,
+      RULE_LIMIT_REACHED_CODE,
       "Rule limit reached",
       `A user can have at most ${RULES_PER_USER_MAX} rules`,
     );

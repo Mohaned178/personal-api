@@ -253,6 +253,20 @@ describe("events the extension already decided (open item 1)", () => {
     expect(row?.trace).toEqual({ ruleSetVersion: 1, matched: [], decidedBy: "client" });
   });
 
+  it("rules that rewrite nothing an allow rule reads get the full evaluation at the current version (M4-R S3)", async () => {
+    const ext = await extension();
+    await addRule(h.a.userId, ruleFor("other.example"));
+    const event = pageVisit({
+      data: { domain: "example.com" },
+      extra: { meta: { ruleSetVersion: 1, client: "pa-extension/0.1.0" } },
+    });
+    const results = expectResults(await postEvents(h.app, ext.key, [event]));
+    expect(statusesOf(results)).toEqual(["dropped"]);
+    expect(await eventRows(h.testDb.pool, h.a.userId)).toEqual([]);
+    const [log] = await logRows(h.testDb.pool, h.a.userId);
+    expect(log?.by_reason).toEqual({ default_policy: 1 });
+  });
+
   it.each([
     ["a stale version", 5],
     ["version 0", 0],

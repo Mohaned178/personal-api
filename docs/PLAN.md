@@ -60,7 +60,7 @@ Pin exact versions when scaffolding in M0, using releases at least 14 days old. 
 │   auth key → envelope + per-type payload validation → collect-rules again (defense in depth)      │
 │   → process-rules (tag, retention) → ONE tx: INSERT … ON CONFLICT DO NOTHING + ingestion log      │
 │   → per-item result {accepted | duplicate | dropped(rule) | rejected(error)}                       │
-│ GET /v1/ingest/config  (rules + enabled types, ETag) · POST /v1/ingest/heartbeat                  │
+│ GET /v1/ingest/config  (rules + default policy, ETag) · POST /v1/ingest/heartbeat                  │
 │ Platform API (session cookie) · Read API (session or pa_read_ key) · /v1/me/:slug saved queries  │
 │ Serves the dashboard SPA as static files                                                          │
 └──────────────────────────────────────────┬───────────────────────────────────────────────────────┘
@@ -70,7 +70,7 @@ Pin exact versions when scaffolding in M0, using releases at least 14 days old. 
 
 ### Key principles
 
-1. **Privacy filtering happens before data leaves the browser.** Collect-stage rules run in the extension, so a denied site never generates a request. The server re-applies them anyway, because the extension is untrusted and rules can change while events sit in the queue. One exception, chosen in M4-05 (`docs/rule-format.md`, open item 1): an event from a browser-extension integration that names the server's current rule-set version (at least 1, with collect rules) was already decided by the same rules in the extension, so the server does not ask the default policy again. Every other event (another version, version 0, an `http` source, no `meta`) gets the full evaluation, and a `drop` rule that decides still drops.
+1. **Privacy filtering happens before data leaves the browser.** Collect-stage rules run in the extension, so a denied site never generates a request. The server re-applies them anyway, because the extension is untrusted and rules can change while events sit in the queue. One exception, chosen in M4-05 (`docs/rule-format.md`, open item 1): an event from a browser-extension integration that names the server's current rule-set version (at least 1, with collect rules, and only when an `allow` rule reads a field that a collect `coarsen` or `redact` rewrites) was already decided by the same rules in the extension, so the server does not ask the default policy again. Every other event (another version, version 0, an `http` source, no `meta`) gets the full evaluation, and a `drop` rule that decides still drops.
 2. **One rule engine runs on both sides.** `packages/rules` is pure TypeScript with no Node or DOM APIs, so the extension, server and "test rule" preview all give identical answers.
 3. **Delivery is at-least-once, storage is effectively-once.** The extension assigns each event a UUIDv7 when it's captured. A unique constraint on `(user_id, integration_id, client_event_id)` turns retries into `duplicate` results instead of new rows. The system doesn't claim exactly-once.
 4. **Fail closed.** If there are no rules, invalid rules, or an engine error, nothing is collected or stored, and an error is surfaced. A misconfiguration must never silently widen collection.
@@ -173,7 +173,7 @@ Errors use RFC 9457 `application/problem+json`. Lists use keyset cursors on `(oc
 | none | `GET /v1/setup/status` | Dashboard first-run probe: `needsSetup` and `signupOpen` booleans only |
 | pairing code | `POST /v1/pair` | Exchange a one-time code for an ingest key |
 | ingest key | `POST /v1/ingest/events` | Batch of up to 100 events and 256 KB. Returns per-item results. |
-| ingest key | `GET /v1/ingest/config` | Collect rules, enabled types and rule-set version, with ETag |
+| ingest key | `GET /v1/ingest/config` | Collect rules, rule-set version and the integration's `defaultPolicy`, with ETag. `browser-extension` integrations only; an `http` key gets `403 ingest.config_unsupported` |
 | ingest key | `POST /v1/ingest/heartbeat` | Queue depth, oldest queued age, version |
 | session | `/v1/integrations` (CRUD, pairing code, revoke) | Connect and disconnect sources |
 | session | `/v1/rules` (CRUD), `POST /v1/rules/test` | Manage rules and dry-run them against a sample event |
@@ -320,7 +320,7 @@ Targets changed on 2026-10-14: Firefox + Edge (free stores only) instead of Chro
 - [x] **M4-07 [S · medium] Rules UI:** list with priority ordering, form builder, JSON toggle with inline errors, test against a sample event, and drop counts.
 - [x] **M4-08 [S · medium] Explainability:** the "why is this here" view on events, and onboarding starter templates.
 - [x] **M4-09 [S · high] e2e (Firefox):** demo steps 3 and 7 (add a rule → collected; change the rule → later events behave differently).
-- [ ] **M4-R [O · xhigh] Milestone review** (`/code-review` + `/security-review`).
+- [x] **M4-R [O · xhigh] Milestone review** (`/code-review` + `/security-review`).
 
 ### M5: Query API and user endpoints
 

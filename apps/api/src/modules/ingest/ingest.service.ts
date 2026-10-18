@@ -12,7 +12,7 @@ import {
   parseEvent,
   toContractIssues,
 } from "@personal-api/contracts";
-import { evaluate } from "@personal-api/rules";
+import { canTrustCollected, evaluate } from "@personal-api/rules";
 import type { z } from "zod";
 import { CLOCK, type Clock } from "../../platform/clock/clock";
 import { assertUserScope } from "../../platform/db/tenant-scope";
@@ -122,12 +122,14 @@ type Allowed = Extract<ReturnType<typeof evaluate>, { decision: "allow" }>;
  * not be loaded are `ingest.rule_error`.
  *
  * `collected` (docs/rule-format.md, open item 1) is set only when the DB says the sender is a
- * browser extension, the event names the server's current rule-set version, and that version has
- * collect rules. The extension then already applied this version's rules to the event, so an event
- * that no rule decides is not left to the default policy (it may have been rewritten out of its
- * own rule's reach). A user with no rules (version 0), a stale version or an `http` sender gets the
- * full evaluation. `keepQuery` is ignored: events have no place for a query string yet, so it stays
- * stripped (open item 2).
+ * browser extension, the event names the server's current rule-set version, that version has
+ * collect rules, and `canTrustCollected` says the rules need it: an `allow` rule reads a field that
+ * a collect transform rewrites. The extension then already applied this version's rules to the
+ * event, so an event that no rule decides is not left to the default policy (it may have been
+ * rewritten out of its own rule's reach). Every other event (a user with no rules, a stale
+ * version, an `http` sender, rules that rewrite nothing an `allow` rule reads) gets the full
+ * evaluation and the default policy. `keepQuery` is ignored: events have no place for a query
+ * string yet, so it stays stripped (open item 2).
  */
 function enforce(
   event: { id: string; meta?: { ruleSetVersion: number } | undefined },
@@ -139,7 +141,8 @@ function enforce(
     caller.kind === "browser-extension" &&
     compiled.version >= 1 &&
     compiled.collect.length > 0 &&
-    event.meta?.ruleSetVersion === compiled.version;
+    event.meta?.ruleSetVersion === compiled.version &&
+    canTrustCollected(compiled);
   const result = evaluate(event, compiled, caller.defaultPolicy, {
     source: caller.kind,
     collected,
@@ -264,8 +267,9 @@ export class IngestService {
    * `GET /v1/ingest/config`: what the caller's extension needs to apply the user's rules itself.
    * The rules and their version come from ONE compiled set (`RuleSetProvider`), so they always
    * belong together; only enabled `collect` rules are sent (process rules are server-only). The
-   * policy is the integration's own and is part of the ETag. A stored rule that no longer fits the
-   * schema is a 409 `ingest.rule_error` (the client then collects nothing, invariant 1). The user
+   * policy is the integration's own and is part of the ETag. Only a `browser-extension`
+   * integration applies rules itself, so the key of any other kind is a 403
+   * `ingest.config_unsupported` (nothing is read). A stored rule that no longer fits the schema is a 409 `ingest.rule_error` (the client then collects nothing, invariant 1). The user
    * and integration come from the ingest AuthContext only (invariant 4). Nothing here logs.
    */
   async getConfig(
@@ -275,6 +279,13 @@ export class IngestService {
     assertUserScope(userId);
     const caller = await this.repository.loadCaller(userId, integrationId);
     if (caller === null) throw new AppException(401, INVALID_KEY_CODE, "Invalid API key");
+    if (caller.kind !== "browser-extension") {
+      throw new AppException(
+        403,
+        "ingest.config_unsupported",
+        "Only a browser extension integration can read the rules",
+      );
+    }
     const { compiled } = await this.ruleSets.get(userId);
     if (compiled === null) {
       throw new AppException(409, "ingest.rule_error", "The rules could not be loaded");

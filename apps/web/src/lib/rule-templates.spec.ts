@@ -16,4 +16,12 @@ describe("rule templates", () => {
     const dropping = RULE_TEMPLATES.filter((t) => t.rule.then.some((a) => a.action === "drop"));
     expect(dropping.map((t) => t.id)).toEqual(["never-site"]);
   });
+
+  it("the block template covers the apex and its subdomains (M4-R nit)", () => {
+    // `domain_matches` on `*.example.com` does not match `example.com` itself (rule-format.md).
+    const never = RULE_TEMPLATES.find((t) => t.id === "never-site");
+    const values = (never?.rule.when.any ?? []).map((c) => c.value);
+    expect(values).toEqual(["example.com", "*.example.com"]);
+    expect(never?.rule.when.all).toBeUndefined();
+  });
 });

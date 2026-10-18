@@ -14,9 +14,9 @@ export const RULES_PER_USER_MAX = 100;
 
 /** Code of the 404 for an unknown, foreign or malformed rule id (all look the same). */
 export const RULE_NOT_FOUND_CODE = "rule.not_found";
-export const RULES_LIMIT_REACHED_CODE = "rules.limit_reached";
+export const RULE_LIMIT_REACHED_CODE = "rule.limit_reached";
 
-/** `GET /v1/rules`: every rule (disabled ones too) at the current version, in evaluation order. */
+/** `GET /v1/rules`: every rule (disabled ones too) at the current version, in list order (priority, then id). */
 export const ruleListResponseSchema = ruleSetSchema;
 export type RuleListResponse = z.output<typeof ruleListResponseSchema>;
 
@@ -60,6 +60,14 @@ export const testRuleRequestSchema = z
   });
 export type TestRuleRequest = z.output<typeof testRuleRequestSchema>;
 
+/** Why evaluation failed (`@personal-api/rules` `EvaluationResult` with `decision: "error"`). */
+export const EVALUATION_ERROR_REASONS = [
+  "invalid_context",
+  "invalid_event",
+  "invalid_result",
+  "failed",
+] as const;
+
 /** What the engine decided (`@personal-api/rules` `EvaluationResult`), as the API returns it. */
 export const testRuleResponseSchema = z.discriminatedUnion("decision", [
   z.strictObject({
@@ -73,7 +81,7 @@ export const testRuleResponseSchema = z.discriminatedUnion("decision", [
   z.strictObject({ decision: z.literal("drop"), trace: ruleTraceSchema }),
   z.strictObject({
     decision: z.literal("error"),
-    reason: z.enum(["invalid_context", "invalid_event", "invalid_result", "failed"]),
+    reason: z.enum(EVALUATION_ERROR_REASONS),
   }),
 ]);
 export type TestRuleResponse = z.output<typeof testRuleResponseSchema>;

@@ -58,11 +58,11 @@ describe("RulesService", () => {
     },
   );
 
-  it("maps a full rule set to 409 rules.limit_reached", async () => {
+  it("maps a full rule set to 409 rule.limit_reached", async () => {
     const { service } = setup("limit_reached");
     const error = await problem(service.create(USER, definition));
     expect(error.getStatus()).toBe(409);
-    expect(error.code).toBe("rules.limit_reached");
+    expect(error.code).toBe("rule.limit_reached");
   });
 
   it("passes the clock's time to the repository", async () => {

@@ -4,7 +4,7 @@ import type {
   RuleDefinition,
   TestRuleResponse,
 } from "@personal-api/contracts";
-import { RULE_ACTIONS_BY_STAGE } from "@personal-api/contracts";
+import { INTEGRATION_KINDS, RULE_ACTIONS_BY_STAGE } from "@personal-api/contracts";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { type ReactNode, useState } from "react";
@@ -27,7 +27,6 @@ import {
   REDACTABLE_FIELDS,
   type RuleDraft,
   ruleToDraft,
-  SOURCES,
   validateRule,
 } from "@/lib/rule-draft";
 import { RULE_TEMPLATES, type RuleTemplate } from "@/lib/rule-templates";
@@ -267,7 +266,7 @@ function RuleForm({ draft, onChange }: { draft: RuleDraft; onChange: (next: Rule
       <fieldset className="flex flex-col gap-2">
         <legend className="text-sm font-medium">When</legend>
         <div className="flex flex-wrap gap-4 text-sm">
-          {SOURCES.map((source) => (
+          {INTEGRATION_KINDS.map((source) => (
             <label key={source} className="flex items-center gap-2">
               <input
                 type="checkbox"
@@ -418,7 +417,7 @@ function TestPanel({
   replaceRuleId: string | undefined;
 }) {
   const [eventText, setEventText] = useState(sampleEvent);
-  const [source, setSource] = useState<(typeof SOURCES)[number]>("browser-extension");
+  const [source, setSource] = useState<(typeof INTEGRATION_KINDS)[number]>("browser-extension");
   const [only, setOnly] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   const [result, setResult] = useState<TestRuleResponse | null>(null);
@@ -473,7 +472,7 @@ function TestPanel({
           value={source}
           onChange={(e) => setSource(e.target.value as typeof source)}
         >
-          {SOURCES.map((s) => (
+          {INTEGRATION_KINDS.map((s) => (
             <option key={s} value={s}>
               {s}
             </option>
@@ -574,7 +573,7 @@ function RuleEditor({
     },
     onError: (error) => {
       if (error instanceof RuleRequestError && error.issues.length > 0) setIssues(error.issues);
-      else if (error instanceof RuleRequestError && error.code === "rules.limit_reached")
+      else if (error instanceof RuleRequestError && error.code === "rule.limit_reached")
         setSaveError("You have reached the limit of 100 rules.");
       else setSaveError("Could not save the rule. Try again.");
     },

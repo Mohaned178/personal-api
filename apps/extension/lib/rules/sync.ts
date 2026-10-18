@@ -28,6 +28,9 @@ import {
 /** Own periodic alarm, separate from the capture heartbeat, the flush retry and the server heartbeat. */
 export const RULES_SYNC_ALARM_NAME = "pa-rules-sync";
 
+/** The `storage.local` key of the M2-07 allow list, which M4-06 replaced. Removed at every start. */
+const LEGACY_ALLOW_LIST_KEY = "allowList";
+
 /** A rule change reaches the extension within about this long. A 304 costs one small request. */
 export const RULES_SYNC_PERIOD_MINUTES = 1;
 
@@ -150,6 +153,11 @@ export function createRulesSync(deps: RulesSyncDeps): RulesSync {
   }
 
   async function start(): Promise<void> {
+    try {
+      await deps.storage.remove(LEGACY_ALLOW_LIST_KEY);
+    } catch {
+      // Best effort: nothing reads the old key any more.
+    }
     try {
       const existing = await deps.alarms.get(RULES_SYNC_ALARM_NAME);
       if (!existing) {
