@@ -15,7 +15,7 @@ import { LOOPBACK_HOST_PERMISSION, patchBuildWithHostPermissions } from "../supp
 // M2-08, Firefox smoke (M2-00c harness): pair -> visit fixture -> events in the DB.
 //
 // Needs `pnpm --filter extension build:firefox`, the built API, Firefox + geckodriver and Docker
-// (or E2E_DATABASE_URL). Run with `pnpm --filter @personal-api/e2e test:e2e:firefox:smoke`.
+// (or E2E_DATABASE_URL). Run with `pnpm --filter @personal-api/e2e test:e2e`.
 // Always runs in CI.
 //
 // Differences from the Chromium spec, on purpose:

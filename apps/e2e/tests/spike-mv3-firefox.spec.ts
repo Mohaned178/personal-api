@@ -10,8 +10,8 @@ import {
 // Spike C (M2-00b): the Spike A design (ADR 0002, option B) re-run on a Firefox MV3 EVENT PAGE.
 // Mirrors tests/spike-mv3.spec.ts scenario by scenario. The harness (Selenium + geckodriver, not
 // Playwright: Playwright's Firefox cannot load extensions) is the contract documented at the top
-// of support/spike-firefox.ts. Run with `pnpm --filter @personal-api/e2e test:e2e:firefox`
-// (playwright.firefox.config.ts; the default `test:e2e` ignores this file).
+// of support/spike-firefox.ts. Run with `pnpm --filter @personal-api/e2e test:e2e:firefox:spike`
+// (playwright.firefox.config.ts; `test:e2e` does not run this file).
 //
 // Idle (60 s) and screen lock cannot be driven headless and Firefox may never report `locked`;
 // they follow a manual protocol and are not covered here.

@@ -7,9 +7,10 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "e2e:install": "playwright install chromium",
-    "test:e2e:firefox": "pnpm --filter @personal-api/spike-mv3-lifecycle build && playwright test --config playwright.firefox.config.ts",
-    "test:e2e:firefox:smoke": "pnpm --filter @personal-api/contracts build && pnpm --filter @personal-api/api build && playwright test --config playwright.firefox.config.ts extension-smoke-firefox extension-harness-firefox extension-pairing-firefox extension-restart-flush-firefox",
-    "test:e2e": "pnpm --filter @personal-api/contracts build && pnpm --filter @personal-api/api build && pnpm --filter extension build && pnpm --filter @personal-api/spike-mv3-lifecycle build && playwright test"
+    "test:e2e": "pnpm --filter @personal-api/contracts build && pnpm --filter @personal-api/api build && pnpm --filter extension build:firefox && playwright test --config playwright.firefox.config.ts extension-smoke-firefox extension-harness-firefox extension-pairing-firefox extension-sync-firefox extension-restart-flush-firefox",
+    "test:e2e:firefox:spike": "pnpm --filter @personal-api/spike-mv3-lifecycle build && playwright test --config playwright.firefox.config.ts spike-mv3-firefox",
+    "test:e2e:edge": "pnpm --filter @personal-api/contracts build && pnpm --filter @personal-api/api build && pnpm --filter extension build && pnpm --filter @personal-api/spike-mv3-lifecycle build && playwright test",
+    "test:e2e:edge:smoke": "pnpm --filter @personal-api/contracts build && pnpm --filter @personal-api/api build && pnpm --filter extension build && playwright test --grep @smoke"
   },
   "devDependencies": {
     "@personal-api/tsconfig": "workspace:*",

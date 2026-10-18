@@ -25,7 +25,7 @@ import { LOOPBACK_HOST_PERMISSION, patchBuildWithHostPermissions } from "../supp
 // once and the in-flight request is cancelled, which is what this test needs.
 //
 // Needs `pnpm --filter extension build:firefox`, the built API, Firefox + geckodriver and Docker
-// (or E2E_DATABASE_URL). Always runs in CI via `test:e2e:firefox:smoke`.
+// (or E2E_DATABASE_URL). Always runs in CI via `test:e2e`.
 
 const ALLOWED_DOMAIN = "127.0.0.1";
 const KILLS = 20;

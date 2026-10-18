@@ -13,8 +13,8 @@ import { expect, test } from "../support/fixtures";
 // proves the harness can see the extension and read/write its stored state.
 //
 // Needs `pnpm --filter extension build:firefox` first. Run with
-// `pnpm --filter @personal-api/e2e test:e2e:firefox` (playwright.firefox.config.ts; the default
-// `test:e2e` ignores this file). Needs Firefox + geckodriver; always runs in CI.
+// `pnpm --filter @personal-api/e2e test:e2e` (playwright.firefox.config.ts; the Edge run
+// `test:e2e:edge` ignores this file). Needs Firefox + geckodriver; always runs in CI.
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 

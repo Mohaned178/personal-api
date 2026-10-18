@@ -21,13 +21,14 @@ import {
 import { LOOPBACK_HOST_PERMISSION, patchBuildWithHostPermissions } from "../support/patched-build";
 import type { PairedAccount } from "../support/stack";
 
-// M2-08: the real extension build in Chromium, the real API and a real Postgres.
+// M2-08 (Edge smoke since M4-00: the tests tagged @smoke run in CI, the rest via test:e2e:edge;
+// the Firefox suite, extension-sync-firefox.spec.ts, is the primary): the real extension build in Chromium, the real API and a real Postgres.
 //
 //   pair (popup form + dashboard code) -> visit fixture pages -> events in the DB
 //   go offline -> visit more pages -> reconnect -> nothing lost, nothing duplicated
 //
 // Needs Docker (Testcontainers) or E2E_DATABASE_URL, the built API and the built extension:
-// `pnpm test:e2e` builds them. Always runs in CI.
+// `pnpm test:e2e:edge:smoke` (or `test:e2e:edge` for all of it) builds them. The smoke runs in CI.
 //
 // The extension talks to the API through a loopback proxy (support/flaky-proxy.ts), which is how
 // "the network goes away" is simulated: Playwright's offline switch does not reach an extension.
@@ -77,7 +78,7 @@ async function visit(page: Page, url: string): Promise<void> {
 }
 
 test.describe("Chromium: pair, collect, sync", () => {
-  test("pairs through the popup with a dashboard code and stores an ingest key, once", async ({
+  test("pairs through the popup with a dashboard code and stores an ingest key, once @smoke", async ({
     unpaired,
     stack,
   }) => {
@@ -112,7 +113,7 @@ test.describe("Chromium: pair, collect, sync", () => {
     expect(await readConnectionChromium(unpaired.worker)).toBeUndefined();
   });
 
-  test("stores a visit to an allowed fixture domain in the database, without query or fragment", async ({
+  test("stores a visit to an allowed fixture domain in the database, without query or fragment @smoke", async ({
     paired,
     stack,
     site,

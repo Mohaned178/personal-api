@@ -80,10 +80,10 @@ jobs:
       - name: Integration tests
         run: pnpm test:int
 
-  # Loads the built extension in Playwright's bundled Chromium (headless). Needs system libraries,
+  # Edge smoke: loads the built chrome-mv3 extension in Playwright's bundled Chromium (headless). Needs system libraries,
   # which `playwright install --with-deps` installs on ubuntu.
-  e2e:
-    name: e2e (ubuntu-24.04)
+  e2e-edge:
+    name: e2e-edge (ubuntu-24.04)
     runs-on: ubuntu-24.04
     defaults:
       run:
@@ -113,9 +113,9 @@ jobs:
       - name: Build contracts
         run: pnpm --filter @personal-api/contracts build
 
-      # The e2e package script builds the extension first, then runs Playwright.
-      - name: E2E tests
-        run: pnpm test:e2e
+      # The e2e package script builds the extension first, then runs the @smoke tests.
+      - name: Edge smoke tests
+        run: pnpm --filter @personal-api/e2e test:e2e:edge:smoke
 
       - name: Upload Playwright report
         if: failure()
@@ -128,8 +128,8 @@ jobs:
           retention-days: 7
 
   # Loads the real firefox-mv3 build in headless Firefox through Selenium + geckodriver (the runner
-  # ships Firefox; selenium-manager fetches geckodriver). Headless, no xvfb. Runs the smoke and the
-  # fast harness specs only: the slow spike spec is not part of this job.
+  # ships Firefox; selenium-manager fetches geckodriver). Headless, no xvfb. The primary e2e suite;
+  # the slow spike spec is not part of this job.
   e2e-firefox:
     name: e2e-firefox (ubuntu-24.04)
     runs-on: ubuntu-24.04
@@ -164,8 +164,8 @@ jobs:
       - name: Build the extension for Firefox
         run: pnpm --filter extension build:firefox
 
-      - name: Firefox smoke tests
-        run: pnpm --filter @personal-api/e2e test:e2e:firefox:smoke
+      - name: Firefox e2e tests
+        run: pnpm --filter @personal-api/e2e test:e2e
 
       - name: Upload Playwright report
         if: failure()

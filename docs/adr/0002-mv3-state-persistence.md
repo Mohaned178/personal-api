@@ -154,7 +154,7 @@ the 6 × 20-kill measurement), the 15 × 20-kill measurement (300 of the 460 kil
 | Browser restart | covered by relaunch | queue intact, no duplicate, open segment closed, never inflated | pass |
 | Idle (60 s) and lock | manual protocol | protocol written; **not yet run** | pending |
 
-E2E runs on the final prototype: `pnpm test:e2e` 3 times (10/10 tests each, including the 6
+E2E runs on the final prototype: `pnpm test:e2e:edge` 3 times (then named `test:e2e`) (10/10 tests each, including the 6
 existing extension tests) and the spike spec with `--repeat-each 5` (20/20). No flaky result.
 
 ### Segment error (5 runs per scenario, measured duration minus scripted duration)
@@ -423,7 +423,7 @@ for MV3 backgrounds. The background is a non-persistent page that Firefox suspen
 (top-level) listeners.
 
 - **Tests:** `apps/e2e/tests/spike-mv3-firefox.spec.ts` (7 tests, mirroring the Chromium spec's
-  scenarios one for one), run with `pnpm --filter @personal-api/e2e test:e2e:firefox`
+  scenarios one for one), run with `pnpm --filter @personal-api/e2e test:e2e:firefox:spike`
   (`playwright.firefox.config.ts`; Playwright is only the test runner there).
 - **Harness:** `apps/e2e/support/spike-firefox.ts`, Selenium (`selenium-webdriver` 4.49.0) +
   geckodriver, because Playwright's Firefox cannot load WebExtensions. selenium-manager downloads
@@ -493,7 +493,7 @@ selenium-webdriver 4.49.0, one worker.
 | Browser restart | covered by relaunch | 7 of 7 runs: queue intact, nothing duplicated, no visit added, and the open segment was closed without counting the 4 s the browser was down. | pass |
 | Idle (60 s), lock, real OS blur, real quit and crash | manual protocol | Protocol written; **not yet run**. | pending |
 
-Provenance: the 7 runs are two single `test:e2e:firefox` runs plus one with `--repeat-each 5`
+Provenance: the 7 runs are two single `test:e2e:firefox:spike` runs plus one with `--repeat-each 5`
 (49 of 49 tests passed, no flaky result). The 10 × 20 measurement came from an ad-hoc spec that was deleted
 before commit.
 

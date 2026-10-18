@@ -4,7 +4,7 @@ import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { type BrowserContext, type CDPSession, chromium, type Worker } from "@playwright/test";
 
-/** The WXT build output. `pnpm test:e2e` builds it first. */
+/** The WXT build output. `pnpm test:e2e:edge:smoke` builds it first. */
 export const EXTENSION_PATH = resolve(
   fileURLToPath(new URL(".", import.meta.url)),
   "../../extension/.output/chrome-mv3",
