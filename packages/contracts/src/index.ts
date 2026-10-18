@@ -23,4 +23,5 @@ export * from "./rule-fields.js";
 export * from "./rule-glob.js";
 export * from "./rule-trace.js";
 export * from "./rules.js";
+export * from "./rules-api.js";
 export * from "./setup.js";

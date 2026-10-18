@@ -142,6 +142,54 @@ curl -s "$BASE/v1/integrations/<integration-id>" -b "$JAR"
 
 Use `GET /v1/integrations` for the list. `lastSeenAt` shows the last heartbeat or batch.
 
+## 6. Rules (dashboard)
+
+All rule routes need the session cookie. A rule is the document in [rule-format.md](rule-format.md);
+the server sets its `id` and owner, so a body with `id` or `userId` is a `400`.
+
+```bash
+# Create (201): { "rule": { "id": …, … }, "version": 1 }
+curl -s -X POST "$BASE/v1/rules" -b "$JAR" -H "Content-Type: application/json" -d '{
+  "name": "Track GitHub", "enabled": true, "priority": 10, "stage": "collect",
+  "when": { "all": [{ "field": "data.domain", "op": "eq", "value": "github.com" }] },
+  "then": [{ "action": "allow" }]
+}'
+curl -s "$BASE/v1/rules" -b "$JAR"                 # { "version": 1, "rules": [ … ] } by priority, then id
+curl -s "$BASE/v1/rules/<rule-id>" -b "$JAR"       # { "rule": …, "version": 1 }
+curl -s -X PUT "$BASE/v1/rules/<rule-id>" -b "$JAR" -H "Content-Type: application/json" -d '<whole definition>'
+curl -s -X DELETE "$BASE/v1/rules/<rule-id>" -b "$JAR"   # { "version": 3 }
+```
+
+- **Version.** `version` is the rule-set version. It is 0 until the first change and goes up by one on
+  every create, replace and delete (never on a refused change). The same transaction writes a
+  `rule_history` snapshot of all the user's rules at that version, so an old event's trace stays
+  explainable after a rule changed or was deleted.
+- **Limit.** A user can have 100 rules; the 101st is `409 rules.limit_reached`.
+- **Validation** is the contracts' `ruleDefinitionSchema`, the same one the engine and the extension use.
+  `400 request.invalid` lists `issues` (path and fixed message, never the rule's values).
+
+### Dry run
+
+`POST /v1/rules/test` runs the engine on a sample event. It stores, counts and logs nothing.
+
+```json
+{
+  "event": { "id": "…", "type": "browser.page_visited", "typeVersion": 1, "occurredAt": "…", "data": { … } },
+  "source": "browser-extension",
+  "defaultPolicy": "deny",
+  "rule": { "…": "an unsaved draft, optional" },
+  "replaceRuleId": "swap the draft in for this saved rule, optional",
+  "onlyRule": false
+}
+```
+
+It answers with the engine's decision: `{ "decision": "allow", "event", "tags", "retentionDays", "keepQuery", "trace" }`,
+`{ "decision": "drop", "trace" }` or `{ "decision": "error", "reason" }`. `defaultPolicy` defaults to
+`deny`. Without `rule`, the saved rules run. With `rule`, the draft runs together with them, or in place
+of `replaceRuleId`, or alone with `onlyRule: true`. `replaceRuleId` and `onlyRule` need a `rule`, and
+cannot be combined. `trace.ruleSetVersion` is the saved version; a draft without a `replaceRuleId`
+shows up in the trace as `00000000-0000-4000-8000-000000000000`.
+
 ## Error codes
 
 Errors are `application/problem+json` (RFC 9457) with a stable `code`:
@@ -170,5 +218,7 @@ Errors are `application/problem+json` (RFC 9457) with a stable `code`:
 | 401  | `auth.unauthenticated`     | A dashboard route was called without a valid session cookie.                           |
 | 403  | `auth.signup_disabled`     | Sign-up is closed (`ALLOW_SIGNUP=false` and an account already exists).                 |
 | 404  | `integration.not_found`    | The integration id is unknown, belongs to another user, or is malformed (all look the same). |
+| 404  | `rule.not_found`           | The rule id is unknown, belongs to another user, or is malformed (all look the same). |
+| 409  | `rules.limit_reached`      | The user already has 100 rules.                                                        |
 | 413  | `http.payload_too_large`   | The body is over the route's limit (100 KB, or 256 KB for `/v1/ingest/events`), or has no declared length on the auth routes. |
 | 500  | `internal.error`           | Unexpected failure. Details are logged, not returned.                                  |

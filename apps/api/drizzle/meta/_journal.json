@@ -36,6 +36,13 @@
       "when": 1792086521158,
       "tag": "0004_smart_nightshade",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1792326652686,
+      "tag": "0005_fast_charles_xavier",
+      "breakpoints": true
     }
   ]
 }

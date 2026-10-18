@@ -71,6 +71,9 @@ export async function tenantState(pool: Pool, userId: string): Promise<Record<st
     events: await q("select * from events where user_id = $1 order by client_event_id"),
     ingestionLog: await q("select * from ingestion_log where user_id = $1 order by bucket"),
     pairingCodes: await q("select * from pairing_codes where user_id = $1 order by id"),
+    rules: await q("select * from rules where user_id = $1 order by id"),
+    ruleSets: await q("select * from rule_sets where user_id = $1"),
+    ruleHistory: await q("select * from rule_history where user_id = $1 order by rule_set_version"),
   };
 }
 

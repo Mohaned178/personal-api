@@ -71,6 +71,12 @@ const cookiePatch = (u: FixtureUser, path: string, body?: unknown) =>
     .patch(path)
     .set("Cookie", u.cookie)
     .send(body as object);
+const cookiePut = (u: FixtureUser, path: string, body?: unknown) =>
+  http()
+    .put(path)
+    .set("Cookie", u.cookie)
+    .send(body as object);
+const cookieRemove = (u: FixtureUser, path: string) => http().delete(path).set("Cookie", u.cookie);
 const cookieDelete = (u: FixtureUser, body: unknown) =>
   http()
     .delete("/v1/events")
@@ -105,6 +111,18 @@ async function expectSameAsUnknown(res: Res, unknown: Res) {
   expect(res.status).toBe(unknown.status);
   expect(res.body).toEqual(unknown.body);
 }
+
+/** The rule every user starts with in the sweep: it allows github.com. */
+const ruleBody = {
+  name: "Track GitHub",
+  enabled: true,
+  priority: 10,
+  stage: "collect",
+  when: { all: [{ field: "data.domain", op: "eq", value: "github.com" }] },
+  then: [{ action: "allow" }],
+};
+const githubVisit = () => pageVisit({ data: { domain: "github.com" } });
+const ruleIds = new Map<string, string>();
 
 /** Each user's extension integration and its pending (unused, unexpired) code, set per test. */
 const pending = new Map<string, { integrationId: string; pairingCode: string }>();
@@ -563,11 +581,180 @@ const ROUTES: Route[] = [
       expect(res.body).toEqual({ deleted: 1 });
     },
   },
+  {
+    route: "GET /v1/rules",
+    attacks: [
+      {
+        label: "listing while the victim has a rule, naming the victim in query and headers",
+        run: async (attacker, victim) => {
+          const res = await cookieGet(attacker, `/v1/rules?userId=${victim.userId}`).set(
+            "X-User-Id",
+            victim.userId,
+          );
+          expect(res.status).toBe(200);
+          expect(res.body.rules.map((r: { id: string }) => r.id)).toEqual([
+            ruleIds.get(attacker.userId),
+          ]);
+          expect(JSON.stringify(res.body)).not.toContain(ruleIds.get(victim.userId));
+        },
+      },
+    ],
+    control: async (owner) => {
+      const res = await cookieGet(owner, "/v1/rules");
+      expect(res.status).toBe(200);
+      expect(res.body.rules).toHaveLength(1);
+    },
+  },
+  {
+    route: "POST /v1/rules",
+    attacks: [
+      {
+        label: "naming the victim as owner in the body",
+        run: async (attacker, victim) => {
+          const res = await cookiePost(attacker, "/v1/rules", {
+            ...ruleBody,
+            userId: victim.userId,
+          });
+          expectProblem(res, 400, "request.invalid");
+          expect(JSON.stringify(res.body)).not.toContain(victim.userId);
+        },
+      },
+      {
+        label: "creating a rule while naming the victim in query and headers",
+        run: async (attacker, victim) => {
+          const res = await cookiePost(attacker, `/v1/rules?userId=${victim.userId}`, ruleBody).set(
+            "X-User-Id",
+            victim.userId,
+          );
+          expect(res.status).toBe(201);
+          const { rows } = await h.testDb.pool.query("select user_id from rules where id = $1", [
+            res.body.rule.id,
+          ]);
+          expect(rows).toEqual([{ user_id: attacker.userId }]);
+        },
+      },
+    ],
+    control: async (owner) => {
+      expect((await cookiePost(owner, "/v1/rules", ruleBody)).status).toBe(201);
+    },
+  },
+  {
+    route: "POST /v1/rules/test",
+    attacks: [
+      {
+        label: "testing an event the victim's rule would allow",
+        run: async (attacker, victim) => {
+          // The attacker has the same rule as the victim, so remove theirs first: only then can
+          // a result that allows come from the victim's rules.
+          expect(
+            (await cookieRemove(attacker, `/v1/rules/${ruleIds.get(attacker.userId)}`)).status,
+          ).toBe(200);
+          const res = await cookiePost(attacker, "/v1/rules/test", {
+            event: githubVisit(),
+            source: "http",
+          });
+          expect(res.status).toBe(200);
+          expect(res.body).toMatchObject({
+            decision: "drop",
+            trace: { decidedBy: "default_policy", matched: [] },
+          });
+          expect(JSON.stringify(res.body)).not.toContain(ruleIds.get(victim.userId));
+        },
+      },
+      {
+        label: "replacing the victim's rule id in a dry run",
+        run: async (attacker, victim) => {
+          const body = (id: string) => ({
+            event: githubVisit(),
+            source: "http",
+            rule: ruleBody,
+            replaceRuleId: id,
+          });
+          const res = await cookiePost(
+            attacker,
+            "/v1/rules/test",
+            body(ruleIds.get(victim.userId) as string),
+          );
+          expectProblem(res, 404, "rule.not_found");
+          await expectSameAsUnknown(
+            res,
+            await cookiePost(attacker, "/v1/rules/test", body(missing)),
+          );
+        },
+      },
+    ],
+    control: async (owner) => {
+      const res = await cookiePost(owner, "/v1/rules/test", {
+        event: githubVisit(),
+        source: "http",
+      });
+      expect(res.status).toBe(200);
+      expect(res.body.decision).toBeDefined();
+    },
+  },
+  {
+    route: "GET /v1/rules/:id",
+    attacks: [
+      {
+        label: "reading the victim's rule",
+        run: async (attacker, victim) => {
+          const res = await cookieGet(attacker, `/v1/rules/${ruleIds.get(victim.userId)}`);
+          expectProblem(res, 404, "rule.not_found");
+          await expectSameAsUnknown(res, await cookieGet(attacker, `/v1/rules/${missing}`));
+        },
+      },
+    ],
+    control: async (owner) => {
+      const res = await cookieGet(owner, `/v1/rules/${ruleIds.get(owner.userId)}`);
+      expect(res.status).toBe(200);
+      expect(res.body.rule.id).toBe(ruleIds.get(owner.userId));
+    },
+  },
+  {
+    route: "PUT /v1/rules/:id",
+    attacks: [
+      {
+        label: "replacing the victim's rule",
+        run: async (attacker, victim) => {
+          const body = { ...ruleBody, name: "hijacked", then: [{ action: "drop" }] };
+          const res = await cookiePut(attacker, `/v1/rules/${ruleIds.get(victim.userId)}`, body);
+          expectProblem(res, 404, "rule.not_found");
+          await expectSameAsUnknown(res, await cookiePut(attacker, `/v1/rules/${missing}`, body));
+        },
+      },
+    ],
+    control: async (owner) => {
+      const res = await cookiePut(owner, `/v1/rules/${ruleIds.get(owner.userId)}`, {
+        ...ruleBody,
+        name: "renamed",
+      });
+      expect(res.status).toBe(200);
+      expect(res.body.rule.name).toBe("renamed");
+    },
+  },
+  {
+    route: "DELETE /v1/rules/:id",
+    attacks: [
+      {
+        label: "deleting the victim's rule",
+        run: async (attacker, victim) => {
+          const res = await cookieRemove(attacker, `/v1/rules/${ruleIds.get(victim.userId)}`);
+          expectProblem(res, 404, "rule.not_found");
+          await expectSameAsUnknown(res, await cookieRemove(attacker, `/v1/rules/${missing}`));
+        },
+      },
+    ],
+    control: async (owner) => {
+      expect((await cookieRemove(owner, `/v1/rules/${ruleIds.get(owner.userId)}`)).status).toBe(
+        200,
+      );
+    },
+  },
 ];
 
 /**
- * Both users start with one stored event, a heartbeat, and an extension with a pending pairing
- * code, so "unchanged" is not trivially empty.
+ * Both users start with one stored event, a heartbeat, a rule, and an extension with a pending
+ * pairing code, so "unchanged" is not trivially empty.
  */
 async function seedActivity() {
   for (const user of [h.a, h.b]) {
@@ -576,6 +763,9 @@ async function seedActivity() {
     pending.set(user.userId, { integrationId, pairingCode });
     expectResults(await postEvents(h.app, user.ingestKey, [pageVisit()]));
     expect((await postHeartbeat(h.app, user.ingestKey, heartbeatBody)).status).toBe(204);
+    const created = await cookiePost(user, "/v1/rules", ruleBody);
+    expect(created.status).toBe(201);
+    ruleIds.set(user.userId, created.body.rule.id);
   }
 }
 
@@ -647,6 +837,7 @@ describe("the table covers every M1 route, and each refuses a missing or wrong-k
     const agent = http();
     if (method === "GET") return agent.get(url);
     if (method === "PATCH") return agent.patch(url);
+    if (method === "PUT") return agent.put(url);
     if (method === "DELETE") return agent.delete(url);
     return agent.post(url);
   }
