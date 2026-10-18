@@ -116,7 +116,9 @@ Response: `200` with one result per event, in request order:
 
 - `accepted`: stored now.
 - `duplicate`: this `id` was already stored for this integration (safe to resend).
-- `dropped`: refused by the rules; only a counter is kept, never the payload.
+- `dropped`: refused by your rules, or by the integration's default policy when no rule
+  decided; only a counter is kept (per rule id, or `default_policy`), never the payload. Do not
+  resend it: the same event is dropped again until the rules change.
 - `rejected`: invalid; `code` says why. The second event above has a query string in `path`,
   so it is rejected.
 
@@ -207,6 +209,7 @@ Errors are `application/problem+json` (RFC 9457) with a stable `code`:
 | `ingest.type_version_unknown`   | `typeVersion` is not registered for that type.                                          |
 | `ingest.payload_invalid`        | `data` fails the schema for that type (for example a `path` with `?`, or an unknown key). |
 | `ingest.occurred_at_too_old`    | `occurredAt` is older than the accepted window.                                         |
+| `ingest.rule_error`             | Your rules could not be run on this event (a stored rule is invalid, or the engine failed). Nothing is stored. |
 
 ### Whole-request codes
 

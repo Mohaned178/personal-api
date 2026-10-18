@@ -55,6 +55,11 @@ export class RulesRepository {
     );
   }
 
+  /** Just the rule-set version (0 before the first change): the cheap check behind the cache. */
+  async readVersion(userId: string): Promise<number> {
+    return readVersion(tenantScope(this.db, userId));
+  }
+
   async findById(userId: string, id: string): Promise<StoredRule | null> {
     tenantScope(this.db, userId);
     return this.db.transaction(

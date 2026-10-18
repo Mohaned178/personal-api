@@ -14,6 +14,7 @@ import type { Pool } from "pg";
 import request from "supertest";
 import { expect } from "vitest";
 import { PAIRING_RATE_LIMITER } from "../src/modules/pairing/pairing.tokens";
+import { RuleSetProvider } from "../src/modules/rules/rule-set.provider";
 import type { RateLimiter } from "../src/platform/rate-limit/rate-limiter";
 import { FakeClock } from "./fake-clock";
 import { startTestDatabase, type TestDatabase } from "./postgres";
@@ -106,8 +107,6 @@ export function expectResults(res: {
   const parsed = ingestBatchResponseSchema.safeParse(res.body);
   expect(parsed.success, "response must match ingestBatchResponseSchema (strict)").toBe(true);
   const results = (res.body as { results: ItemResult[] }).results;
-  // M1 has no rule evaluation: nothing is ever `dropped`.
-  expect(results.filter((r) => r.status === "dropped")).toEqual([]);
   return results;
 }
 
@@ -191,12 +190,32 @@ export interface IngestHarness {
   stop: () => Promise<void>;
 }
 
+/** Sets `default_policy` on every integration, or on the one given. */
+export async function setDefaultPolicy(
+  pool: Pool,
+  policy: "allow" | "deny",
+  integrationId?: string,
+): Promise<void> {
+  if (integrationId === undefined) {
+    await pool.query("update integrations set default_policy = $1", [policy]);
+  } else {
+    await pool.query("update integrations set default_policy = $1 where id = $2", [
+      policy,
+      integrationId,
+    ]);
+  }
+}
+
 /** Real app + fresh Postgres + the two-user fixture, with a controllable clock. */
 export async function startIngestHarness(): Promise<IngestHarness> {
   const testDb = await startTestDatabase();
   const clock = new FakeClock(FIXED_NOW);
   const app = await buildFixtureApp(testDb, { clock });
   const { a, b } = await seedTwoUsers(app, testDb);
+  // The fixture's integrations deny by default (M4-05 enforces rules), so with no rules every
+  // event would be dropped. These tests are about ingestion itself: let events through unless a
+  // test sets a policy or adds rules (`setDefaultPolicy`).
+  await setDefaultPolicy(testDb.pool, "allow");
   return {
     testDb,
     app,
@@ -208,6 +227,8 @@ export async function startIngestHarness(): Promise<IngestHarness> {
         "truncate events, ingestion_log, pairing_codes, rules, rule_sets, rule_history restart identity",
       );
       clock.set(FIXED_NOW);
+      // The truncate restarts every rule-set version at 0, so cached sets would look current.
+      app.get(RuleSetProvider).clear();
       // Every request in a test run comes from one address, so forget the pairing throttle.
       app.get<RateLimiter>(PAIRING_RATE_LIMITER).reset();
     },

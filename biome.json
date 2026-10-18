@@ -69,6 +69,9 @@
         "packages/contracts/src/rule*.ts",
         "packages/rules/src/**",
         "apps/api/src/modules/rules/*.spec.ts",
+        "apps/api/src/modules/ingest/ingest.service.spec.ts",
+        "apps/api/src/modules/ingest/ingest-rules.int.spec.ts",
+        "apps/e2e/support/stack.ts",
         "apps/api/src/modules/integrations/cross-tenant-sweep.int.spec.ts"
       ],
       "linter": {

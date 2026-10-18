@@ -5,7 +5,8 @@ import { z } from "zod";
  *
  * `parseEvent()` returns the first four. `ingest.occurred_at_too_old` needs the server clock
  * (an event older than the accepted window), so only the ingest route returns it, and only for
- * an event that `parseEvent()` accepted.
+ * an event that `parseEvent()` accepted. So does `ingest.rule_error` (M4-05): the user's rules did
+ * not compile, or the engine failed on this event, so it is not stored (invariant 1).
  */
 export const INGEST_ERROR_CODES = [
   "ingest.envelope_invalid",
@@ -13,6 +14,7 @@ export const INGEST_ERROR_CODES = [
   "ingest.type_version_unknown",
   "ingest.payload_invalid",
   "ingest.occurred_at_too_old",
+  "ingest.rule_error",
 ] as const;
 
 export const ingestErrorCodeSchema = z.enum(INGEST_ERROR_CODES);

@@ -36,13 +36,22 @@ import {
   postEvents,
   SENTINEL_DOMAIN,
   SENTINEL_PATH,
+  setDefaultPolicy,
   startIngestHarness,
   tally,
 } from "../../../test/ingest-helpers";
+import type { FixtureUser } from "../../../test/two-user-fixture";
 import { ApiKeysService } from "../keys/api-keys.service";
 import { generateApiKey, hashApiKey } from "../keys/key-generation";
 
 let h: IngestHarness;
+
+/** A new integration of `user` through the route, set to allow so rules do not drop its events. */
+async function createAllowing(user: FixtureUser, name: string) {
+  const fresh = await createViaRoute(h.app, user, name);
+  await setDefaultPolicy(h.testDb.pool, "allow", fresh.integrationId);
+  return fresh;
+}
 
 beforeAll(async () => {
   h = await startIngestHarness();
@@ -154,7 +163,7 @@ describe("concurrency: parallel posts of overlapping batches", () => {
   });
 
   it("two integrations of one user racing on the same ids dedupe per integration", async () => {
-    const second = await createViaRoute(h.app, h.a, "second source");
+    const second = await createAllowing(h.a, "second source");
     const ids = newIds(8);
     const responses = await Promise.all(
       Array.from({ length: 10 }, (_, i) =>
@@ -209,7 +218,7 @@ describe("revocation takes effect on the next request", () => {
   }
 
   it("revoking the integration through the route: events and heartbeat are 401 at once, nothing changes", async () => {
-    const fresh = await createViaRoute(h.app, h.a, "to revoke");
+    const fresh = await createAllowing(h.a, "to revoke");
     expectResults(await postEvents(h.app, fresh.key, [pageVisit()]));
     expect((await postHeartbeat(h.app, fresh.key, heartbeatBody)).status).toBe(204);
 
@@ -225,7 +234,7 @@ describe("revocation takes effect on the next request", () => {
   });
 
   it("revoking one key leaves the integration's other key working", async () => {
-    const fresh = await createViaRoute(h.app, h.a, "two keys");
+    const fresh = await createAllowing(h.a, "two keys");
     const other = await h.app.get(ApiKeysService).createIngestKey(h.a.userId, fresh.integrationId);
 
     expect(await h.app.get(ApiKeysService).revokeKey(h.a.userId, fresh.keyId)).toBe(true);
@@ -235,7 +244,7 @@ describe("revocation takes effect on the next request", () => {
   });
 
   it("a revoke racing four concurrent streams: 200s then 401s per stream, 401 for anything started after it returned, no 500", async () => {
-    const fresh = await createViaRoute(h.app, h.a, "stream");
+    const fresh = await createAllowing(h.a, "stream");
     let seq = 0;
     let revokeReturnedSeq = Number.POSITIVE_INFINITY;
     let firstSuccess: () => void = () => undefined;
@@ -347,7 +356,7 @@ describe("a request already past the guard when the revoke commits (issue #29, i
   }
 
   it("stores nothing when the integration is revoked while the request waits", async () => {
-    const fresh = await createViaRoute(h.app, h.a, "in flight: integration");
+    const fresh = await createAllowing(h.a, "in flight: integration");
     await expectInFlightRefused(fresh, async (sql) => {
       await sql("update integrations set status = 'revoked' where id = $1", [fresh.integrationId]);
       await sql("update api_keys set revoked_at = now() where integration_id = $1", [
@@ -357,7 +366,7 @@ describe("a request already past the guard when the revoke commits (issue #29, i
   });
 
   it("stores nothing when only the key is revoked while the request waits", async () => {
-    const fresh = await createViaRoute(h.app, h.a, "in flight: key");
+    const fresh = await createAllowing(h.a, "in flight: key");
     await expectInFlightRefused(fresh, async (sql) => {
       await sql("update api_keys set revoked_at = now() where id = $1", [fresh.keyId]);
     });
@@ -377,7 +386,7 @@ describe("log hygiene sweep (invariant 6): ingest and heartbeat", () => {
   const PADDING = "x".repeat(300 * 1024);
 
   it("writes no domain, path, key or hash to the process output on any ingest or heartbeat outcome", async () => {
-    const revoked = await createViaRoute(h.app, h.a, "log hygiene");
+    const revoked = await createAllowing(h.a, "log hygiene");
     expect((await revokeViaRoute(h.app, h.a, revoked.integrationId)).status).toBe(200);
     const unknown = generateApiKey("ingest").plaintext;
     const read = generateApiKey("read").plaintext;

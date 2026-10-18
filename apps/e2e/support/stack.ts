@@ -208,6 +208,24 @@ export async function startStack(): Promise<E2eStack> {
     const integrationId = ((await created.json()) as { integration: { id: string } }).integration
       .id;
 
+    // The server enforces the user's rules (M4-05) and a new extension denies by default. Until the
+    // extension syncs rules (M4-06) and the e2e adds its own (M4-09), the extension's temporary
+    // allow list decides what is sent, so let everything that arrives be kept.
+    const rule = await fetch(`${apiOrigin}/v1/rules`, {
+      method: "POST",
+      headers: session,
+      body: JSON.stringify({
+        name: "e2e: keep what the extension sends",
+        enabled: true,
+        priority: 1000,
+        stage: "collect",
+        when: {},
+        then: [{ action: "allow" }],
+      }),
+    });
+    if (rule.status !== 201)
+      throw new Error(`e2e: create rule ${rule.status} ${await rule.text()}`);
+
     const issued = await fetch(`${apiOrigin}/v1/integrations/${integrationId}/pairing-code`, {
       method: "POST",
       headers: session,

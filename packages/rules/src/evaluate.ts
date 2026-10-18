@@ -1,4 +1,5 @@
 import {
+  CLIENT_DECIDER,
   DEFAULT_POLICY_DECIDER,
   INTEGRATION_KINDS,
   type KnownEvent,
@@ -31,6 +32,8 @@ function error(reason: "invalid_context" | "invalid_event" | "invalid_result"): 
  *   none does, `policy` decides (only the exact value `"allow"` collects). `drop` ends the
  *   evaluation. Conditions are checked against the event as it came in, so a rule that coarsens
  *   a path cannot hide it from a later `drop` rule.
+ * - With `context.collected` the extension already ran this version's collect stage: an event that
+ *   no rule decides is allowed (`decidedBy` is the client), whatever `policy` says.
  * - `redact`, `coarsen` and `keep_query` of every matching rule apply, whichever rule decides.
  * - `process` rules (unless `context.process` is false) run on the event that will be stored.
  *   They add tags and a retention; they cannot decide.
@@ -73,8 +76,12 @@ export function evaluate(
       for (const action of rule.then) applyTransform(action, working, state);
     }
 
-    if (decision === undefined && policy !== "allow") {
-      return { decision: "drop", trace: { ruleSetVersion: version, matched, decidedBy } };
+    if (decision === undefined) {
+      if (context.collected === true) {
+        decidedBy = CLIENT_DECIDER;
+      } else if (policy !== "allow") {
+        return { decision: "drop", trace: { ruleSetVersion: version, matched, decidedBy } };
+      }
     }
 
     const result = parseEvent({ ...original, data: working });

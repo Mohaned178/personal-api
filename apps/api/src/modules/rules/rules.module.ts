@@ -1,5 +1,6 @@
 import { Module } from "@nestjs/common";
 import { AuthModule } from "../auth/auth.module";
+import { RuleSetProvider } from "./rule-set.provider";
 import { RulesController } from "./rules.controller";
 import { RulesRepository } from "./rules.repository";
 import { RulesService } from "./rules.service";
@@ -8,7 +9,7 @@ import { RulesService } from "./rules.service";
 @Module({
   imports: [AuthModule],
   controllers: [RulesController],
-  providers: [RulesRepository, RulesService],
-  exports: [RulesService],
+  providers: [RulesRepository, RulesService, RuleSetProvider],
+  exports: [RulesService, RuleSetProvider],
 })
 export class RulesModule {}

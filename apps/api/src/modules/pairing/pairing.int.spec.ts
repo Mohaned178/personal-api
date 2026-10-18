@@ -25,6 +25,7 @@ import {
   PROBLEM_JSON,
   pageVisit,
   postEvents,
+  setDefaultPolicy,
   startIngestHarness,
 } from "../../../test/ingest-helpers";
 import {
@@ -207,6 +208,8 @@ describe("POST /v1/pair", () => {
         revoked_at: null,
       },
     ]);
+    // A paired extension denies by default (M4-05): let this one through to prove the key works.
+    await setDefaultPolicy(h.testDb.pool, "allow", integrationId);
     expectResults(await postEvents(h.app, paired.ingestKey.key, [pageVisit()]));
     const { rows: events } = await h.testDb.pool.query(
       "select user_id, integration_id from events where integration_id = $1",

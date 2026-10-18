@@ -48,3 +48,23 @@ describe("ingest.occurred_at_too_old (M1-05)", () => {
     expect(result.ok).toBe(true);
   });
 });
+
+describe("ingest.rule_error (M4-05)", () => {
+  it("is a stable ingest error code, and parseEvent() never returns it", () => {
+    expect(INGEST_ERROR_CODES).toContain("ingest.rule_error");
+    expect(ingestErrorCodeSchema.safeParse("ingest.rule_error").success).toBe(true);
+    const parsed = parseEvent({ nonsense: true });
+    expect(parsed.ok).toBe(false);
+    if (!parsed.ok) expect(parsed.code).not.toBe("ingest.rule_error");
+  });
+
+  it("is accepted on a rejected per-item result", () => {
+    expect(
+      ingestItemResultSchema.safeParse({
+        id: UUID_V7,
+        status: "rejected",
+        code: "ingest.rule_error",
+      }).success,
+    ).toBe(true);
+  });
+});

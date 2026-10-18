@@ -34,7 +34,12 @@ function publicMethods(): string[] {
 
 describe("IngestRepository tenant scoping", () => {
   it("has the methods the service relies on (so the scoping check below is not vacuous)", () => {
-    expect(publicMethods()).toEqual(["storeBatch", "touchLastSeen", "recordHeartbeat"]);
+    expect(publicMethods()).toEqual([
+      "loadCaller",
+      "storeBatch",
+      "touchLastSeen",
+      "recordHeartbeat",
+    ]);
   });
 
   it("rejects every method with MissingUserScopeError when userId is missing", async () => {

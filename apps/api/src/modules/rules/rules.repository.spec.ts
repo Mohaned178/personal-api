@@ -41,7 +41,14 @@ function publicMethods(): string[] {
 
 describe("RulesRepository tenant scoping", () => {
   it("has the methods the service relies on (so the scoping check below is not vacuous)", () => {
-    expect(publicMethods()).toEqual(["list", "findById", "create", "replace", "remove"]);
+    expect(publicMethods()).toEqual([
+      "list",
+      "readVersion",
+      "findById",
+      "create",
+      "replace",
+      "remove",
+    ]);
   });
 
   it("rejects every method with MissingUserScopeError when userId is missing", async () => {
@@ -51,6 +58,7 @@ describe("RulesRepository tenant scoping", () => {
     >;
     const args: Record<string, unknown[]> = {
       list: [],
+      readVersion: [],
       findById: [ID],
       create: [definition, AT],
       replace: [ID, definition, AT],
