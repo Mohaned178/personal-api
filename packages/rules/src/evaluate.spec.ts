@@ -461,6 +461,37 @@ describe("evaluate: collect transforms", () => {
     expect(second.event).toEqual(first.event);
   });
 
+  // KNOWN LIMITATION (docs/rule-format.md, open item 1). Conditions look at the incoming event, so
+  // an event that a rule rewrote can stop matching that same rule when the server evaluates it
+  // again (PLAN §3 re-applies the collect rules). This pins today's behaviour; if the design
+  // changes, change this test with it.
+  it("known limitation: an allowed, rewritten event can be dropped when evaluated again", () => {
+    const rules = compile([
+      rule(1, {
+        priority: 10,
+        when: { all: [{ field: "data.path", op: "starts_with", value: "/work/" }] },
+        then: [{ action: "coarsen", segments: 1 }, { action: "allow" }],
+      }),
+    ]);
+    const first = allowed(
+      evaluate(pageVisited({ path: "/work/projectA/doc" }), rules, "deny", EXT),
+    );
+    expect(first.event.data).toMatchObject({ path: "/work" });
+    expect(evaluate(first.event, rules, "deny", EXT).decision).toBe("drop");
+
+    const redactRules = compile([
+      rule(2, {
+        when: {
+          type: ["browser.page_visited"],
+          all: [{ field: "data.transition", op: "exists", value: true }],
+        },
+        then: [{ action: "redact", field: "data.transition" }, { action: "allow" }],
+      }),
+    ]);
+    const redacted = allowed(evaluate(pageVisited(), redactRules, "deny", EXT));
+    expect(evaluate(redacted.event, redactRules, "deny", EXT).decision).toBe("drop");
+  });
+
   it("fails closed when a transform would leave an invalid event", () => {
     // Not a set that `compileRuleSet` can produce: redacting a required field is rejected there.
     const bad: CompiledRuleSet = {

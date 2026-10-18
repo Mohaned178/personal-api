@@ -290,11 +290,23 @@ threw, for example a malformed rule set). `evaluate` never throws.
 
 ## Open items
 
-1. **`keep_query` has nowhere to put the query (before M4-05 and M4-06).** The action exists and
+1. **Re-evaluating a rewritten event can change the decision (decide before M4-05).** The server
+   re-applies the collect rules to events the extension already transformed (PLAN §3). Conditions
+   look at the incoming event, so a rule that both reads and rewrites a field can stop matching its
+   own output. Example: `path starts_with /work/` with `coarsen 1` and `allow` keeps
+   `/work/projectA/doc` as `/work`; evaluated again, `/work` no longer matches, so the default
+   policy drops it. The same happens with `exists` plus `redact` on one field. Matching the
+   original event is what stops a coarsen from hiding a path from a later `drop` rule, so a fix
+   has to keep that and make an allowed output re-evaluate to `allow`. Options for the owner: the
+   server skips the rules that the extension already applied (trust `meta.ruleSetVersion`), or the
+   save-time validation refuses a rule that reads a field it rewrites, or the server re-checks
+   only `drop` rules. `evaluate` is pinned by a "known limitation" test until then.
+2. **`keep_query` has nowhere to put the query (before M4-05 and M4-06).** The action exists and
    takes no parameters, and the engine reports `keepQuery: true`. But every event schema is
    strict and `path` rejects `?` and `#`. Keeping a query needs an event-schema change (for
    example a new optional field, or `typeVersion` 2 for `browser.page_visited`). Until it is
    decided, the extension keeps stripping queries.
-2. **Rule-set size cap** per user (M4-04). `ruleSetSchema` has none.
-3. **Server wiring (M4-05).** The `error` decision becomes `rejected(rule_error)`, which also
+3. **Rule-set size cap** per user (M4-04). `ruleSetSchema` has none.
+4. **Server wiring (M4-05).** `policy` and `context.source` must come from the authenticated
+   integration row, never from the request body (invariant 4). The `error` decision becomes `rejected(rule_error)`, which also
    needs `ingest.rule_error` in `INGEST_ERROR_CODES`. The extension wiring is M4-06.
