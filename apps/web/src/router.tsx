@@ -7,6 +7,7 @@ import { EventsPage } from "@/routes/events-page";
 import { HealthPage } from "@/routes/health-page";
 import { IndexPage } from "@/routes/index";
 import { IntegrationsPage } from "@/routes/integrations-page";
+import { RulesPage } from "@/routes/rules-page";
 
 /**
  * File-less, code-based routes on purpose: no codegen step, so `vite build` and `vitest` need no
@@ -55,6 +56,13 @@ const healthRoute = createRoute({
   component: HealthPage,
 });
 
+const rulesRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/rules",
+  beforeLoad: requireAuth,
+  component: RulesPage,
+});
+
 const loginRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/login",
@@ -96,6 +104,7 @@ export const routeTree = rootRoute.addChildren([
   integrationsRoute,
   eventsRoute,
   healthRoute,
+  rulesRoute,
   loginRoute,
   signupRoute,
   setupRoute,

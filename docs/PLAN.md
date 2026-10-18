@@ -179,7 +179,7 @@ Errors use RFC 9457 `application/problem+json`. Lists use keyset cursors on `(oc
 | session | `/v1/rules` (CRUD), `POST /v1/rules/test` | Manage rules and dry-run them against a sample event |
 | session | `DELETE /v1/events` (ids or filter), `/v1/exports`, `/v1/retention` | Data management |
 | session | `/v1/keys`, `/v1/endpoints` | Read keys and saved queries |
-| session | `GET /v1/diagnostics` | Ingestion log, integration last-seen, queue backlog, job failures |
+| session | `GET /v1/diagnostics` | Ingestion log, integration last-seen, queue backlog, job failures, and drop counts per rule over the window (M4-07) |
 | session or read key | `GET /v1/events?source=&type=&from=&to=&domain=&cursor=` | Raw events |
 | session or read key | `GET /v1/activity/daily`, `GET /v1/activity/domains` | Aggregates computed with SQL at query time (no materialized tables needed at this volume) |
 | read key scoped to it | `GET /v1/me/:slug` | A user-defined saved query |
@@ -317,7 +317,7 @@ Targets changed on 2026-10-14: Firefox + Edge (free stores only) instead of Chro
 - [x] **M4-04 [S · medium] Rules API:** CRUD, rule-set versioning, `rule_history` snapshots, validation on save, and `POST /v1/rules/test`.
 - [x] **M4-05 [S · high] Server enforcement:** per-user rule-set cache invalidated by version, collect then process stages at ingest, stored traces, per-rule drop counters, and engine errors → `rejected(rule_error)`.
 - [x] **M4-06 [S · high] Extension rule sync:** `GET /v1/ingest/config` with ETag, alarm-based sync, fail closed when rules are missing or invalid, removal of the M2-07 list, and the current-tab verdict in the popup.
-- [ ] **M4-07 [S · medium] Rules UI:** list with priority ordering, form builder, JSON toggle with inline errors, test against a sample event, and drop counts.
+- [x] **M4-07 [S · medium] Rules UI:** list with priority ordering, form builder, JSON toggle with inline errors, test against a sample event, and drop counts.
 - [ ] **M4-08 [S · medium] Explainability:** the "why is this here" view on events, and onboarding starter templates.
 - [ ] **M4-09 [S · high] e2e (Firefox):** demo steps 3 and 7 (add a rule → collected; change the rule → later events behave differently).
 - [ ] **M4-R [O · xhigh] Milestone review** (`/code-review` + `/security-review`).

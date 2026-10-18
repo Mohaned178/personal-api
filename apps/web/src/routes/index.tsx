@@ -31,6 +31,9 @@ export function IndexPage() {
       <Link to="/integrations" className="text-sm underline">
         Integrations
       </Link>
+      <Link to="/rules" className="text-sm underline">
+        Rules
+      </Link>
       <Button variant="outline" onClick={onSignOut}>
         Sign out
       </Button>

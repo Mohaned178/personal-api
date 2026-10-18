@@ -6,8 +6,9 @@ import type { DiagnosticsResponse } from "@personal-api/contracts";
  */
 export type { DiagnosticsResponse };
 
-export async function getDiagnostics(): Promise<DiagnosticsResponse> {
-  const res = await fetch("/v1/diagnostics", { credentials: "same-origin" });
+export async function getDiagnostics(hours?: number): Promise<DiagnosticsResponse> {
+  const query = hours === undefined ? "" : `?hours=${hours}`;
+  const res = await fetch(`/v1/diagnostics${query}`, { credentials: "same-origin" });
   if (!res.ok) throw new Error(`Request failed (${res.status}).`);
   return (await res.json()) as DiagnosticsResponse;
 }

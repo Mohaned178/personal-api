@@ -84,6 +84,32 @@ describe("GET /v1/diagnostics", () => {
     expect(text).not.toContain(b.integrationId);
   });
 
+  it("sums drops per rule for the caller only", async () => {
+    const { a, b } = h;
+    const RULE = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+    const seedDrops = (u: FixtureUser, n: number) =>
+      h.testDb.pool.query(
+        `insert into ingestion_log (user_id, integration_id, bucket, dropped, by_reason)
+         values ($1, $2, $3, $4, $5::jsonb)`,
+        [
+          u.userId,
+          u.integrationId,
+          new Date(currentHour),
+          n + 1,
+          JSON.stringify({ [RULE]: n, default_policy: 1 }),
+        ],
+      );
+    await seedDrops(a, 3);
+    await seedDrops(b, 40);
+
+    const res = await get(a, "/v1/diagnostics?hours=2");
+    expect(res.status, JSON.stringify(res.body)).toBe(200);
+    expect(diagnosticsResponseSchema.parse(res.body).drops).toEqual({
+      byRule: { [RULE]: 3 },
+      defaultPolicy: 1,
+    });
+  });
+
   it("rejects a user id or an out-of-range window with 400 request.invalid", async () => {
     const { a, b } = h;
     for (const q of [`userId=${b.userId}`, "hours=0", "hours=169", "hours=abc"]) {
