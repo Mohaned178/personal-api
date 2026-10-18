@@ -318,7 +318,7 @@ Targets changed on 2026-10-14: Firefox + Edge (free stores only) instead of Chro
 - [x] **M4-05 [S · high] Server enforcement:** per-user rule-set cache invalidated by version, collect then process stages at ingest, stored traces, per-rule drop counters, and engine errors → `rejected(rule_error)`.
 - [x] **M4-06 [S · high] Extension rule sync:** `GET /v1/ingest/config` with ETag, alarm-based sync, fail closed when rules are missing or invalid, removal of the M2-07 list, and the current-tab verdict in the popup.
 - [x] **M4-07 [S · medium] Rules UI:** list with priority ordering, form builder, JSON toggle with inline errors, test against a sample event, and drop counts.
-- [ ] **M4-08 [S · medium] Explainability:** the "why is this here" view on events, and onboarding starter templates.
+- [x] **M4-08 [S · medium] Explainability:** the "why is this here" view on events, and onboarding starter templates.
 - [ ] **M4-09 [S · high] e2e (Firefox):** demo steps 3 and 7 (add a rule → collected; change the rule → later events behave differently).
 - [ ] **M4-R [O · xhigh] Milestone review** (`/code-review` + `/security-review`).
 

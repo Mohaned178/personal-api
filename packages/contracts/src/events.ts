@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { domainSchema, utcDateTimeSchema } from "./primitives.js";
+import { ruleTraceSchema } from "./rule-trace.js";
 
 /**
  * Stored-event DTOs for the dashboard (PLAN §6, `GET /v1/events`, `DELETE /v1/events`). Requests
@@ -41,8 +42,9 @@ export const listEventsQuerySchema = z.strictObject({
 export type ListEventsQuery = z.output<typeof listEventsQuerySchema>;
 
 /**
- * A stored event as the API returns it. `trace` and `expiresAt` are left out until rules (M4) and
- * retention (M6) give them a meaning; the field list is explicit so a new column cannot leak.
+ * A stored event as the API returns it. `trace` is why it was kept ("why is this here"); it is null
+ * for an event stored before rules existed. `expiresAt` is left out until retention (M6) gives it
+ * a meaning; the field list is explicit so a new column cannot leak.
  */
 export const storedEventSchema = z.strictObject({
   id: z.uuid(),
@@ -54,6 +56,7 @@ export const storedEventSchema = z.strictObject({
   origin: z.enum(["collected", "imported", "derived"]),
   data: z.record(z.string(), z.unknown()),
   tags: z.array(z.string()),
+  trace: ruleTraceSchema.nullable(),
 });
 export type StoredEvent = z.output<typeof storedEventSchema>;
 

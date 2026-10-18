@@ -77,6 +77,43 @@ describe("rules page", () => {
     expect(await screen.findByText(/no rules yet, so nothing is collected/i)).toBeTruthy();
   });
 
+  describe("starter templates", () => {
+    it("offers the templates when there are no rules", async () => {
+      backend.rules = { version: 0, rules: [] };
+      mount("/rules");
+      const region = await screen.findByRole("region", { name: /start from a template/i });
+      expect(within(region).getAllByRole("button")).toHaveLength(4);
+    });
+
+    it("does not offer them once there are rules", async () => {
+      backend.rules = { version: 1, rules: [GITHUB] };
+      mount("/rules");
+      await screen.findByText("Track GitHub");
+      expect(screen.queryByRole("region", { name: /start from a template/i })).toBeNull();
+    });
+
+    it("fills the form from a template and saves nothing until asked", async () => {
+      backend.rules = { version: 0, rules: [] };
+      mount("/rules");
+      const region = await screen.findByRole("region", { name: /start from a template/i });
+      fireEvent.click(within(region).getByRole("button", { name: /never collect a site/i }));
+
+      expect((screen.getByLabelText(/^name$/i) as HTMLInputElement).value).toBe(
+        "Never collect example.com",
+      );
+      expect(rulePosts()).toHaveLength(0);
+      changeTo(/^name$/i, "Never collect ads.test");
+      click("Save rule");
+
+      await waitFor(() => expect(rulePosts()).toHaveLength(1));
+      expect(rulePosts()[0]).toMatchObject({
+        method: "POST",
+        path: "/v1/rules",
+        body: { name: "Never collect ads.test", priority: 0, then: [{ action: "drop" }] },
+      });
+    });
+  });
+
   it("lists rules in priority order with their drop counts over seven days", async () => {
     mount("/rules");
     await screen.findByText("Track GitHub");

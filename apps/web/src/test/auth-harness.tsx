@@ -106,6 +106,7 @@ export interface FakeEvent {
   origin: "collected" | "imported" | "derived";
   data: Record<string, unknown>;
   tags: string[];
+  trace?: unknown;
 }
 
 export const EVENTS_PAGE_SIZE = 50;

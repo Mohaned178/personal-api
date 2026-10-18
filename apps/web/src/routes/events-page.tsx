@@ -5,7 +5,9 @@ import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { deleteEvents, type EventFilters, listEvents, type StoredEvent } from "@/lib/events";
+import { explainTrace } from "@/lib/explain";
 import { listIntegrations } from "@/lib/integrations";
+import { listRules } from "@/lib/rules";
 
 const EVENTS_KEY = ["events"] as const;
 const ROW_HEIGHT = 40;
@@ -23,6 +25,29 @@ function localToUtc(value: string): string | undefined {
 function summary(event: StoredEvent): string {
   const { domain, path } = event.data;
   return typeof domain === "string" ? `${domain}${typeof path === "string" ? path : ""}` : "";
+}
+
+function WhyHere({ event }: { event: StoredEvent }) {
+  // The rules only supply names; a failed load still leaves the explanation, with generic names.
+  const rules = useQuery({ queryKey: ["rules"], queryFn: listRules, retry: false });
+  const why = explainTrace(event.trace, rules.data?.rules, rules.data?.version);
+  return (
+    <section aria-label="Why is this here" className="flex flex-col gap-2 rounded-md border p-3">
+      <h3 className="text-sm font-medium">Why is this here?</h3>
+      <p className="text-sm">{why.decision}</p>
+      {why.matched.length > 0 && (
+        <ul className="list-disc pl-5 text-sm">
+          {why.matched.map((m) => (
+            <li key={m.ruleId}>
+              {m.label}: {m.actions.join(", ")}
+              {m.decided ? " (decided)" : ""}
+            </li>
+          ))}
+        </ul>
+      )}
+      {why.staleNote && <p className="text-xs text-muted-foreground">{why.staleNote}</p>}
+    </section>
+  );
 }
 
 function EventDetail({
@@ -58,6 +83,7 @@ function EventDetail({
         <dt className="text-muted-foreground">Tags</dt>
         <dd>{event.tags.length > 0 ? event.tags.join(", ") : "none"}</dd>
       </dl>
+      <WhyHere event={event} />
       <pre
         data-testid="event-json"
         className="max-h-80 overflow-auto rounded-md bg-muted p-3 font-mono text-xs"

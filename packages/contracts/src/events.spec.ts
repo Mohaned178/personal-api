@@ -75,8 +75,34 @@ describe("storedEventSchema", () => {
       origin: "collected",
       data: { domain: "github.com" },
       tags: [],
+      trace: null,
     };
     expect(storedEventSchema.safeParse(event).success).toBe(true);
     expect(storedEventSchema.safeParse({ ...event, userId: ID }).success).toBe(false);
+  });
+
+  it("carries a rule trace, or null for an event stored before rules", () => {
+    const base = {
+      id: ID,
+      integrationId: ID,
+      type: "browser.page_visited",
+      typeVersion: 1,
+      occurredAt: "2026-10-01T00:00:00.000Z",
+      receivedAt: "2026-10-01T00:00:01.000Z",
+      origin: "collected",
+      data: {},
+      tags: [],
+    };
+    const trace = {
+      ruleSetVersion: 3,
+      matched: [{ ruleId: ID, actions: ["allow"] }],
+      decidedBy: ID,
+    };
+    expect(storedEventSchema.safeParse({ ...base, trace }).success).toBe(true);
+    expect(storedEventSchema.safeParse({ ...base, trace: null }).success).toBe(true);
+    expect(storedEventSchema.safeParse(base).success).toBe(false);
+    expect(storedEventSchema.safeParse({ ...base, trace: { ...trace, extra: 1 } }).success).toBe(
+      false,
+    );
   });
 });

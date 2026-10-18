@@ -177,6 +177,32 @@ describe("GET /v1/events/:id", () => {
     });
   });
 
+  it("returns the stored trace, and null when there is none or it is unreadable", async () => {
+    const ruleId = randomUUID();
+    const trace = {
+      ruleSetVersion: 2,
+      matched: [{ ruleId, actions: ["allow"] }],
+      decidedBy: ruleId,
+    };
+    const traced = await seed(h.a);
+    const bare = await seed(h.a);
+    const broken = await seed(h.a);
+    for (const [id, value] of [
+      [traced, trace],
+      [broken, { ruleSetVersion: -1, domain: "secret.example" }],
+    ] as const) {
+      await h.testDb.pool.query("update events set trace = $2::jsonb where id = $1", [
+        id,
+        JSON.stringify(value),
+      ]);
+    }
+    const read = async (id: string) =>
+      getEventResponseSchema.parse((await get(h.a, `/v1/events/${id}`)).body).event.trace;
+    expect(await read(traced)).toEqual(trace);
+    expect(await read(bare)).toBeNull();
+    expect(await read(broken)).toBeNull();
+  });
+
   it("gives a foreign, unknown and malformed id the same 404", async () => {
     const theirs = await seed(h.b);
     const foreign = await get(h.a, `/v1/events/${theirs}`);
