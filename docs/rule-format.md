@@ -1,9 +1,9 @@
 # Rule format (draft)
 
-> **Status:** draft from M4-01. The schema is real (`packages/contracts/src/rules.ts`,
-> `rule-fields.ts`, `rule-glob.ts`) and is what the API will validate on save. The evaluation
-> section is what the engine (M4-02) will implement. Items marked ⚑ go beyond PLAN §5 and need
-> the owner's yes before M4-02 builds on them.
+> **Status:** draft. The schema (M4-01) is real: `packages/contracts/src/rules.ts`,
+> `rule-fields.ts`, `rule-glob.ts`, and the API will validate with it on save. The engine (M4-02) is
+> `packages/rules`; the [Evaluation](#evaluation) section describes what it does. Items marked ⚑
+> were chosen in M4-01 and went in with it; they are open to change until the rules API (M4-04).
 
 A rule says which events it applies to (`when`) and what to do with them (`then`). Users edit it
 in the dashboard form or as JSON. The same document is stored, sent to the extension and run by
@@ -213,32 +213,65 @@ Ops by kind: **domain** all text ops plus `domain_matches`; **path** all text op
 
 A cap on the number of rules per user belongs to the rules API (M4-04).
 
-## Evaluation (for M4-02)
+## Evaluation
 
-Input: one event, the user's enabled rules, and the integration's `default_policy`
-(`deny` or `allow`; a new extension is `deny`). Output: a decision, the (possibly reshaped)
-event and a trace.
+Implemented by `packages/rules` (M4-02). The extension, the API and the "test this rule" preview
+all call it, so they give the same answer.
 
-1. Keep the enabled rules of the stage, sorted by `priority` ascending (lowest first). Ties:
-   rules with `drop` first, then by `id`, so the order is deterministic. ⚑
-2. A rule **matches** when every present part of `when` holds.
-3. **Decision (collect stage).** The first matching rule with a deciding action wins. At the
-   same priority `drop` beats `allow`. If no matching rule decides, `default_policy` decides.
-4. **Transforms.** `redact`, `coarsen` and `keep_query` from matching rules apply in rule
-   order, then `then` order. They apply whichever rule decides: a later rule that coarsens
-   paths still applies to an event that an earlier rule allowed. ⚑ (Transforms only remove
-   data, except `keep_query`, so applying them everywhere is the safe reading.)
-5. A `drop` decision ends evaluation: the event is not stored and only counters are kept
-   (invariant 2).
-6. **Process stage** runs on events that `collect` kept: matching rules add `tag`s and
-   `set_retention`. If two rules set a retention, the smaller number of days wins. ⚑
-7. **Fail closed.** If the rule set is missing, fails validation, or evaluating throws, nothing
-   is collected or stored (invariant 1). An invalid rule invalidates the whole set. It is
-   never skipped.
+```ts
+const compiled = compileRuleSet({ version, rules });      // validates, drops disabled, sorts
+if (!compiled.ok) /* fail closed: collect nothing */;
+const result = evaluate(event, compiled.ruleSet, policy, { source, process });
+```
 
-### Trace (proposed ⚑)
+- `compileRuleSet(input)` checks the whole set with `ruleSetSchema` (every rule, unique ids). One
+  invalid rule, even a disabled one, invalidates the set: a rule is never skipped. Its issues
+  never contain a rule's values. Build it once per rule-set version and reuse it.
+- `evaluate(event, ruleSet, policy, context)`: `policy` is the integration's `default_policy`;
+  `context.source` is its kind (`browser-extension` or `http`); `context.process` is `false` in
+  the extension, which has no process rules. `event` is `unknown`: it is checked with
+  `parseEvent()` first.
 
-Stored with each event and shown by "why is this here". M4-02 puts the schema in `contracts`.
+Result, one of:
+
+| `decision` | Carries                                                                  | Meaning                                         |
+| ---------- | ------------------------------------------------------------------------ | ----------------------------------------------- |
+| `allow`    | `event`, `tags`, `retentionDays`, `keepQuery`, `trace`                   | Collect/store `event` (already redacted/coarsened). |
+| `drop`     | `trace` only                                                             | Do not collect. There is no event to store.     |
+| `error`    | `reason` only                                                            | Collect nothing (invariant 1). Server: `rejected(rule_error)`. |
+
+`error` reasons: `invalid_context` (unknown source), `invalid_event` (fails `parseEvent`),
+`invalid_result` (a transform would leave an event `parseEvent` rejects), `failed` (anything
+threw, for example a malformed rule set). `evaluate` never throws.
+
+### Order of evaluation
+
+1. **Order.** Enabled rules of a stage are sorted by `priority` ascending (lowest first). Ties:
+   rules that `drop` first, then by `id`, so the order never depends on how rules arrive.
+2. **Match.** A rule matches when every present part of `when` holds. Conditions are checked
+   against the event **as it came in**, so a rule that coarsens a path cannot hide it from a
+   later `drop` rule that looks at that path.
+3. **Decision (collect).** The first matching rule with `allow` or `drop` decides. If none does,
+   `policy` decides: only the exact value `allow` collects; any other value is `deny`.
+4. **`drop` ends evaluation.** The result has no event, and only counters are kept (invariant 2).
+5. **Transforms.** `redact`, `coarsen` and `keep_query` of every matching rule apply in rule
+   order, then `then` order, whichever rule decides. So `allow` at priority 10 and a coarsen at
+   priority 50 give an allowed, coarsened event. After the transforms the event is validated
+   again; if it is no longer valid, the result is `error`.
+6. **Process.** Skipped for a dropped event and when `context.process` is false. Process rules
+   are matched against the event that will be stored, so a rule cannot tag on something that
+   was redacted. Matching rules add their `tag`s (each once, in rule order), and the smallest
+   `set_retention` wins. Process rules never change the event or the decision.
+7. **Fail closed.** A rule set that fails `compileRuleSet`, an unknown source, an invalid event,
+   an unknown op or action, or any exception is `error`. A condition on an op the engine does
+   not know throws; it is never read as "false", which could let a `drop` rule fall through.
+
+`keepQuery` is `true` when a `keep_query` rule matched. See [Open items](#open-items).
+
+### Trace
+
+`ruleTraceSchema` in `packages/contracts/src/rule-trace.ts`. Stored with each event and shown by
+"why is this here".
 
 ```json
 {
@@ -248,19 +281,32 @@ Stored with each event and shown by "why is this here". M4-02 puts the schema in
 }
 ```
 
-`decidedBy` is a rule id, or `"default_policy"`. `actions` lists action **names** only, never
-their values, so a trace cannot hold a domain, a path or a tag.
+- `matched` lists every rule that matched, in evaluation order, collect rules then process rules.
+  A rule that matched after the deciding one is listed too; only `decidedBy` decided.
+- `decidedBy` is a rule id, or `"default_policy"`.
+- `actions` lists action **names** only, never their values, so a trace cannot hold a domain, a
+  path or a tag (invariant 6).
+- A `drop` result has a trace but no event.
 
 ## Open items
 
-These need an answer before the task named on the right.
-
-1. **`keep_query` has nowhere to put the query (M4-05, M4-06).** The rule action exists and
-   takes no parameters, but every event schema is strict and `path` rejects `?` and `#`. Keeping
-   a query needs an event-schema change (for example a new optional field, or a `typeVersion`
-   2 for `browser.page_visited`). Until it is decided, the engine can report that `keep_query`
-   matched, and the extension keeps stripping queries.
-2. **`coarsen` to none leaves `/`** because `path` is required (M4-02).
-3. **Semantics marked ⚑ above** (priority direction, transforms apply regardless of the
-   deciding rule, tie-breaking, smallest retention wins, apex and `*.`) (M4-02).
-4. **Rule-set size cap** per user (M4-04).
+1. **Re-evaluating a rewritten event can change the decision (decide before M4-05).** The server
+   re-applies the collect rules to events the extension already transformed (PLAN §3). Conditions
+   look at the incoming event, so a rule that both reads and rewrites a field can stop matching its
+   own output. Example: `path starts_with /work/` with `coarsen 1` and `allow` keeps
+   `/work/projectA/doc` as `/work`; evaluated again, `/work` no longer matches, so the default
+   policy drops it. The same happens with `exists` plus `redact` on one field. Matching the
+   original event is what stops a coarsen from hiding a path from a later `drop` rule, so a fix
+   has to keep that and make an allowed output re-evaluate to `allow`. Options for the owner: the
+   server skips the rules that the extension already applied (trust `meta.ruleSetVersion`), or the
+   save-time validation refuses a rule that reads a field it rewrites, or the server re-checks
+   only `drop` rules. `evaluate` is pinned by a "known limitation" test until then.
+2. **`keep_query` has nowhere to put the query (before M4-05 and M4-06).** The action exists and
+   takes no parameters, and the engine reports `keepQuery: true`. But every event schema is
+   strict and `path` rejects `?` and `#`. Keeping a query needs an event-schema change (for
+   example a new optional field, or `typeVersion` 2 for `browser.page_visited`). Until it is
+   decided, the extension keeps stripping queries.
+3. **Rule-set size cap** per user (M4-04). `ruleSetSchema` has none.
+4. **Server wiring (M4-05).** `policy` and `context.source` must come from the authenticated
+   integration row, never from the request body (invariant 4). The `error` decision becomes `rejected(rule_error)`, which also
+   needs `ingest.rule_error` in `INGEST_ERROR_CODES`. The extension wiring is M4-06.

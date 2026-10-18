@@ -12,6 +12,9 @@ export const INTEGRATION_NAME_MAX_LENGTH = 80;
 /** The kinds of source an integration can be. Rules select on these too (`when.source`). */
 export const INTEGRATION_KINDS = ["browser-extension", "http"] as const;
 
+/** What happens to an event no rule decides. A new source starts as `deny` (invariant 1). */
+export const DEFAULT_POLICIES = ["deny", "allow"] as const;
+
 /** What the user calls the source ("Work laptop"). Trimmed, 1 to 80 characters. */
 export const integrationNameSchema = z.string().trim().min(1).max(INTEGRATION_NAME_MAX_LENGTH);
 
@@ -39,7 +42,7 @@ export const integrationSchema = z.strictObject({
   id: z.uuid(),
   kind: z.enum(INTEGRATION_KINDS),
   name: z.string(),
-  defaultPolicy: z.enum(["deny", "allow"]),
+  defaultPolicy: z.enum(DEFAULT_POLICIES),
   status: z.enum(["active", "revoked"]),
   lastSeenAt: utcDateTimeSchema.nullable(),
   createdAt: utcDateTimeSchema,
