@@ -11,6 +11,9 @@ import type { StoredEvent } from "./stack";
 // change them here too.
 export const CONNECTION_KEY = "connection";
 export const FLUSH_RETRY_ALARM = "pa-flush-retry";
+/** M4-06: `browser.storage.local` key of the fetched rules, and the alarm that syncs them. */
+export const RULES_KEY = "rulesConfig";
+export const RULES_SYNC_ALARM = "pa-rules-sync";
 
 export interface StoredConnection {
   serverOrigin: string;
@@ -87,6 +90,27 @@ export async function triggerFlushFirefox(firefox: LaunchedFirefoxExtension): Pr
   await firefox.evaluateInBackground(
     `return browser.alarms.create(${JSON.stringify(FLUSH_RETRY_ALARM)}, { when: Date.now() + 500 })`,
   );
+}
+
+/**
+ * Makes the extension fetch its rules now instead of at the next minute: the sync runs on its own
+ * alarm, so a near-term one-shot (kept periodic) does what the period would, sooner.
+ */
+export async function triggerRulesSyncFirefox(firefox: LaunchedFirefoxExtension): Promise<void> {
+  await firefox.evaluateInBackground(
+    `return browser.alarms.create(${JSON.stringify(RULES_SYNC_ALARM)}, { when: Date.now() + 500, periodInMinutes: 1 })`,
+  );
+}
+
+/** The rule-set version of the rules the extension holds, or null when it holds none. */
+export async function storedRuleSetVersionFirefox(
+  firefox: LaunchedFirefoxExtension,
+): Promise<number | null> {
+  const stored = (await firefox.storageGet(RULES_KEY))[RULES_KEY] as
+    | { config?: { ruleSetVersion?: unknown } }
+    | undefined;
+  const version = stored?.config?.ruleSetVersion;
+  return typeof version === "number" ? version : null;
 }
 
 /** `browser.page_visited` rows only (tab and focus events are not what these tests count). */

@@ -161,6 +161,10 @@ jobs:
       - name: Build contracts
         run: pnpm --filter @personal-api/contracts build
 
+      # The extension runs the rule engine, so it imports @personal-api/rules through its dist.
+      - name: Build rules
+        run: pnpm --filter @personal-api/rules build
+
       - name: Build the extension for Firefox
         run: pnpm --filter extension build:firefox
 
