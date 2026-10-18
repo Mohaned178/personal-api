@@ -229,7 +229,8 @@ const result = evaluate(event, compiled.ruleSet, policy, { source, process });
   never contain a rule's values. Build it once per rule-set version and reuse it.
 - `evaluate(event, ruleSet, policy, context)`: `policy` is the integration's `default_policy`;
   `context.source` is its kind (`browser-extension` or `http`); `context.process` is `false` in
-  the extension, which has no process rules. `event` is `unknown`: it is checked with
+  the extension, which has no process rules; `context.collected` is server-only, see
+  [Server enforcement](#server-enforcement-m4-05). `event` is `unknown`: it is checked with
   `parseEvent()` first.
 
 Result, one of:
@@ -283,14 +284,49 @@ threw, for example a malformed rule set). `evaluate` never throws.
 
 - `matched` lists every rule that matched, in evaluation order, collect rules then process rules.
   A rule that matched after the deciding one is listed too; only `decidedBy` decided.
-- `decidedBy` is a rule id, or `"default_policy"`.
+- `decidedBy` is a rule id, `"default_policy"`, or `"client"` (the server let an extension event through because the extension had already run this version's rules; M4-05).
 - `actions` lists action **names** only, never their values, so a trace cannot hold a domain, a
   path or a tag (invariant 6).
 - A `drop` result has a trace but no event.
 
+## Server enforcement (M4-05)
+
+`POST /v1/ingest/events` evaluates every valid event with `evaluate()`, collect then process, using
+the rule set of the key's user (cached per user, checked against `rule_sets.version` on every
+batch, so a change applies to the next batch). `policy` and `context.source` come from the
+authenticated integration row, never from the body (invariant 4).
+
+| Engine result | Item result                | Stored                                                           |
+| ------------- | -------------------------- | ---------------------------------------------------------------- |
+| `allow`       | `accepted` / `duplicate`   | the **evaluated** event (after redact and coarsen), `tags`, `trace`, `expires_at` |
+| `drop`        | `dropped`                  | nothing; `ingestion_log.dropped` and `by_reason[ruleId or "default_policy"]` |
+| `error`, or a rule set that cannot be loaded | `rejected` `ingest.rule_error` | nothing; `ingestion_log.rejected` and `by_reason["ingest.rule_error"]` |
+
+- `expires_at` is `receivedAt` plus the matching `set_retention` days, or null. M6-01 builds the
+  purge on it.
+- A stored rule that no longer fits the schema fails the whole user's batch with
+  `ingest.rule_error` (nothing is guessed). A database failure is a 500, so the client retries.
+- A dropped event that is sent again is dropped again and counted again: nothing about it is
+  stored, so the server cannot recognise it.
+- `keepQuery` is ignored: events have no field for a query string, so it stays stripped (open item 2).
+
+### Events the extension already decided
+
+Evaluation uses `context.collected` when the integration is a `browser-extension`, the event's
+`meta.ruleSetVersion` equals the server's current version, that version is at least 1, and the set
+has at least one collect rule. Then an event that **no collect rule decides** is allowed instead of
+following `default_policy` (its trace says `decidedBy: "client"`). A rule that matches and decides
+still decides, in the same order, so a `drop` rule still drops. Transforms and the process stage
+still run. The trade-off: a client that claims the current version skips the server's default-deny
+for events no rule decides. Rules still decide the rest, and version 0 (a user with no rules) is
+never trusted.
+
 ## Open items
 
-1. **Re-evaluating a rewritten event can change the decision (decide before M4-05).** The server
+1. **Re-evaluating a rewritten event can change the decision.** *Decided in M4-05: the server
+   passes `context.collected` for an extension event that carries the current rule-set version, see
+   [Server enforcement](#server-enforcement-m4-05). `evaluate` without it is unchanged and still
+   pinned by the "known limitation" test.* The server
    re-applies the collect rules to events the extension already transformed (PLAN §3). Conditions
    look at the incoming event, so a rule that both reads and rewrites a field can stop matching its
    own output. Example: `path starts_with /work/` with `coarsen 1` and `allow` keeps
@@ -303,12 +339,13 @@ threw, for example a malformed rule set). `evaluate` never throws.
    only `drop` rules. `evaluate` is pinned by a "known limitation" test until then. The M4-03 property tests claim a
    stable *event* on re-evaluation only for rule sets whose conditions read fields no rule rewrites
    (`evaluate.property.spec.ts`); the transforms are idempotent unconditionally.
-2. **`keep_query` has nowhere to put the query (before M4-05 and M4-06).** The action exists and
+2. **`keep_query` has nowhere to put the query (before M4-06).** *M4-05: the server ignores
+   `keepQuery` and the query stays stripped.* The action exists and
    takes no parameters, and the engine reports `keepQuery: true`. But every event schema is
    strict and `path` rejects `?` and `#`. Keeping a query needs an event-schema change (for
    example a new optional field, or `typeVersion` 2 for `browser.page_visited`). Until it is
    decided, the extension keeps stripping queries.
 3. ~~Rule-set size cap~~ Done in M4-04: 100 rules per user, enforced by the rules API (`ruleSetSchema` itself has no cap).
-4. **Server wiring (M4-05).** `policy` and `context.source` must come from the authenticated
+4. ~~**Server wiring (M4-05).**~~ Done in M4-05 (`ingest.rule_error` is in `INGEST_ERROR_CODES`). `policy` and `context.source` must come from the authenticated
    integration row, never from the request body (invariant 4). The `error` decision becomes `rejected(rule_error)`, which also
    needs `ingest.rule_error` in `INGEST_ERROR_CODES`. The extension wiring is M4-06.

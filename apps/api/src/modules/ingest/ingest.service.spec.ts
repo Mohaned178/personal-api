@@ -4,13 +4,21 @@
  * service's whole-request validation. The real insert and upsert are covered by *.int.spec.ts.
  */
 import { randomUUID } from "node:crypto";
-import { ingestBatchResponseSchema } from "@personal-api/contracts";
+import { ingestBatchResponseSchema, type Rule } from "@personal-api/contracts";
+import { compileRuleSet } from "@personal-api/rules";
 import { describe, expect, it } from "vitest";
 import { FakeClock } from "../../../test/fake-clock";
 import { AppException } from "../../platform/errors/problem";
-import type { IngestionCounts, IngestRepository, StoreBatchInput } from "./ingest.repository";
+import type { RuleSetProvider } from "../rules/rule-set.provider";
+import type {
+  Caller,
+  IngestionCounts,
+  IngestRepository,
+  StoreBatchInput,
+} from "./ingest.repository";
 import {
   countResults,
+  type Enforcement,
   hourBucket,
   INGEST_MAX_EVENT_AGE_MS,
   INGEST_MAX_FUTURE_SKEW_MS,
@@ -25,16 +33,48 @@ const USER = "user-1";
 const INTEGRATION = "0192f1c2-7c1e-7a3b-9f00-1c2d3e4f5a6b";
 const KEY = "0192f1c2-7c1e-7a3b-9f00-2d3e4f5a6b7c";
 
+const RULE_A = "0192f1c2-7c1e-7a3b-9f00-00000000000a";
+const RULE_B = "0192f1c2-7c1e-7a3b-9f00-00000000000b";
+
+function rulesOf(version: number, rules: readonly unknown[]) {
+  const result = compileRuleSet({ version, rules: rules as Rule[] });
+  if (!result.ok) throw new Error("rules did not compile");
+  return { version, compiled: result.ruleSet };
+}
+
+function rule(id: string, overrides: Record<string, unknown> = {}) {
+  return {
+    id,
+    name: id,
+    enabled: true,
+    priority: 10,
+    stage: "collect",
+    when: {},
+    then: [{ action: "allow" }],
+    ...overrides,
+  };
+}
+
+const HTTP_ALLOW: Caller = { kind: "http", defaultPolicy: "allow" };
+const ALLOW_ALL: Enforcement = { caller: HTTP_ALLOW, rules: rulesOf(0, []) };
+
 const at = (offsetMs: number) => new Date(NOW.getTime() + offsetMs).toISOString();
 
 function visit(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  const { data, ...rest } = overrides;
   return {
     id: randomUUID(),
     type: "browser.page_visited",
     typeVersion: 1,
     occurredAt: at(-60_000),
-    data: { domain: "example.com", path: "/a", transition: "link", tabRef: "tab-ref-12345678" },
-    ...overrides,
+    data: {
+      domain: "example.com",
+      path: "/a",
+      transition: "link",
+      tabRef: "tab-ref-12345678",
+      ...(data as Record<string, unknown> | undefined),
+    },
+    ...rest,
   };
 }
 
@@ -51,6 +91,7 @@ describe("planBatch", () => {
         visit({ data: { domain: "example.com", path: "/a?q=1", tabRef: "tab-ref-12345678" } }),
       ],
       NOW,
+      ALLOW_ALL,
     );
     expect(plan.map((item) => (item.kind === "rejected" ? item.code : item.kind))).toEqual([
       "store",
@@ -66,6 +107,7 @@ describe("planBatch", () => {
     const [wrongType, badId, notObject] = planBatch(
       [visit({ id: id.toUpperCase(), type: "x.y" }), visit({ id: "nope" }), null],
       NOW,
+      ALLOW_ALL,
     );
     expect(wrongType).toEqual({ kind: "rejected", code: "ingest.type_unknown", id });
     expect(badId).toEqual({ kind: "rejected", code: "ingest.envelope_invalid" });
@@ -74,7 +116,11 @@ describe("planBatch", () => {
 
   it("accepts exactly 90 days old and rejects 1 ms older with ingest.occurred_at_too_old", () => {
     const old = visit({ occurredAt: at(-INGEST_MAX_EVENT_AGE_MS - 1) });
-    const plan = planBatch([visit({ occurredAt: at(-INGEST_MAX_EVENT_AGE_MS) }), old], NOW);
+    const plan = planBatch(
+      [visit({ occurredAt: at(-INGEST_MAX_EVENT_AGE_MS) }), old],
+      NOW,
+      ALLOW_ALL,
+    );
     expect(plan[0]?.kind).toBe("store");
     expect(plan[1]).toEqual({ kind: "rejected", code: "ingest.occurred_at_too_old", id: old.id });
   });
@@ -88,6 +134,7 @@ describe("planBatch", () => {
         }),
       ],
       NOW,
+      ALLOW_ALL,
     );
     expect(item).toMatchObject({ kind: "rejected", code: "ingest.payload_invalid" });
   });
@@ -99,6 +146,7 @@ describe("planBatch", () => {
         visit({ occurredAt: at(INGEST_MAX_FUTURE_SKEW_MS + 1) }),
       ],
       NOW,
+      ALLOW_ALL,
     );
     expect(kept).toMatchObject({
       kind: "store",
@@ -116,7 +164,7 @@ describe("planBatch", () => {
 
   it("maps the validated envelope to a row, with receivedAt from the given clock time", () => {
     const event = visit();
-    const [item] = planBatch([event], NOW);
+    const [item] = planBatch([event], NOW, ALLOW_ALL);
     expect(item).toEqual({
       kind: "store",
       event: {
@@ -127,6 +175,9 @@ describe("planBatch", () => {
         clientOccurredAt: null,
         receivedAt: NOW,
         data: event.data,
+        tags: [],
+        trace: { ruleSetVersion: 0, matched: [], decidedBy: "default_policy" },
+        expiresAt: null,
       },
     });
   });
@@ -136,6 +187,7 @@ describe("planBatch", () => {
     const plan = planBatch(
       [visit({ id, type: "x.y" }), visit({ id }), visit({ id: id.toUpperCase() }), visit({ id })],
       NOW,
+      ALLOW_ALL,
     );
     expect(kinds(plan)).toEqual(["rejected", "store", "repeat", "repeat"]);
   });
@@ -143,7 +195,7 @@ describe("planBatch", () => {
   it("never mutates its input", () => {
     const event = visit({ occurredAt: at(INGEST_MAX_FUTURE_SKEW_MS + 1) });
     const copy = structuredClone(event);
-    planBatch([event], NOW);
+    planBatch([event], NOW, ALLOW_ALL);
     expect(event).toEqual(copy);
   });
 });
@@ -151,7 +203,11 @@ describe("planBatch", () => {
 describe("toResults", () => {
   it("answers accepted for stored ids, duplicate otherwise, and keeps request order", () => {
     const [a, b] = [randomUUID(), randomUUID()];
-    const plan = planBatch([visit({ id: a }), visit({ id: b }), visit({ id: a }), {}], NOW);
+    const plan = planBatch(
+      [visit({ id: a }), visit({ id: b }), visit({ id: a }), {}],
+      NOW,
+      ALLOW_ALL,
+    );
     expect(toResults(plan, new Set([a]))).toEqual([
       { id: a, status: "accepted" },
       { id: b, status: "duplicate" },
@@ -160,36 +216,163 @@ describe("toResults", () => {
     ]);
   });
 
-  it("never answers dropped, and always matches the strict response contract", () => {
-    const plan = planBatch([visit(), visit({ type: "x.y" }), {}, 7], NOW);
+  it("answers dropped with the id alone, and always matches the strict response contract", () => {
+    const enforcement: Enforcement = {
+      caller: { ...HTTP_ALLOW, defaultPolicy: "deny" },
+      rules: rulesOf(0, []),
+    };
+    const plan = planBatch([visit(), visit({ type: "x.y" }), {}, 7], NOW, enforcement);
     const results = toResults(plan, new Set());
-    expect(results.map((r) => r.status)).not.toContain("dropped");
+    expect(results.map((r) => r.status)).toEqual(["dropped", "rejected", "rejected", "rejected"]);
+    expect(Object.keys(results[0] ?? {}).sort()).toEqual(["id", "status"]);
     expect(ingestBatchResponseSchema.safeParse({ results }).success).toBe(true);
   });
 });
 
-describe("countResults", () => {
-  it("counts each status and keys rejections by error code", () => {
-    expect(
-      countResults([
-        { id: INTEGRATION, status: "accepted" },
-        { id: INTEGRATION, status: "duplicate" },
-        { id: INTEGRATION, status: "duplicate" },
-        { status: "rejected", code: "ingest.payload_invalid" },
-        { status: "rejected", code: "ingest.payload_invalid" },
-        { status: "rejected", code: "ingest.occurred_at_too_old" },
-      ]),
-    ).toEqual({
-      accepted: 1,
-      duplicate: 2,
-      dropped: 0,
-      rejected: 3,
-      byReason: { "ingest.payload_invalid": 2, "ingest.occurred_at_too_old": 1 },
+describe("planBatch: the rules", () => {
+  const deny: Caller = { kind: "http", defaultPolicy: "deny" };
+
+  it("a dropped plan names who decided and carries no event", () => {
+    const event = visit();
+    const byDefault = planBatch([event], NOW, { caller: deny, rules: rulesOf(1, []) })[0];
+    const byRule = planBatch([event], NOW, {
+      caller: HTTP_ALLOW,
+      rules: rulesOf(1, [rule(RULE_A, { then: [{ action: "drop" }] })]),
+    })[0];
+    expect(byDefault).toEqual({ kind: "dropped", id: event.id, decidedBy: "default_policy" });
+    expect(byRule).toEqual({ kind: "dropped", id: event.id, decidedBy: RULE_A });
+  });
+
+  it("stores the rules' output: coarsened data, tags, and a retention counted from receivedAt", () => {
+    const rules = rulesOf(3, [
+      rule(RULE_A, { then: [{ action: "coarsen", segments: 0 }, { action: "allow" }] }),
+      rule(RULE_B, {
+        stage: "process",
+        then: [
+          { action: "tag", tag: "x" },
+          { action: "set_retention", days: 2 },
+        ],
+      }),
+    ]);
+    const [item] = planBatch([visit()], NOW, { caller: deny, rules });
+    if (item?.kind !== "store") throw new Error("expected store");
+    expect(item.event.data).toMatchObject({ path: "/" });
+    expect(item.event.tags).toEqual(["x"]);
+    expect(item.event.expiresAt).toEqual(new Date(NOW.getTime() + 2 * 86_400_000));
+    expect(item.event.trace).toEqual({
+      ruleSetVersion: 3,
+      matched: [
+        { ruleId: RULE_A, actions: ["coarsen", "allow"] },
+        { ruleId: RULE_B, actions: ["tag", "set_retention"] },
+      ],
+      decidedBy: RULE_A,
     });
   });
 
-  it("leaves byReason empty when nothing was rejected", () => {
-    expect(countResults([{ id: INTEGRATION, status: "accepted" }]).byReason).toEqual({});
+  it("a rule set that could not be loaded rejects every valid item with ingest.rule_error", () => {
+    const plan = planBatch([visit(), visit(), {}], NOW, {
+      caller: HTTP_ALLOW,
+      rules: { version: 4, compiled: null },
+    });
+    expect(plan.map((p) => (p.kind === "rejected" ? p.code : p.kind))).toEqual([
+      "ingest.rule_error",
+      "ingest.rule_error",
+      "ingest.envelope_invalid",
+    ]);
+  });
+
+  it("an engine failure is ingest.rule_error, never a store", () => {
+    const broken = { version: 1, compiled: { version: 1, collect: [{}], process: [] } };
+    const [item] = planBatch([visit()], NOW, {
+      caller: HTTP_ALLOW,
+      rules: broken as unknown as Enforcement["rules"],
+    });
+    expect(item).toMatchObject({ kind: "rejected", code: "ingest.rule_error" });
+  });
+
+  describe("an extension event that carries the server's current rule-set version", () => {
+    const meta = (ruleSetVersion: number) => ({
+      meta: { ruleSetVersion, client: "pa-extension/1" },
+    });
+    const extension: Caller = { kind: "browser-extension", defaultPolicy: "deny" };
+    const workOnly = rule(RULE_A, {
+      when: { all: [{ field: "data.path", op: "starts_with", value: "/work/" }] },
+    });
+    const rewritten = (version: number) =>
+      visit({ data: { domain: "example.com", path: "/work" }, ...meta(version) });
+
+    it.each([
+      ["the current version", 2, "store"],
+      ["a stale version", 1, "dropped"],
+      ["a newer version", 3, "dropped"],
+    ])("%s", (_name, claimed, expected) => {
+      const [item] = planBatch([rewritten(claimed)], NOW, {
+        caller: extension,
+        rules: rulesOf(2, [workOnly]),
+      });
+      expect(item?.kind).toBe(expected);
+    });
+
+    it("is not trusted at version 0, with no collect rules, from an http source, or with no meta", () => {
+      const processOnly = rule(RULE_B, { stage: "process", then: [{ action: "tag", tag: "x" }] });
+      const cases: [Caller, ReturnType<typeof rulesOf>, Record<string, unknown>][] = [
+        [extension, rulesOf(0, []), rewritten(0)],
+        [extension, rulesOf(2, [processOnly]), rewritten(2)],
+        [{ ...extension, kind: "http" }, rulesOf(2, [workOnly]), rewritten(2)],
+        [
+          extension,
+          rulesOf(2, [workOnly]),
+          visit({ data: { domain: "example.com", path: "/work" } }),
+        ],
+      ];
+      for (const [caller, rules, event] of cases) {
+        expect(planBatch([event], NOW, { caller, rules })[0]?.kind).toBe("dropped");
+      }
+    });
+  });
+});
+
+describe("countResults", () => {
+  function counted(enforcement: Enforcement, items: unknown[], stored: string[] = []) {
+    const plan = planBatch(items, NOW, enforcement);
+    return countResults(plan, toResults(plan, new Set(stored)));
+  }
+
+  it("counts each status, keys rejections by error code and drops by the deciding rule", () => {
+    const a = visit();
+    const b = visit({ data: { domain: "blocked.example", path: "/x" } });
+    const rules = rulesOf(1, [
+      rule(RULE_A, {
+        priority: 1,
+        when: { all: [{ field: "data.domain", op: "eq", value: "blocked.example" }] },
+        then: [{ action: "drop" }],
+      }),
+    ]);
+    const counts = counted(
+      { caller: HTTP_ALLOW, rules },
+      [a, a, b, b, { nope: 1 }, visit({ type: "x.y" })],
+      [a.id as string],
+    );
+    expect(counts).toEqual({
+      accepted: 1,
+      duplicate: 1,
+      dropped: 2,
+      rejected: 2,
+      byReason: { [RULE_A]: 2, "ingest.envelope_invalid": 1, "ingest.type_unknown": 1 },
+    });
+  });
+
+  it("counts a default-policy drop under default_policy and nothing from the event", () => {
+    const counts = counted(
+      { caller: { ...HTTP_ALLOW, defaultPolicy: "deny" }, rules: rulesOf(0, []) },
+      [visit({ data: { domain: "sentinel.example", path: "/secret" } })],
+    );
+    expect(counts.byReason).toEqual({ default_policy: 1 });
+    expect(JSON.stringify(counts)).not.toMatch(/sentinel|secret/);
+  });
+
+  it("leaves byReason empty when nothing was rejected or dropped", () => {
+    expect(counted(ALLOW_ALL, [visit()], []).byReason).toEqual({});
   });
 });
 
@@ -217,6 +400,9 @@ describe("IngestService", () => {
     const seen = new Set<string>();
     const calls: Call[] = [];
     const repository = {
+      async loadCaller(): Promise<Caller> {
+        return HTTP_ALLOW;
+      },
       async storeBatch(
         userId: string,
         integrationId: string,
@@ -239,10 +425,14 @@ describe("IngestService", () => {
     return { repository: repository as unknown as IngestRepository, calls };
   }
 
+  function ruleSets(): RuleSetProvider {
+    return { get: async () => ALLOW_ALL.rules } as unknown as RuleSetProvider;
+  }
+
   function service() {
     const clock = new FakeClock(NOW);
     const fake = fakeRepository();
-    return { ...fake, clock, ingest: new IngestService(fake.repository, clock) };
+    return { ...fake, clock, ingest: new IngestService(fake.repository, ruleSets(), clock) };
   }
 
   it.each([
@@ -296,8 +486,14 @@ describe("IngestService", () => {
     expect(first.results.map((r) => r.status)).toEqual(["accepted", "duplicate", "rejected"]);
     expect(second.results.map((r) => r.status)).toEqual(["duplicate"]);
     expect(calls.map((call) => call.counts)).toEqual([
-      countResults(first.results),
-      countResults(second.results),
+      {
+        accepted: 1,
+        duplicate: 1,
+        dropped: 0,
+        rejected: 1,
+        byReason: { "ingest.type_unknown": 1 },
+      },
+      { accepted: 0, duplicate: 1, dropped: 0, rejected: 0, byReason: {} },
     ]);
   });
 
@@ -311,6 +507,9 @@ describe("IngestService", () => {
   it("answers the guard's 401 auth.invalid_key when the repository finds the key revoked", async () => {
     const clock = new FakeClock(NOW);
     const repository = {
+      async loadCaller(): Promise<Caller> {
+        return HTTP_ALLOW;
+      },
       async storeBatch() {
         return null;
       },
@@ -318,10 +517,28 @@ describe("IngestService", () => {
         throw new Error("must not touch last_seen_at after a refusal");
       },
     } as unknown as IngestRepository;
-    const error = await new IngestService(repository, clock)
+    const error = await new IngestService(repository, ruleSets(), clock)
       .ingestBatch(USER, INTEGRATION, KEY, { events: [visit()] })
       .catch((e: unknown) => e);
     expect(error).toBeInstanceOf(AppException);
+    expect((error as AppException).getStatus()).toBe(401);
+    expect((error as AppException).code).toBe("auth.invalid_key");
+  });
+
+  it("answers 401 without loading rules or storing when the integration is gone", async () => {
+    const repository = {
+      async loadCaller() {
+        return null;
+      },
+    } as unknown as IngestRepository;
+    const rules = {
+      get: async () => {
+        throw new Error("must not load rules for a revoked caller");
+      },
+    } as unknown as RuleSetProvider;
+    const error = await new IngestService(repository, rules, new FakeClock(NOW))
+      .ingestBatch(USER, INTEGRATION, KEY, { events: [visit()] })
+      .catch((e: unknown) => e);
     expect((error as AppException).getStatus()).toBe(401);
     expect((error as AppException).code).toBe("auth.invalid_key");
   });

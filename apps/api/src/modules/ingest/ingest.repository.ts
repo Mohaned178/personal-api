@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import type { IngestErrorCode } from "@personal-api/contracts";
+import { DEFAULT_POLICIES, INTEGRATION_KINDS, type RuleTrace } from "@personal-api/contracts";
 import { and, eq, isNull, lte, or, sql } from "drizzle-orm";
 import type { Database } from "../../platform/db/db";
 import { DB } from "../../platform/db/db.tokens";
@@ -23,16 +23,31 @@ export interface NewEvent {
   /** The client's original `occurredAt` when it was clamped, otherwise null. */
   clientOccurredAt: Date | null;
   receivedAt: Date;
+  /** After the rules' redact and coarsen. */
   data: Record<string, unknown>;
+  tags: string[];
+  /** Why the event is kept: rule ids and action names only. */
+  trace: RuleTrace;
+  /** `receivedAt` plus the matching `set_retention`, or null for none. */
+  expiresAt: Date | null;
 }
 
-/** Counters added to one hourly `ingestion_log` row. Error codes only, never payloads. */
+/** The part of an integration the rules need: its kind and what it does when no rule decides. */
+export interface Caller {
+  kind: (typeof INTEGRATION_KINDS)[number];
+  defaultPolicy: (typeof DEFAULT_POLICIES)[number];
+}
+
+/**
+ * Counters added to one hourly `ingestion_log` row. `byReason` keys are ingest error codes for
+ * rejected items, and a rule id or `default_policy` for dropped ones. Never payloads.
+ */
 export interface IngestionCounts {
   accepted: number;
   duplicate: number;
   dropped: number;
   rejected: number;
-  byReason: Partial<Record<IngestErrorCode, number>>;
+  byReason: Record<string, number>;
 }
 
 export interface StoreBatchInput {
@@ -51,6 +66,28 @@ export interface StoreBatchInput {
 @Injectable()
 export class IngestRepository {
   constructor(@Inject(DB) private readonly db: Database) {}
+
+  /**
+   * The kind and default policy of the caller's own active integration, or null when it is gone
+   * or revoked (the caller answers 401). They decide how the rules treat the batch, so they come
+   * from the database, never from the request (invariant 4).
+   */
+  async loadCaller(userId: string, integrationId: string): Promise<Caller | null> {
+    const scope = tenantScope(this.db, userId);
+    assertIntegrationId(integrationId);
+    const [row] = await scope.select(
+      integrations,
+      and(eq(integrations.id, integrationId), eq(integrations.status, "active")),
+    );
+    if (!row) return null;
+    const kind = INTEGRATION_KINDS.find((candidate) => candidate === row.kind);
+    const defaultPolicy = DEFAULT_POLICIES.find((candidate) => candidate === row.defaultPolicy);
+    // The columns have CHECK constraints; a value outside them is a bug, never "allow".
+    if (kind === undefined || defaultPolicy === undefined) {
+      throw new Error("integration row holds an unknown kind or default policy");
+    }
+    return { kind, defaultPolicy };
+  }
 
   /**
    * Stores a batch in ONE transaction: `INSERT … ON CONFLICT DO NOTHING … RETURNING` for the

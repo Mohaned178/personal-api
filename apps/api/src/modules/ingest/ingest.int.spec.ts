@@ -26,6 +26,7 @@ import {
   pageVisit,
   post,
   postEvents,
+  setDefaultPolicy,
   startIngestHarness,
   statuses,
   tally,
@@ -341,20 +342,6 @@ describe("per-item results", () => {
     expect(types).toEqual(["browser.focus_segment", "browser.page_visited"]);
   });
 
-  it("never returns dropped in M1: an event for a deny-by-default integration is still stored", async () => {
-    const { rows } = await h.testDb.pool.query<{ default_policy: string }>(
-      "select default_policy from integrations where id = $1",
-      [h.a.integrationId],
-    );
-    expect(rows[0]?.default_policy).toBe("deny");
-
-    const results = expectResults(await postEvents(h.app, h.a.ingestKey, [pageVisit()]));
-    expect(statuses(results)).toEqual(["accepted"]);
-    expect(await eventRows(h.testDb.pool)).toHaveLength(1);
-    const log = await logRows(h.testDb.pool, h.a.userId);
-    expect(log.reduce((n, r) => n + r.dropped, 0)).toBe(0);
-  });
-
   it.each([
     ["a lone high surrogate", "/a\uD800b"],
     ["a lone low surrogate", "/a\uDC00b"],
@@ -424,7 +411,11 @@ describe("stored row mapping", () => {
     expect(row?.origin).toBe("collected");
     expect(row?.data).toEqual(event.data);
     expect(row?.tags).toEqual([]);
-    expect(row?.trace).toBeNull();
+    expect(row?.trace).toEqual({
+      ruleSetVersion: 0,
+      matched: [],
+      decidedBy: "default_policy",
+    });
     expect(row?.expires_at).toBeNull();
   });
 
@@ -607,6 +598,7 @@ describe("cross-tenant: a key only writes to its own integration", () => {
     const second = await h.app
       .get(IntegrationsService)
       .create(h.a.userId, { kind: "http", name: "second-source" });
+    await setDefaultPolicy(h.testDb.pool, "allow", second.integration.id);
     const id = randomUUID();
     const viaFirst = expectResults(await postEvents(h.app, h.a.ingestKey, [pageVisit({ id })]));
     const viaSecond = expectResults(

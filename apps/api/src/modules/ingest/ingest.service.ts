@@ -11,12 +11,19 @@ import {
   parseEvent,
   toContractIssues,
 } from "@personal-api/contracts";
+import { evaluate } from "@personal-api/rules";
 import type { z } from "zod";
 import { CLOCK, type Clock } from "../../platform/clock/clock";
 import { assertUserScope } from "../../platform/db/tenant-scope";
 import { AppException } from "../../platform/errors/problem";
 import { INVALID_KEY_CODE } from "../keys/ingest-key.guard";
-import { type IngestionCounts, IngestRepository, type NewEvent } from "./ingest.repository";
+import { type LoadedRuleSet, RuleSetProvider } from "../rules/rule-set.provider";
+import {
+  type Caller,
+  type IngestionCounts,
+  IngestRepository,
+  type NewEvent,
+} from "./ingest.repository";
 
 const MINUTE_MS = 60 * 1000;
 const HOUR_MS = 60 * MINUTE_MS;
@@ -41,9 +48,17 @@ export function hourBucket(at: Date): Date {
   return new Date(Math.floor(at.getTime() / HOUR_MS) * HOUR_MS);
 }
 
+/** Who sent the batch and which rules apply to it. All of it comes from the server, never the body. */
+export interface Enforcement {
+  caller: Caller;
+  rules: LoadedRuleSet;
+}
+
 /** What happens to one item of a batch, decided before anything is stored. */
 export type ItemPlan =
   | { kind: "rejected"; code: IngestErrorCode; id?: string }
+  /** A rule, or the default policy, said no. Carries who decided, never the event (invariant 2). */
+  | { kind: "dropped"; id: string; decidedBy: string }
   /** The first valid occurrence of its id in the batch: inserted unless already stored. */
   | { kind: "store"; event: NewEvent }
   /** A later valid occurrence of an id stored earlier in the same batch: always a duplicate. */
@@ -52,9 +67,14 @@ export type ItemPlan =
 /**
  * Decides each item on its own, in request order. `parseEvent()` runs first, so its code wins
  * over the age check. The age check uses the client's original `occurredAt`, so clamping never
- * rescues an old event. Only validated output reaches a `store` plan, never the raw input.
+ * rescues an old event. Then the user's rules decide (`enforce`). Only the rules' output reaches a
+ * `store` plan, never the raw input, so redact and coarsen hold.
  */
-export function planBatch(items: readonly unknown[], receivedAt: Date): ItemPlan[] {
+export function planBatch(
+  items: readonly unknown[],
+  receivedAt: Date,
+  enforcement: Enforcement,
+): ItemPlan[] {
   const now = receivedAt.getTime();
   const seen = new Set<string>();
   return items.map((item): ItemPlan => {
@@ -68,8 +88,11 @@ export function planBatch(items: readonly unknown[], receivedAt: Date): ItemPlan
       return rejected("ingest.occurred_at_too_old", event.id);
     }
     if (seen.has(event.id)) return { kind: "repeat", id: event.id };
+    const decided = enforce(event, enforcement);
+    if (decided.kind !== "allow") return decided.plan;
     seen.add(event.id);
     const clamped = occurredAt - now > INGEST_MAX_FUTURE_SKEW_MS;
+    const { result } = decided;
     return {
       kind: "store",
       event: {
@@ -79,15 +102,61 @@ export function planBatch(items: readonly unknown[], receivedAt: Date): ItemPlan
         occurredAt: new Date(clamped ? now : occurredAt),
         clientOccurredAt: clamped ? new Date(occurredAt) : null,
         receivedAt: new Date(now),
-        data: event.data,
+        data: result.event.data,
+        tags: result.tags,
+        trace: result.trace,
+        expiresAt:
+          result.retentionDays === null ? null : new Date(now + result.retentionDays * DAY_MS),
       },
     };
   });
 }
 
+type Allowed = Extract<ReturnType<typeof evaluate>, { decision: "allow" }>;
+
+/**
+ * Runs the user's rules on one validated event (collect, then process). Anything but a clear
+ * `allow` keeps the event out (invariant 1): `drop` is counted, `error` and a rule set that could
+ * not be loaded are `ingest.rule_error`.
+ *
+ * `collected` (docs/rule-format.md, open item 1) is set only when the DB says the sender is a
+ * browser extension, the event names the server's current rule-set version, and that version has
+ * collect rules. The extension then already applied this version's rules to the event, so an event
+ * that no rule decides is not left to the default policy (it may have been rewritten out of its
+ * own rule's reach). A user with no rules (version 0), a stale version or an `http` sender gets the
+ * full evaluation. `keepQuery` is ignored: events have no place for a query string yet, so it stays
+ * stripped (open item 2).
+ */
+function enforce(
+  event: { id: string; meta?: { ruleSetVersion: number } | undefined },
+  { caller, rules }: Enforcement,
+): { kind: "allow"; result: Allowed } | { kind: "stop"; plan: ItemPlan } {
+  const { compiled } = rules;
+  if (compiled === null) return { kind: "stop", plan: rejected("ingest.rule_error", event.id) };
+  const collected =
+    caller.kind === "browser-extension" &&
+    compiled.version >= 1 &&
+    compiled.collect.length > 0 &&
+    event.meta?.ruleSetVersion === compiled.version;
+  const result = evaluate(event, compiled, caller.defaultPolicy, {
+    source: caller.kind,
+    collected,
+  });
+  if (result.decision === "error") {
+    return { kind: "stop", plan: rejected("ingest.rule_error", event.id) };
+  }
+  if (result.decision === "drop") {
+    return {
+      kind: "stop",
+      plan: { kind: "dropped", id: event.id, decidedBy: result.trace.decidedBy },
+    };
+  }
+  return { kind: "allow", result };
+}
+
 /**
  * Per-item results in request order. Whether a stored item is `accepted` or `duplicate` comes
- * only from `stored`, the ids the insert returned. Never `dropped` before rules exist (M4-05).
+ * only from `stored`, the ids the insert returned. A `dropped` item carries its id and nothing else.
  */
 export function toResults(
   plan: readonly ItemPlan[],
@@ -99,14 +168,22 @@ export function toResults(
         ? { status: "rejected", code: item.code }
         : { id: item.id, status: "rejected", code: item.code };
     }
+    if (item.kind === "dropped") return { id: item.id, status: "dropped" };
     if (item.kind === "repeat") return { id: item.id, status: "duplicate" };
     const id = item.event.clientEventId;
     return { id, status: stored.has(id) ? "accepted" : "duplicate" };
   });
 }
 
-/** The `ingestion_log` counters for a set of results: rejected items are counted by code. */
-export function countResults(results: readonly IngestItemResult[]): IngestionCounts {
+/**
+ * The `ingestion_log` counters for a plan and its results (same length, same order). Rejected
+ * items are counted by error code, dropped ones by the rule that decided (its id, or
+ * `default_policy`): never by anything from the event (invariant 2).
+ */
+export function countResults(
+  plan: readonly ItemPlan[],
+  results: readonly IngestItemResult[],
+): IngestionCounts {
   const counts: IngestionCounts = {
     accepted: 0,
     duplicate: 0,
@@ -114,12 +191,15 @@ export function countResults(results: readonly IngestItemResult[]): IngestionCou
     rejected: 0,
     byReason: {},
   };
-  for (const result of results) {
+  const bump = (reason: string) => {
+    counts.byReason[reason] = (counts.byReason[reason] ?? 0) + 1;
+  };
+  results.forEach((result, index) => {
     counts[result.status] += 1;
-    if (result.status === "rejected") {
-      counts.byReason[result.code] = (counts.byReason[result.code] ?? 0) + 1;
-    }
-  }
+    if (result.status === "rejected") bump(result.code);
+    const item = plan[index];
+    if (result.status === "dropped" && item?.kind === "dropped") bump(item.decidedBy);
+  });
   return counts;
 }
 
@@ -130,6 +210,7 @@ export const LAST_SEEN_UPDATE_INTERVAL_MS = 60_000;
 export class IngestService {
   constructor(
     private readonly repository: IngestRepository,
+    private readonly ruleSets: RuleSetProvider,
     @Inject(CLOCK) private readonly clock: Clock,
   ) {}
 
@@ -151,15 +232,20 @@ export class IngestService {
     const batch = ingestBatchRequestSchema.safeParse(body);
     if (!batch.success) throw batchInvalid(batch.error);
 
+    const caller = await this.repository.loadCaller(userId, integrationId);
+    // The integration was revoked after the guard let this request through.
+    if (caller === null) throw new AppException(401, INVALID_KEY_CODE, "Invalid API key");
+    const rules = await this.ruleSets.get(userId);
+
     const receivedAt = this.clock.now();
-    const plan = planBatch(batch.data.events, receivedAt);
+    const plan = planBatch(batch.data.events, receivedAt, { caller, rules });
     const events = plan.flatMap((item) => (item.kind === "store" ? [item.event] : []));
     const stored = await this.repository.storeBatch(
       userId,
       integrationId,
       keyId,
       { events, bucket: hourBucket(receivedAt) },
-      (ids) => countResults(toResults(plan, ids)),
+      (ids) => countResults(plan, toResults(plan, ids)),
     );
     // The key or its integration was revoked after the guard let this request through.
     if (stored === null) throw new AppException(401, INVALID_KEY_CODE, "Invalid API key");

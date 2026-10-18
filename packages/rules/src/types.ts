@@ -35,6 +35,14 @@ export interface EvaluateContext {
    * rules are server-only.
    */
   process?: boolean;
+  /**
+   * The extension already ran this rule-set version's collect stage on the event (server only).
+   * An event that no collect rule decides is then allowed, not left to the default policy, which
+   * would drop an event whose own rule rewrote the field it reads (`docs/rule-format.md`, open
+   * item 1). A rule that decides still decides, in the same order, and transforms and the process
+   * stage still run. Only the exact value `true` turns it on.
+   */
+  collected?: boolean;
 }
 
 /** Why evaluation failed. The event is not collected or stored (invariant 1). */

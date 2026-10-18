@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_POLICIES } from "./integrations.js";
-import { DEFAULT_POLICY_DECIDER, ruleTraceSchema } from "./rule-trace.js";
+import { CLIENT_DECIDER, DEFAULT_POLICY_DECIDER, ruleTraceSchema } from "./rule-trace.js";
 import { RULE_ACTION_NAMES, ruleActionSchema, ruleSetSchema } from "./rules.js";
 
 const RULE_ID = "0192f1c2-7c1e-7a3b-9f00-1c2d3e4f5a6b";
@@ -17,6 +17,12 @@ describe("ruleTraceSchema", () => {
 
   it("accepts a trace decided by the default policy, with nothing matched", () => {
     const trace = { ruleSetVersion: 0, matched: [], decidedBy: DEFAULT_POLICY_DECIDER };
+    expect(ruleTraceSchema.parse(trace)).toEqual(trace);
+  });
+
+  it("accepts a trace decided by the client (its collect stage already ran, M4-05)", () => {
+    const trace = { ruleSetVersion: 3, matched: [], decidedBy: CLIENT_DECIDER };
+    expect(CLIENT_DECIDER).toBe("client");
     expect(ruleTraceSchema.parse(trace)).toEqual(trace);
   });
 
