@@ -6,6 +6,7 @@ import {
   type GetEventResponse,
   type ListEventsQuery,
   type ListEventsResponse,
+  ruleTraceSchema,
   type StoredEvent,
 } from "@personal-api/contracts";
 import { assertUserScope } from "../../platform/db/tenant-scope";
@@ -73,5 +74,7 @@ export function toStoredEvent(row: EventRow): StoredEvent {
     origin: row.origin as StoredEvent["origin"],
     data: row.data as StoredEvent["data"],
     tags: row.tags,
+    // A trace this schema cannot read is shown as no trace, never passed through unchecked.
+    trace: ruleTraceSchema.safeParse(row.trace).data ?? null,
   };
 }

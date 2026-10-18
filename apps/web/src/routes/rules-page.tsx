@@ -30,6 +30,7 @@ import {
   SOURCES,
   validateRule,
 } from "@/lib/rule-draft";
+import { RULE_TEMPLATES, type RuleTemplate } from "@/lib/rule-templates";
 import {
   createRule,
   deleteRule,
@@ -505,11 +506,20 @@ function TestPanel({
   );
 }
 
-function RuleEditor({ rule, onClose }: { rule: Rule | undefined; onClose: () => void }) {
+function RuleEditor({
+  rule,
+  template,
+  onClose,
+}: {
+  rule: Rule | undefined;
+  /** Fills a new rule's form; ignored when editing. Nothing is saved until the user saves. */
+  template?: RuleDefinition | undefined;
+  onClose: () => void;
+}) {
   const queryClient = useQueryClient();
   const [mode, setMode] = useState<"form" | "json">("form");
   const [draft, setDraft] = useState<RuleDraft>(() => {
-    if (!rule) return emptyDraft();
+    if (!rule) return template ? ruleToDraft(template) : emptyDraft();
     const { id: _id, ...definition } = rule;
     return ruleToDraft(definition);
   });
@@ -644,7 +654,7 @@ export function RulesPage() {
     queryFn: () => getDiagnostics(DROP_WINDOW_HOURS),
   });
   // `null` is closed, `"new"` is a blank form, a rule is an edit.
-  const [editing, setEditing] = useState<Rule | "new" | null>(null);
+  const [editing, setEditing] = useState<Rule | RuleTemplate | "new" | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
 
@@ -699,17 +709,45 @@ export function RulesPage() {
       {editing !== null && (
         <RuleEditor
           // A new key per target, so switching rules never carries over the old form.
-          key={editing === "new" ? "new" : editing.id}
-          rule={editing === "new" ? undefined : editing}
+          key={
+            editing === "new" ? "new" : "rule" in editing ? `template-${editing.id}` : editing.id
+          }
+          rule={editing === "new" || "rule" in editing ? undefined : editing}
+          template={editing !== "new" && "rule" in editing ? editing.rule : undefined}
           onClose={() => setEditing(null)}
         />
       )}
 
       {data &&
         (data.rules.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            No rules yet, so nothing is collected. Add a rule to start.
-          </p>
+          <div className="flex flex-col gap-4">
+            <p className="text-sm text-muted-foreground">
+              No rules yet, so nothing is collected. Add a rule to start.
+            </p>
+            {editing === null && (
+              <section aria-label="Start from a template" className="flex flex-col gap-2">
+                <h2 className="text-sm font-medium">Start from a template</h2>
+                <p className="text-sm text-muted-foreground">
+                  A template fills in the form. Change the site, then save: nothing is saved until
+                  you do.
+                </p>
+                <ul className="grid gap-2 sm:grid-cols-2">
+                  {RULE_TEMPLATES.map((template) => (
+                    <li key={template.id} className="flex flex-col gap-1 rounded-md border p-3">
+                      <Button
+                        variant="outline"
+                        className="self-start"
+                        onClick={() => setEditing(template)}
+                      >
+                        {template.title}
+                      </Button>
+                      <span className="text-xs text-muted-foreground">{template.description}</span>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            )}
+          </div>
         ) : (
           <>
             <table className="w-full text-left text-sm">

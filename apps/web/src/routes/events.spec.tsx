@@ -36,6 +36,7 @@ function event(n: number, over: Partial<FakeEvent> = {}): FakeEvent {
     origin: "collected",
     data: { domain: `site${n}.test`, path: "/p" },
     tags: [],
+    trace: null,
     ...over,
   };
 }
@@ -144,6 +145,79 @@ describe("events page", () => {
     });
     fireEvent.click(within(drawer).getByRole("button", { name: /close/i }));
     expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  describe("why is this here", () => {
+    const RULE_ID = "11111111-1111-4111-8111-111111111111";
+    const trace = (over: object = {}) => ({
+      ruleSetVersion: 2,
+      matched: [{ ruleId: RULE_ID, actions: ["allow", "coarsen"] }],
+      decidedBy: RULE_ID,
+      ...over,
+    });
+    const openFirst = async () => {
+      fireEvent.click(await screen.findByRole("button", { name: /open event 1/i }));
+      return screen.findByRole("dialog", { name: /event details/i });
+    };
+
+    it("names the deciding rule and what it did", async () => {
+      backend.rules = {
+        version: 2,
+        rules: [
+          {
+            id: RULE_ID,
+            name: "Track GitHub",
+            enabled: true,
+            priority: 1,
+            stage: "collect",
+            when: {},
+            then: [{ action: "allow" }],
+          },
+        ],
+      };
+      backend.events = [event(0, { trace: trace() })];
+      mount("/events");
+      const drawer = await openFirst();
+      const why = await within(drawer).findByRole("region", { name: /why is this here/i });
+      expect(await within(why).findByText(/kept because of the rule “Track GitHub”/i)).toBeTruthy();
+      expect(within(why).getByText(/allow, coarsen/)).toBeTruthy();
+      expect(within(why).queryByText(/rules have changed/i)).toBeNull();
+    });
+
+    it("says so when the rules changed since, or the rule is gone", async () => {
+      backend.rules = { version: 5, rules: [] };
+      backend.events = [event(0, { trace: trace() })];
+      mount("/events");
+      const why = await within(await openFirst()).findByRole("region", {
+        name: /why is this here/i,
+      });
+      expect(
+        await within(why).findByText(/kept because of the rule “a rule that no longer exists”/i),
+      ).toBeTruthy();
+      expect(within(why).getByText(/rules have changed since/i)).toBeTruthy();
+    });
+
+    it("explains the default policy, and an event without a trace", async () => {
+      backend.rules = { version: 2, rules: [] };
+      backend.events = [
+        event(0, { trace: trace({ matched: [], decidedBy: "default_policy" }) }),
+        event(1, { trace: null }),
+      ];
+      mount("/events");
+      const first = await openFirst();
+      expect(await within(first).findByText(/default policy/i)).toBeTruthy();
+      fireEvent.click(screen.getByRole("button", { name: /open event 2/i }));
+      expect(await screen.findByText(/before rules existed/i)).toBeTruthy();
+    });
+
+    it("still explains when the rules cannot be loaded", async () => {
+      backend.events = [event(0, { trace: trace() })];
+      mount("/events", new QueryClient({ defaultOptions: { queries: { retry: false } } }));
+      const why = await within(await openFirst()).findByRole("region", {
+        name: /why is this here/i,
+      });
+      expect(within(why).getByText(/kept because of the rule “A rule”/i)).toBeTruthy();
+    });
   });
 
   it("asks for confirmation before deleting, and cancel deletes nothing", async () => {
