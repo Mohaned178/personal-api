@@ -123,6 +123,31 @@ describe("DiagnosticsService", () => {
     expect(res.integrations[1]).toMatchObject({ lastSeenAt: null, heartbeat: null });
   });
 
+  it("sums drops per rule and for the default policy, and ignores rejection codes", async () => {
+    const RULE_A = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+    const RULE_B = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+    const { svc } = service(
+      [],
+      [
+        logRow(0, { dropped: 5, byReason: { [RULE_A]: 3, default_policy: 2 } }),
+        logRow(1, {
+          dropped: 4,
+          rejected: 2,
+          integrationId: ID_2,
+          byReason: { [RULE_A]: 1, [RULE_B]: 3, "ingest.payload_invalid": 2 },
+        }),
+        logRow(10, { dropped: 9, byReason: { [RULE_B]: 9 } }),
+      ],
+    );
+    const res = await svc.get("u1", { hours: 2 });
+    expect(res.drops).toEqual({ byRule: { [RULE_A]: 4, [RULE_B]: 3 }, defaultPolicy: 2 });
+  });
+
+  it("returns empty drops when nothing was dropped", async () => {
+    const { svc } = service([], []);
+    expect((await svc.get("u1", {})).drops).toEqual({ byRule: {}, defaultPolicy: 0 });
+  });
+
   it("rejects a blank user", async () => {
     const { svc } = service([], []);
     await expect(svc.get("  ", {})).rejects.toThrow();

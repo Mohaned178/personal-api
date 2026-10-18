@@ -1,12 +1,15 @@
 import { Inject, Injectable } from "@nestjs/common";
 import {
+  DEFAULT_POLICY_DECIDER,
   DIAGNOSTICS_DEFAULT_HOURS,
   type DiagnosticsBucket,
+  type DiagnosticsDrops,
   type DiagnosticsIntegration,
   type DiagnosticsQuery,
   type DiagnosticsResponse,
   heartbeatRequestSchema,
 } from "@personal-api/contracts";
+import { z } from "zod";
 import { CLOCK, type Clock } from "../../platform/clock/clock";
 import { assertUserScope } from "../../platform/db/tenant-scope";
 import { DiagnosticsRepository, type IntegrationRow } from "./diagnostics.repository";
@@ -46,6 +49,7 @@ export class DiagnosticsService {
         rejected: 0,
       });
     }
+    const drops: DiagnosticsDrops = { byRule: {}, defaultPolicy: 0 };
     for (const row of logRows) {
       const slot = byHour.get(Math.floor(row.bucket.getTime() / HOUR_MS) * HOUR_MS);
       if (!slot) continue;
@@ -53,6 +57,7 @@ export class DiagnosticsService {
       slot.duplicate += row.duplicate;
       slot.dropped += row.dropped;
       slot.rejected += row.rejected;
+      addDrops(drops, row.byReason);
     }
 
     return {
@@ -60,7 +65,23 @@ export class DiagnosticsService {
         .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime() || (a.id < b.id ? 1 : -1))
         .map(toDiagnosticsIntegration),
       ingestion: [...byHour.values()],
+      drops,
     };
+  }
+}
+
+/**
+ * `by_reason` mixes rejection codes with the deciders of dropped events. Only a rule id or
+ * `default_policy` counts as a drop; anything else (an error code, a malformed key) is skipped.
+ */
+function addDrops(drops: DiagnosticsDrops, byReason: unknown): void {
+  if (typeof byReason !== "object" || byReason === null) return;
+  for (const [key, count] of Object.entries(byReason)) {
+    if (!Number.isInteger(count) || (count as number) < 0) continue;
+    if (key === DEFAULT_POLICY_DECIDER) drops.defaultPolicy += count as number;
+    else if (z.uuid().safeParse(key).success) {
+      drops.byRule[key] = (drops.byRule[key] ?? 0) + (count as number);
+    }
   }
 }
 

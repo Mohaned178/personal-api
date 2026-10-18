@@ -46,9 +46,21 @@ export const diagnosticsBucketSchema = z.strictObject({
 });
 export type DiagnosticsBucket = z.output<typeof diagnosticsBucketSchema>;
 
+/**
+ * Events refused over the window, counted by what decided: a rule id, or the integration's default
+ * policy when no rule did. Counters only (invariant 2). A rule that has since been deleted still
+ * appears here; the dashboard shows the ones it knows.
+ */
+export const diagnosticsDropsSchema = z.strictObject({
+  byRule: z.record(z.uuid(), z.int().min(0)),
+  defaultPolicy: z.int().min(0),
+});
+export type DiagnosticsDrops = z.output<typeof diagnosticsDropsSchema>;
+
 export const diagnosticsResponseSchema = z.strictObject({
   integrations: z.array(diagnosticsIntegrationSchema),
   /** Oldest hour first, one entry per hour of the window. */
   ingestion: z.array(diagnosticsBucketSchema),
+  drops: diagnosticsDropsSchema,
 });
 export type DiagnosticsResponse = z.output<typeof diagnosticsResponseSchema>;

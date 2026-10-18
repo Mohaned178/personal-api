@@ -28,7 +28,72 @@ export interface FakeBackend {
   events?: FakeEvent[];
   /** Response for GET /v1/diagnostics. Leave unset and that route answers 404. */
   diagnostics?: unknown;
+  /** Rules store for /v1/rules. Leave unset and those routes answer 404. */
+  rules?: FakeRuleStore;
   calls: { method: string; path: string; body: unknown; search?: string }[];
+}
+
+export interface FakeRule {
+  id: string;
+  [key: string]: unknown;
+}
+
+export interface FakeRuleStore {
+  version: number;
+  rules: FakeRule[];
+  /** Body of the next POST /v1/rules/test answer. */
+  testResult?: unknown;
+  /** Answer the next create/update with a 400 listing these issues. */
+  rejectWith?: { path: (string | number)[]; message: string }[] | undefined;
+}
+
+function rulesRoute(
+  b: FakeBackend,
+  method: string,
+  pathname: string,
+  body: unknown,
+): Response | null {
+  const store = b.rules;
+  if (!store || !pathname.startsWith("/v1/rules")) return null;
+  const sorted = () =>
+    [...store.rules].sort(
+      (x, y) => Number(x.priority) - Number(y.priority) || (x.id < y.id ? -1 : 1),
+    );
+  const reject = () => {
+    const issues = store.rejectWith;
+    store.rejectWith = undefined;
+    return issues ? json(400, { code: "request.invalid", issues }) : null;
+  };
+  if (pathname === "/v1/rules/test" && method === "POST") {
+    return json(200, store.testResult ?? { decision: "error", reason: "failed" });
+  }
+  if (pathname === "/v1/rules") {
+    if (method === "GET") return json(200, { version: store.version, rules: sorted() });
+    if (method === "POST") {
+      const rejected = reject();
+      if (rejected) return rejected;
+      const rule = { id: crypto.randomUUID(), ...(body as object) };
+      store.rules.push(rule);
+      store.version += 1;
+      return json(201, { rule, version: store.version });
+    }
+  }
+  const id = /^\/v1\/rules\/([^/]+)$/.exec(pathname)?.[1];
+  const index = store.rules.findIndex((r) => r.id === id);
+  if (index < 0) return json(404, { code: "rule.not_found" });
+  if (method === "PUT") {
+    const rejected = reject();
+    if (rejected) return rejected;
+    store.rules[index] = { id: store.rules[index]?.id as string, ...(body as object) };
+    store.version += 1;
+    return json(200, { rule: store.rules[index], version: store.version });
+  }
+  if (method === "DELETE") {
+    store.rules.splice(index, 1);
+    store.version += 1;
+    return json(200, { version: store.version });
+  }
+  return null;
 }
 
 export interface FakeEvent {
@@ -185,6 +250,7 @@ export function installFetch(b: FakeBackend) {
           : json(200, b.diagnostics);
       default:
         return (
+          rulesRoute(b, method, url.pathname, body) ??
           eventsRoute(b, method, url, body) ??
           integrationsRoute(b, method, url.pathname, body) ??
           json(404, { code: "not_found" })

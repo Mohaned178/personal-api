@@ -105,7 +105,7 @@ function IngestionChart({ buckets }: { buckets: DiagnosticsBucket[] }) {
 }
 
 export function HealthPage() {
-  const diagnostics = useQuery({ queryKey: ["diagnostics"], queryFn: getDiagnostics });
+  const diagnostics = useQuery({ queryKey: ["diagnostics"], queryFn: () => getDiagnostics() });
   const data = diagnostics.data;
   const noTraffic = data ? data.ingestion.every((b) => total(b) === 0) : false;
 

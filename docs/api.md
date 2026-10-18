@@ -204,6 +204,20 @@ of `replaceRuleId`, or alone with `onlyRule: true`. `replaceRuleId` and `onlyRul
 cannot be combined. `trace.ruleSetVersion` is the saved version; a draft without a `replaceRuleId`
 shows up in the trace as `00000000-0000-4000-8000-000000000000`.
 
+### Drop counts per rule
+
+`GET /v1/diagnostics?hours=168` (session cookie, 1 to 168 hours, 24 by default) also returns what was
+dropped over the window, counted by what decided. The Rules page reads it for its "Dropped (7 days)"
+column.
+
+```json
+"drops": { "byRule": { "<rule-id>": 7 }, "defaultPolicy": 3 }
+```
+
+`byRule` is keyed by rule id and `defaultPolicy` counts the events no rule decided. These are counters
+only: no payload, domain or URL is kept for a dropped event. A deleted rule's id can still appear, and
+the dashboard shows only the rules it knows.
+
 ## Error codes
 
 Errors are `application/problem+json` (RFC 9457) with a stable `code`:
