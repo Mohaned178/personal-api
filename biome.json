@@ -63,6 +63,16 @@
           "unsafeParameterDecoratorsEnabled": true
         }
       }
+    },
+    {
+      "includes": ["packages/contracts/src/rules.ts", "packages/contracts/src/rules.spec.ts"],
+      "linter": {
+        "rules": {
+          "suspicious": {
+            "noThenProperty": "off"
+          }
+        }
+      }
     }
   ]
 }
