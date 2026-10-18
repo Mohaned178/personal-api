@@ -6,7 +6,6 @@ import {
   countByPath,
   pairThroughPopupFirefox,
   type StoredConnection,
-  seedAllowListFirefox,
   triggerFlushFirefox,
   visitedPaths,
 } from "../support/pairing";
@@ -58,7 +57,6 @@ test("Firefox: pairs, visits fixture pages and the events land in the database",
     expect(stored?.integrationId).toBe(account.integrationId);
     expect(stored?.ingestKey).toMatch(/^pa_ing_.{10,}/);
     expect(await stack.pairingCodeUsed(account.integrationId)).toBe(true);
-    await seedAllowListFirefox(firefox, [ALLOWED_DOMAIN]);
 
     // Visit the fixture site; the query string must never be stored.
     const tab = await firefox.openTab(`${site.origin}/a`);

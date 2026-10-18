@@ -1,7 +1,9 @@
-import { Body, Controller, HttpCode, Post, UseGuards } from "@nestjs/common";
-import type { IngestBatchResponse } from "@personal-api/contracts";
+import { Body, Controller, Get, Headers, HttpCode, Post, Res, UseGuards } from "@nestjs/common";
+import type { IngestBatchResponse, IngestConfigResponse } from "@personal-api/contracts";
+import type { Response } from "express";
 import { CurrentAuth, type IngestAuthContext } from "../auth/auth-context";
 import { IngestKeyGuard } from "../keys/ingest-key.guard";
+import { ifNoneMatchHits } from "./etag";
 import { HeartbeatDto } from "./heartbeat.dto";
 import { IngestService } from "./ingest.service";
 
@@ -35,6 +37,27 @@ export class IngestController {
     @Body() body: unknown,
   ): Promise<IngestBatchResponse> {
     return this.ingest.ingestBatch(auth.userId, auth.integrationId, auth.keyId, body);
+  }
+
+  /**
+   * The user's collect rules for the extension, with a strong ETag. `If-None-Match` that matches
+   * answers 304 with no body. `private, no-cache`: a cache may keep it but must revalidate, and
+   * the answer depends on the key, so it is never shared.
+   */
+  @Get("config")
+  async config(
+    @CurrentAuth("ingest") auth: IngestAuthContext,
+    @Headers("if-none-match") ifNoneMatch: string | undefined,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<IngestConfigResponse | undefined> {
+    const { config, etag } = await this.ingest.getConfig(auth.userId, auth.integrationId);
+    res.setHeader("ETag", etag);
+    res.setHeader("Cache-Control", "private, no-cache");
+    if (ifNoneMatchHits(ifNoneMatch, etag)) {
+      res.status(304);
+      return undefined;
+    }
+    return config;
   }
 
   /**

@@ -147,6 +147,9 @@ importers:
       '@personal-api/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
+      '@personal-api/rules':
+        specifier: workspace:*
+        version: link:../../packages/rules
     devDependencies:
       '@types/node':
         specifier: 24.19.0

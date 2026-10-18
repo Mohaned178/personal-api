@@ -7,10 +7,9 @@ import type { StoredEvent } from "./stack";
 // Shared by the Chromium and Firefox pairing specs (M2-08).
 
 // Storage keys and the alarm the extension owns. They are pinned by the extension's own unit
-// tests (apps/extension/lib/connect.ts, allow-list.ts, queue/constants.ts); a rename there must
+// tests (apps/extension/lib/connect.ts, queue/constants.ts); a rename there must
 // change them here too.
 export const CONNECTION_KEY = "connection";
-export const ALLOW_LIST_KEY = "allowList";
 export const FLUSH_RETRY_ALARM = "pa-flush-retry";
 
 export interface StoredConnection {
@@ -42,14 +41,6 @@ export async function pairThroughPopup(
   }
 }
 
-/** The temporary M2-07 allow list. There is no popup editor, so the tests seed it directly. */
-export async function seedAllowListChromium(worker: Worker, domains: string[]): Promise<void> {
-  await worker.evaluate((args) => chrome.storage.local.set({ [args.key]: args.domains }), {
-    key: ALLOW_LIST_KEY,
-    domains,
-  });
-}
-
 export async function readConnectionChromium(worker: Worker): Promise<unknown> {
   return worker.evaluate(
     (key) => chrome.storage.local.get(key).then((stored) => stored[key] as unknown),
@@ -67,13 +58,6 @@ export async function triggerFlushChromium(worker: Worker): Promise<void> {
     (name) => chrome.alarms.create(name, { when: Date.now() + 500 }),
     FLUSH_RETRY_ALARM,
   );
-}
-
-export async function seedAllowListFirefox(
-  firefox: LaunchedFirefoxExtension,
-  domains: string[],
-): Promise<void> {
-  await firefox.storageSet({ [ALLOW_LIST_KEY]: domains });
 }
 
 /**

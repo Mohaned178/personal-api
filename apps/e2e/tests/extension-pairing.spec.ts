@@ -14,7 +14,6 @@ import {
   pairThroughPopup,
   readConnectionChromium,
   type StoredConnection,
-  seedAllowListChromium,
   triggerFlushChromium,
   visitedPaths,
 } from "../support/pairing";
@@ -66,7 +65,6 @@ const test = base.extend<{ unpaired: Omit<Paired, "account">; paired: Paired }>(
   paired: async ({ unpaired, stack }, use) => {
     const account = await stack.createPairableAccount("chromium");
     await pairThroughPopup(unpaired.extension, unpaired.proxy.origin, account.pairingCode);
-    await seedAllowListChromium(unpaired.worker, [ALLOWED_DOMAIN]);
     await use({ ...unpaired, account });
   },
 });

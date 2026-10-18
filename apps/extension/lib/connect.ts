@@ -7,6 +7,7 @@ import {
   pairResponseSchema,
 } from "@personal-api/contracts";
 import { GATE_OWNER_STORAGE_KEY, pairedMirror } from "./gate-mirror";
+import { RULES_STORAGE_KEY } from "./rules/storage-key";
 
 export const CONNECTION_STORAGE_KEY = "connection";
 
@@ -96,6 +97,11 @@ export interface ConnectDeps {
     remove(key: string): Promise<void>;
   };
   fetch(url: string, init: RequestInit): Promise<Response>;
+  /**
+   * Called once a pairing is stored, to fetch the rules (M4-06). Best effort: a failure or a
+   * rejection changes nothing about the pairing, and the periodic sync tries again.
+   */
+  syncRules?: () => Promise<unknown>;
 }
 
 /**
@@ -202,6 +208,11 @@ export async function connect(
   };
   await adoptQueueOwner(deps, connection);
   await deps.storage.set({ [CONNECTION_STORAGE_KEY]: connection });
+  try {
+    await deps.syncRules?.();
+  } catch {
+    // The pairing is done; the rules arrive with the next periodic sync.
+  }
   return connection;
 }
 
@@ -238,6 +249,13 @@ export async function disconnect(deps: ConnectDeps): Promise<void> {
     connection === null ? null : normalizeServerUrl(connection.serverOrigin).originPattern;
 
   await deps.storage.remove(CONNECTION_STORAGE_KEY);
+  // The rules were fetched with this key. Capture is already off without a connection; this keeps
+  // them from lingering in storage.
+  try {
+    await deps.storage.remove(RULES_STORAGE_KEY);
+  } catch {
+    // Best effort: rules of an owner without a connection never apply.
+  }
 
   if (originPattern !== null) {
     try {
@@ -258,7 +276,8 @@ export async function getConnection(deps: ConnectDeps): Promise<Connection | nul
   }
 }
 
-function parseStoredConnection(value: unknown): Connection | null {
+/** The connection a stored value holds, or null when it is absent or malformed (fail closed). */
+export function parseStoredConnection(value: unknown): Connection | null {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     return null;
   }

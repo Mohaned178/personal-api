@@ -24,6 +24,15 @@ describe("IngestController routing", () => {
     expect(Reflect.getMetadata(METHOD_METADATA, handler)).toBe(RequestMethod.POST);
   });
 
+  it("serves the rules for the extension on GET /v1/ingest/config", () => {
+    const config = IngestController.prototype.config;
+    const prefix = Reflect.getMetadata(PATH_METADATA, IngestController) as string;
+    expect(`/${prefix}/${Reflect.getMetadata(PATH_METADATA, config) as string}`).toBe(
+      "/v1/ingest/config",
+    );
+    expect(Reflect.getMetadata(METHOD_METADATA, config)).toBe(RequestMethod.GET);
+  });
+
   it("answers 200, not 201", () => {
     expect(Reflect.getMetadata(HTTP_CODE_METADATA, handler)).toBe(200);
   });

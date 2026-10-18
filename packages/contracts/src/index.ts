@@ -14,6 +14,7 @@ export {
 } from "./errors.js";
 export * from "./events.js";
 export * from "./ingest.js";
+export * from "./ingest-config.js";
 export * from "./integrations.js";
 export * from "./pairing.js";
 export * from "./parse-event.js";

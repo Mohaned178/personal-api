@@ -503,3 +503,43 @@ describe("disconnect", () => {
     expect(deps.fetch).not.toHaveBeenCalled();
   });
 });
+
+describe("connect: rules (M4-06)", () => {
+  it("fetches the rules once the pairing is stored, not before", async () => {
+    const { deps, store } = makeDeps();
+    const seen: unknown[] = [];
+    const syncRules = vi.fn(async () => {
+      seen.push(store[CONNECTION_STORAGE_KEY]);
+    });
+    await connect(input, { ...deps, syncRules });
+    expect(syncRules).toHaveBeenCalledTimes(1);
+    expect(seen[0]).toMatchObject({ ingestKey: KEY });
+  });
+
+  it("does not fetch rules when the pairing fails", async () => {
+    const { deps } = makeDeps();
+    deps.fetch.mockResolvedValueOnce(json({ code: "pairing.code_invalid" }, 400));
+    const syncRules = vi.fn(async () => undefined);
+    await errorOf(connect(input, { ...deps, syncRules }));
+    expect(syncRules).not.toHaveBeenCalled();
+  });
+
+  it("is still connected when the rules fetch rejects (the periodic sync retries)", async () => {
+    const { deps, store } = makeDeps();
+    const syncRules = vi.fn(async () => {
+      throw new Error("offline");
+    });
+    const connection = await connect(input, { ...deps, syncRules });
+    expect(connection.ingestKey).toBe(KEY);
+    expect(store[CONNECTION_STORAGE_KEY]).toBeDefined();
+  });
+
+  it("disconnect removes the fetched rules too", async () => {
+    const { deps, store } = makeDeps();
+    await connect(input, deps);
+    store.rulesConfig = { owner: {}, etag: '"x"', config: {} };
+    await disconnect(deps);
+    expect(store.rulesConfig).toBeUndefined();
+    expect(store[CONNECTION_STORAGE_KEY]).toBeUndefined();
+  });
+});

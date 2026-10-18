@@ -50,8 +50,12 @@ export interface E2eStack {
   apiOrigin: string;
   /** Direct database access for assertions. Read-only by convention. */
   pool: Pool;
-  /** A fresh user (own session) with a fresh browser-extension integration and a fresh code. */
-  createPairableAccount(label?: string): Promise<PairedAccount>;
+  /**
+   * A fresh user (own session) with a fresh browser-extension integration and a fresh code. The
+   * user gets one rule that allows page events of `allowedDomains` (default `127.0.0.1`, the
+   * fixture site), which the extension fetches when it pairs; everything else is denied by default.
+   */
+  createPairableAccount(label?: string, allowedDomains?: string[]): Promise<PairedAccount>;
   /** Every stored event of an integration, oldest first. */
   eventsOf(integrationId: string): Promise<StoredEvent[]>;
   /** Sum of `ingestion_log.duplicate` for an integration (resent events the server discarded). */
@@ -171,7 +175,10 @@ export async function startStack(): Promise<E2eStack> {
       body: JSON.stringify(body),
     });
 
-  const createPairableAccount = async (label = "e2e"): Promise<PairedAccount> => {
+  const createPairableAccount = async (
+    label = "e2e",
+    allowedDomains: string[] = ["127.0.0.1"],
+  ): Promise<PairedAccount> => {
     const credentials = {
       email: `${label}-${randomUUID().replaceAll("-", "").slice(0, 12)}@example.test`,
       password: `Pw-${randomUUID()}`,
@@ -208,18 +215,19 @@ export async function startStack(): Promise<E2eStack> {
     const integrationId = ((await created.json()) as { integration: { id: string } }).integration
       .id;
 
-    // The server enforces the user's rules (M4-05) and a new extension denies by default. Until the
-    // extension syncs rules (M4-06) and the e2e adds its own (M4-09), the extension's temporary
-    // allow list decides what is sent, so let everything that arrives be kept.
+    // The user's rules decide what is collected, in the extension (M4-06: it fetches them when it
+    // pairs) and again on the server (M4-05). A new extension denies by default, so allow page
+    // events of these domains. Events without a domain (tab_opened without one, sessions) stay
+    // denied, like the temporary allow list this replaces.
     const rule = await fetch(`${apiOrigin}/v1/rules`, {
       method: "POST",
       headers: session,
       body: JSON.stringify({
-        name: "e2e: keep what the extension sends",
+        name: "e2e: allow the fixture site",
         enabled: true,
-        priority: 1000,
+        priority: 100,
         stage: "collect",
-        when: {},
+        when: { all: [{ field: "data.domain", op: "in", value: allowedDomains }] },
         then: [{ action: "allow" }],
       }),
     });

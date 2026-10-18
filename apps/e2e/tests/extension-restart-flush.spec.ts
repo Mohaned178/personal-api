@@ -12,7 +12,6 @@ import { type FlakyProxy, startFlakyProxy } from "../support/flaky-proxy";
 import {
   countByPath,
   pairThroughPopup,
-  seedAllowListChromium,
   triggerFlushChromium,
   visitedPaths,
 } from "../support/pairing";
@@ -53,11 +52,10 @@ const test = base.extend<{ paired: Paired }>({
     const build = await patchBuildWithHostPermissions(EXTENSION_PATH, [LOOPBACK_HOST_PERMISSION]);
     const extension = await launchExtension({ extensionPath: build.path });
     try {
-      const worker = await waitForServiceWorker(extension.context);
+      await waitForServiceWorker(extension.context);
       const page = await extension.context.newPage();
       const account = await stack.createPairableAccount("restart");
       await pairThroughPopup(extension, proxy.origin, account.pairingCode);
-      await seedAllowListChromium(worker, [ALLOWED_DOMAIN]);
       await use({ account, proxy, extension, page });
     } finally {
       await extension.close().catch(() => {});

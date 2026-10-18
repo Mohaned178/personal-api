@@ -18,7 +18,8 @@
     "test": "pnpm build && vitest run"
   },
   "dependencies": {
-    "@personal-api/contracts": "workspace:*"
+    "@personal-api/contracts": "workspace:*",
+    "@personal-api/rules": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "24.19.0",

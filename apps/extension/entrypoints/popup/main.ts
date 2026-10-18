@@ -2,12 +2,6 @@
 
 import { browser } from "wxt/browser";
 import {
-  type AllowListEditorState,
-  addDomainFromInput,
-  loadAllowListEditor,
-  removeDomain,
-} from "../../lib/allow-list-editor";
-import {
   type ConnectDeps,
   ConnectError,
   type Connection,
@@ -23,6 +17,9 @@ import {
   type PopupStatus,
 } from "../../lib/popup-state";
 import { createFlusher, createIdbCaptureStore } from "../../lib/queue";
+import { readActiveRules } from "../../lib/rules/active-rules";
+import { createRulesSync } from "../../lib/rules/sync";
+import { currentTabVerdict, describeVerdict } from "../../lib/rules/verdict";
 
 // The popup reads the same IndexedDB database the background writes: a store for the counters and
 // a flusher used for `getSyncStatus` and the "Clear local queue" action. Never the ingest key
@@ -33,7 +30,15 @@ const deps: ConnectDeps = {
   storage: browser.storage.local,
   fetch: (url, init) => fetch(url, init),
   queue: store,
+  // Right after pairing, fetch the rules so capture can start without waiting for the alarm.
+  syncRules: () => rulesSync.sync(),
 };
+const rulesSync = createRulesSync({
+  getConnection: () => getConnection(deps),
+  storage: browser.storage.local,
+  fetch: deps.fetch,
+  alarms: browser.alarms,
+});
 const flusher = createFlusher({
   store,
   getConnection: () => getConnection(deps),
@@ -106,7 +111,9 @@ function renderState(next: PopupState): void {
 
 /** Re-reads the snapshot. `loadPopupState` never rejects. */
 function refreshState(): Promise<void> {
-  return loadPopupState(stateDeps).then(renderState);
+  return loadPopupState(stateDeps)
+    .then(renderState)
+    .then(() => refreshTabVerdict());
 }
 
 pauseToggle.addEventListener("click", () => {
@@ -127,46 +134,30 @@ clearQueueButton.addEventListener("click", () => {
   });
 });
 
-// ---------------------------------------------------------------------------------------------
-// TEMPORARY allow list editor (M2-R fix), replaced by the rule editor in M4-06. Never logs values.
+// -----------------------------------------------------------------------------------------------
+// M4-06 "this page": the current tab's verdict, from the same engine and rules as capture. Never
+// shows or logs the URL. Not shown on the connect page opened in a tab (the active tab is this page).
 
-const allowList = byId<HTMLUListElement>("allow-list");
-const allowListEmpty = byId<HTMLElement>("allow-list-empty");
-const allowListForm = byId<HTMLFormElement>("allow-list-form");
-const allowListInput = byId<HTMLInputElement>("allow-list-input");
-const allowListError = byId<HTMLElement>("allow-list-error");
+const tabVerdictView = byId<HTMLElement>("tab-verdict-view");
+const tabVerdict = byId<HTMLElement>("tab-verdict");
 
-function renderAllowList(next: AllowListEditorState): void {
-  allowListError.textContent = next.error ?? "";
-  allowListEmpty.hidden = next.domains.length > 0;
-  allowList.replaceChildren(
-    ...next.domains.map((domain) => {
-      const item = document.createElement("li");
-      const label = document.createElement("span");
-      label.textContent = domain;
-      const remove = document.createElement("button");
-      remove.type = "button";
-      remove.textContent = "Remove";
-      remove.setAttribute("aria-label", `Remove ${domain}`);
-      remove.addEventListener("click", () => {
-        remove.disabled = true;
-        void removeDomain(browser.storage.local, domain).then(renderAllowList);
-      });
-      item.append(label, remove);
-      return item;
-    }),
-  );
+async function refreshTabVerdict(): Promise<void> {
+  if (inTab || state === null) {
+    tabVerdictView.hidden = true;
+    return;
+  }
+  try {
+    const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
+    const active = await readActiveRules(browser.storage.local);
+    tabVerdict.textContent = describeVerdict(
+      currentTabVerdict(tab, active),
+      state.status === "collecting",
+    );
+    tabVerdictView.hidden = false;
+  } catch {
+    tabVerdictView.hidden = true;
+  }
 }
-
-allowListForm.addEventListener("submit", (event) => {
-  event.preventDefault();
-  void addDomainFromInput(browser.storage.local, allowListInput.value).then((next) => {
-    if (next.error === null) allowListInput.value = "";
-    renderAllowList(next);
-  });
-});
-
-void loadAllowListEditor(browser.storage.local).then(renderAllowList);
 
 // ---------------------------------------------------------------------------------------------
 // M2-02 connect flow

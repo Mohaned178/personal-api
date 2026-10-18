@@ -11,7 +11,6 @@ import {
   countByPath,
   pageVisits,
   pairThroughPopupFirefox,
-  seedAllowListFirefox,
   triggerFlushFirefox,
   visitedPaths,
 } from "../support/pairing";
@@ -66,7 +65,6 @@ const test = base.extend<{ unpaired: Unpaired; paired: Paired }>({
   paired: async ({ unpaired, stack }, use) => {
     const account = await stack.createPairableAccount("firefox-sync");
     await pairThroughPopupFirefox(unpaired.firefox, unpaired.proxy.origin, account.pairingCode);
-    await seedAllowListFirefox(unpaired.firefox, [ALLOWED_DOMAIN]);
     await use({ ...unpaired, account });
   },
 });

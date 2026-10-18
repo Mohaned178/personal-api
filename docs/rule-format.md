@@ -321,6 +321,38 @@ still run. The trade-off: a client that claims the current version skips the ser
 for events no rule decides. Rules still decide the rest, and version 0 (a user with no rules) is
 never trusted.
 
+## Extension sync (M4-06)
+
+`GET /v1/ingest/config` (ingest key) returns what the extension needs to apply the rules itself
+(`ingestConfigResponseSchema` in `packages/contracts/src/ingest-config.ts`):
+
+```json
+{ "ruleSetVersion": 7, "defaultPolicy": "deny", "rules": [ { "id": "…", "name": "…", … } ] }
+```
+
+- `rules` are the user's **enabled `collect`-stage** rules in evaluation order. Process rules and
+  disabled rules stay on the server. `ruleSetVersion` is the version of the whole set (what the
+  extension stamps as `meta.ruleSetVersion`); `0` means no rules yet. `defaultPolicy` is the key's
+  own integration's policy.
+- **ETag:** a strong tag over the whole body, so a rule change or a policy change gives a new tag.
+  `If-None-Match` (a tag, a weak form, a list or `*`) that matches gives `304` with no body.
+  `Cache-Control: private, no-cache`.
+- A stored rule that no longer fits the schema is `409 ingest.rule_error` (no rules in the body).
+- The extension validates the body with the contract and compiles it with the engine. It stores the
+  set under `rulesConfig`, bound to the server and integration, and syncs on its own alarm (every
+  minute), at every background start and right after pairing.
+  - valid `200`: stored; `304`: unchanged;
+  - a `200` that does not validate, or any `4xx` other than 408/425/429 (a refused key, a server
+    without the route): the stored rules are **removed**, so nothing is collected (invariant 1);
+  - a network error, a timeout, 408/425/429 or a `5xx`: the last valid rules stay. The server
+    applies the rules to every event again, so a flaky network never widens collection.
+- **Two layers** decide in the extension (ADR 0002, update M4-06): a page gate with probe events, and
+  `evaluate()` on every real event inside the commit. Only `allow` results are queued, already
+  redacted and coarsened and stamped with the version that decided them.
+- The popup shows the current tab's verdict by running the same engine on a `page_visited` probe:
+  collected or blocked, by which rule or by the default policy. It never shows the URL.
+- `keep_query` is still ignored (open item 2): the extension keeps stripping queries.
+
 ## Open items
 
 1. **Re-evaluating a rewritten event can change the decision.** *Decided in M4-05: the server
@@ -346,8 +378,8 @@ never trusted.
    example a new optional field, or `typeVersion` 2 for `browser.page_visited`). Until it is
    decided, the extension keeps stripping queries.
 3. ~~Rule-set size cap~~ Done in M4-04: 100 rules per user, enforced by the rules API (`ruleSetSchema` itself has no cap).
-4. ~~**Server wiring (M4-05).**~~ Done in M4-05 (`ingest.rule_error` is in `INGEST_ERROR_CODES`). `policy` and `context.source` must come from the authenticated
+4. ~~**Server wiring (M4-05).**~~ Done in M4-05; the extension wiring is M4-06 (done) (`ingest.rule_error` is in `INGEST_ERROR_CODES`). `policy` and `context.source` must come from the authenticated
    integration row, never from the request body (invariant 4). The `error` decision becomes `rejected(rule_error)`, which also
    needs `ingest.rule_error` in `INGEST_ERROR_CODES`. The extension wiring is M4-06.
 
-5. **The extension config must carry `default_policy` (M4-06).** The server trusts an extension event that names the current rule-set version (see [Server enforcement](#server-enforcement-m4-05)), which includes the extension's own default-policy decision. Changing an integration's `default_policy` does not bump the rule-set version today, and nothing changes it yet. When M4-06 builds `GET /v1/ingest/config`, put `default_policy` in it and in the ETag, and make a policy change invalidate the version the server trusts (bump it, or compare it).
+5. ~~**The extension config must carry `default_policy` (M4-06).**~~ Done in M4-06: `defaultPolicy` is in the config and in its ETag (see [Extension sync](#extension-sync-m4-06)). The remaining half is a rule for whoever adds a way to change `default_policy`: **bump `rule_sets.version` in the same transaction**, so a client that already stamped the old version stops being trusted. Nothing changes the policy today, so there is no code for it yet. Original note: The server trusts an extension event that names the current rule-set version (see [Server enforcement](#server-enforcement-m4-05)), which includes the extension's own default-policy decision. Changing an integration's `default_policy` does not bump the rule-set version today, and nothing changes it yet. When M4-06 builds `GET /v1/ingest/config`, put `default_policy` in it and in the ETag, and make a policy change invalidate the version the server trusts (bump it, or compare it).
