@@ -95,14 +95,10 @@ test.describe("Firefox: pair, collect, sync", () => {
     expect(await firefox.storageGet(CONNECTION_KEY)).toEqual({});
   });
 
-  test("stores nothing for a domain that is not on the allow list", async ({
-    paired,
-    stack,
-    site,
-  }) => {
+  test("stores nothing for a domain no rule allows", async ({ paired, stack, site }) => {
     const { firefox, tab, account } = paired;
     const port = new URL(site.origin).port;
-    // Same server, different hostname: not on the allow list, so deny by default applies.
+    // Same server, different hostname: no rule allows it, so deny by default applies.
     await visit(firefox, tab, `http://localhost:${port}/p/90`);
     await visit(firefox, tab, `${site.origin}/p/91`);
     await triggerFlushFirefox(firefox);

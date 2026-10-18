@@ -90,7 +90,7 @@ describe("a gate that does not say true collects nothing", () => {
   });
 });
 
-describe("an allow list lets through only what it allows", () => {
+describe("a gate that allows only some pages lets through only those", () => {
   it("emits page_visited and focus_segment for allowed domains only, and stores nothing about the others", async () => {
     const sim = newSim({ gate: allowDomains(["a.test"]) });
     await sim.start();

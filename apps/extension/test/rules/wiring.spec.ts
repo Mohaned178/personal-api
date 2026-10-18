@@ -4,6 +4,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { HEARTBEAT_ALARM_NAME } from "../../lib/capture";
 import { CONNECTION_STORAGE_KEY } from "../../lib/connect";
+import { PAUSED_STORAGE_KEY } from "../../lib/pause";
 import { type BackgroundBrowserApi, wireBackground } from "../../lib/queue";
 import { EVENT_CLIENT } from "../../lib/rules/active-rules";
 import { RULES_SYNC_ALARM_NAME } from "../../lib/rules/sync";
@@ -20,7 +21,11 @@ import { configOf, connectionFor, domainRule, RULES_STORAGE_KEY, storedRules } f
 
 type AlarmListener = (alarm: { name: string }) => unknown;
 
-function fakeBrowser(world: World, stored: Record<string, unknown>) {
+function fakeBrowser(
+  world: World,
+  stored: Record<string, unknown>,
+  onGet: (keys: string | string[]) => void = () => undefined,
+) {
   const alarmListeners: AlarmListener[] = [];
   const noop = { addListener: () => undefined };
   const browser = {
@@ -52,7 +57,10 @@ function fakeBrowser(world: World, stored: Record<string, unknown>) {
     storage: {
       session: { get: async () => ({ id: "x" }), set: async () => undefined },
       local: {
-        get: async (keys: string | string[]) => pick(stored, keys),
+        get: async (keys: string | string[]) => {
+          onGet(keys);
+          return pick(stored, keys);
+        },
         set: async (items: Record<string, unknown>) => void Object.assign(stored, items),
         remove: async (keys: string | string[]) => {
           for (const key of [keys].flat()) delete stored[key];
@@ -78,6 +86,7 @@ function wire(
     stored?: Record<string, unknown>;
     /** What the server answers for the config; defaults to "no such route". */
     config?: () => Response;
+    onGet?: (keys: string | string[]) => void;
   } = {},
 ) {
   const stored: Record<string, unknown> = {
@@ -85,7 +94,7 @@ function wire(
     ...mirrorFor(),
     ...options.stored,
   };
-  const { browser, fire } = fakeBrowser(world, stored);
+  const { browser, fire } = fakeBrowser(world, stored, options.onGet);
   const { store } = world.open();
   const configCalls: Record<string, string>[] = [];
   const wired = wireBackground({
@@ -135,6 +144,52 @@ async function stateText(store: ReturnType<typeof wire>["store"]): Promise<strin
 const github = domainRule("GitHub", "github.com", "allow");
 const withRules = (rules = [github], version = 1) => ({
   [RULES_STORAGE_KEY]: storedRules(configOf(rules, { version })),
+});
+
+describe("the default gate (no explicit collectGate)", () => {
+  const page = (domain: string) => ({ domain, path: "/x" });
+
+  it("allows an allowed domain when connected and not paused, and nothing else", async () => {
+    const { wired } = wire({ stored: withRules() });
+    expect(await wired.gate.allows(page("github.com"))).toBe(true);
+    expect(await wired.gate.allows(page("evil.com"))).toBe(false);
+    expect(await wired.gate.allows(page("www.github.com"))).toBe(false);
+    expect(await wired.gate.allows(null)).toBe(false);
+  });
+
+  it("denies an allowed domain while paused", async () => {
+    const { wired } = wire({ stored: { ...withRules(), [PAUSED_STORAGE_KEY]: true } });
+    expect(await wired.gate.allows(page("github.com"))).toBe(false);
+  });
+
+  it("denies an allowed domain when there is no connection", async () => {
+    const { wired, stored } = wire({ stored: withRules() });
+    delete stored[CONNECTION_STORAGE_KEY];
+    expect(await wired.gate.allows(page("github.com"))).toBe(false);
+  });
+
+  it("reads storage.local exactly once per decision (ADR 0002 decision 3), and no IndexedDB", async () => {
+    const reads: (string | string[])[] = [];
+    const { wired } = wire({ stored: withRules(), onGet: (keys) => void reads.push(keys) });
+    reads.length = 0;
+    expect(await wired.gate.allows(page("github.com"))).toBe(true);
+    expect(reads).toHaveLength(1);
+    expect(reads[0]).toEqual(
+      expect.arrayContaining([CONNECTION_STORAGE_KEY, PAUSED_STORAGE_KEY, RULES_STORAGE_KEY]),
+    );
+  });
+
+  it("denies when the storage read throws", async () => {
+    let fail = false;
+    const { wired } = wire({
+      stored: withRules(),
+      onGet: () => {
+        if (fail) throw new Error("storage unavailable");
+      },
+    });
+    fail = true;
+    expect(await wired.gate.allows(page("github.com"))).toBe(false);
+  });
 });
 
 describe("what a navigation queues", () => {

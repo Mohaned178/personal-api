@@ -4,7 +4,7 @@ import { newSim, type Sim, setupSimTests } from "./support/sim";
 
 // M2-04 review (PR #58): tab_opened and the completed navigation of the same tab can commit in
 // either order. openTab awaits two gate calls, capture awaits one, and with an asynchronous gate
-// (M2-07) the order is nondeterministic even in a warm worker. Whatever the order, one navigation
+// (the rules gate) the order is nondeterministic even in a warm worker. Whatever the order, one navigation
 // gives one page_visited, and the tab keeps one tabRef.
 
 setupSimTests();

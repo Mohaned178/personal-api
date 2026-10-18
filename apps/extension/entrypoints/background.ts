@@ -14,9 +14,9 @@ export default defineBackground(() => {
       .replaceAll("/", "_");
   };
 
-  // No explicit `collectGate`: the wiring falls back to the M2-07 temporary allow list in
-  // `browser.storage.local`, so only listed domains are captured, and only while connected and not
-  // paused. An empty or unreadable list denies everything (invariant 1).
+  // No explicit `collectGate`: capture is decided by the user's rules, fetched from the server and
+  // kept in `browser.storage.local` (lib/rules), and only while connected and not paused. Missing,
+  // invalid or foreign rules deny everything (invariant 1).
   void wireBackground({
     browser,
     store: createIdbCaptureStore({ now: Date.now }),

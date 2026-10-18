@@ -218,7 +218,7 @@ export async function startStack(): Promise<E2eStack> {
     // The user's rules decide what is collected, in the extension (M4-06: it fetches them when it
     // pairs) and again on the server (M4-05). A new extension denies by default, so allow page
     // events of these domains. Events without a domain (tab_opened without one, sessions) stay
-    // denied, like the temporary allow list this replaces.
+    // denied.
     const rule = await fetch(`${apiOrigin}/v1/rules`, {
       method: "POST",
       headers: session,
