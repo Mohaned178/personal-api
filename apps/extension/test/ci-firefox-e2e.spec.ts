@@ -10,7 +10,9 @@ const workflow = readFileSync(
   "utf8",
 ).replace(/\r\n/g, "\n");
 
-const FIREFOX_RUN = /playwright\.firefox\.config\.ts|test:e2e:firefox/;
+// The job runs the e2e package's `test:e2e` script (Firefox is the primary e2e since M4-00); the Edge
+// job runs `test:e2e:edge:smoke`, which this pattern must not match.
+const FIREFOX_RUN = /playwright\.firefox\.config\.ts|e2e test:e2e(?![:\w-])/;
 
 /** The text of `jobs.<id>`: from its 2-space-indented key to the next job (or the end). */
 function jobBlock(id: string): string | undefined {
@@ -25,9 +27,9 @@ function jobBlock(id: string): string | undefined {
 describe("CI job e2e-firefox", () => {
   const block = jobBlock("e2e-firefox") ?? "";
 
-  it("exists as its own job, separate from the Chromium e2e job", () => {
+  it("exists as its own job, separate from the Edge e2e job", () => {
     expect(jobBlock("e2e-firefox")).toBeDefined();
-    expect(jobBlock("e2e")).toBeDefined();
+    expect(jobBlock("e2e-edge")).toBeDefined();
   });
 
   it("runs on an ubuntu runner and has a timeout", () => {
@@ -72,7 +74,7 @@ describe("CI job e2e-firefox", () => {
     expect(block).not.toMatch(/xvfb/i);
   });
 
-  it("does not run the Firefox specs from the Chromium e2e job", () => {
-    expect(jobBlock("e2e") ?? "").not.toMatch(FIREFOX_RUN);
+  it("does not run the Firefox specs from the Edge e2e job", () => {
+    expect(jobBlock("e2e-edge") ?? "").not.toMatch(FIREFOX_RUN);
   });
 });
