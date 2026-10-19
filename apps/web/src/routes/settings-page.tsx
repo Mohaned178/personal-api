@@ -4,14 +4,17 @@ import { Link } from "@tanstack/react-router";
 import { type FormEvent, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { getSettings, updateSettings } from "@/lib/settings";
+import { getSettings, getTimeZones, updateSettings } from "@/lib/settings";
 
 const SETTINGS_KEY = ["settings"] as const;
+const TIME_ZONES_KEY = ["settings", "time-zones"] as const;
 
 function TimeZoneForm({ saved }: { saved: string }) {
   const queryClient = useQueryClient();
   const [draft, setDraft] = useState(saved);
   const valid = timeZoneSchema.safeParse(draft).success;
+  // Only suggestions: without the list the field still takes a typed name, and the server decides.
+  const zones = useQuery({ queryKey: TIME_ZONES_KEY, queryFn: getTimeZones, staleTime: Infinity });
   const save = useMutation({
     mutationFn: async () => {
       await updateSettings({ timeZone: draft });
@@ -41,7 +44,7 @@ function TimeZoneForm({ saved }: { saved: string }) {
           list="time-zones"
         />
         <datalist id="time-zones">
-          {Intl.supportedValuesOf("timeZone").map((zone) => (
+          {(zones.data ?? []).map((zone) => (
             <option key={zone} value={zone} />
           ))}
         </datalist>
@@ -50,7 +53,11 @@ function TimeZoneForm({ saved }: { saved: string }) {
         </Button>
       </div>
       {!valid && <p className="text-sm text-destructive">Enter an IANA time zone.</p>}
-      {save.isError && <p className="text-sm text-destructive">Could not save the time zone.</p>}
+      {save.isError && (
+        <p className="text-sm text-destructive">
+          Could not save the time zone. Pick one from the suggestions.
+        </p>
+      )}
       {save.isSuccess && draft === saved && <p className="text-sm">Saved.</p>}
     </form>
   );

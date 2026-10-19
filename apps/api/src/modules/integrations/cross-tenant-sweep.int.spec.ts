@@ -1091,11 +1091,10 @@ const ROUTES: Route[] = [
       },
     ],
     control: async (owner) => {
-      const res = await cookiePut(
-        owner,
-        `/v1/endpoints/${endpointsOf.get(owner.userId)?.id}`,
-        endpointBody("renamed"),
-      );
+      const res = await cookiePut(owner, `/v1/endpoints/${endpointsOf.get(owner.userId)?.id}`, {
+        ...endpointBody("renamed"),
+        enabled: true,
+      });
       expect(res.status).toBe(200);
       expect(res.body.endpoint.slug).toBe("renamed");
     },
@@ -1169,7 +1168,7 @@ const ROUTES: Route[] = [
           const res = await http()
             .get("/v1/me/second")
             .set("Authorization", `Bearer ${endpointsOf.get(attacker.userId)?.key}`);
-          expectProblem(res, 403, "auth.insufficient_scope");
+          expectProblem(res, 404, "endpoint.not_found");
           expect(JSON.stringify(res.body)).not.toContain(endpointsOf.get(victim.userId)?.id);
         },
       },
@@ -1198,6 +1197,29 @@ const ROUTES: Route[] = [
       const res = await cookieGet(owner, "/v1/settings");
       expect(res.status).toBe(200);
       expect(res.body.timeZone).toBeTypeOf("string");
+    },
+  },
+  {
+    route: "GET /v1/settings/time-zones",
+    attacks: [
+      {
+        label: "the zone list is the same global catalog whoever asks and whatever they name",
+        run: async (attacker, victim) => {
+          const res = await cookieGet(attacker, "/v1/settings/time-zones").set(
+            "X-User-Id",
+            victim.userId,
+          );
+          expect(res.status).toBe(200);
+          expect(Object.keys(res.body)).toEqual(["timeZones"]);
+          // Names of zones only: no user id or data.
+          expect(JSON.stringify(res.body)).not.toContain(victim.userId);
+        },
+      },
+    ],
+    control: async (owner) => {
+      const res = await cookieGet(owner, "/v1/settings/time-zones");
+      expect(res.status).toBe(200);
+      expect(res.body.timeZones).toContain("UTC");
     },
   },
   {

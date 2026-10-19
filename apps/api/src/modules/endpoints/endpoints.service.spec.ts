@@ -61,11 +61,11 @@ describe("EndpointsService.runBySlug", () => {
     ["events:read", ["events:read", "activity:read"]],
     ["no scopes", []],
     ["another endpoint's scope", [endpointScope(OTHER_ID)]],
-  ])("a key with %s is a 403 and runs nothing", async (_label, scopes) => {
+  ])("a key with %s is the same 404 as a missing slug and runs nothing", async (_label, scopes) => {
     const { run, service } = setup();
     const error = await problem(service.runBySlug(reader(scopes), "stats"));
-    expect(error.getStatus()).toBe(403);
-    expect(error.code).toBe("auth.insufficient_scope");
+    expect(error.getStatus()).toBe(404);
+    expect(error.code).toBe("endpoint.not_found");
     expect(run).not.toHaveBeenCalled();
   });
 

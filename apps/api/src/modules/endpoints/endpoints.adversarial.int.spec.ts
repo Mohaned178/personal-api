@@ -435,15 +435,15 @@ describe("scope escalation with an endpoint key", () => {
     const one = await create(h.a, "one");
     const two = await create(h.a, "two");
     const rename = (id: string, slug: string) =>
-      put(h.a, `/v1/endpoints/${id}`, { slug, definition: countByDay });
+      put(h.a, `/v1/endpoints/${id}`, { slug, enabled: true, definition: countByDay });
     // Swap the slugs: "one" now names the endpoint that key `two` is scoped to, and the reverse.
     expect((await rename(one.endpoint.id, "tmp")).status).toBe(200);
     expect((await rename(two.endpoint.id, "one")).status).toBe(200);
     expect((await rename(one.endpoint.id, "two")).status).toBe(200);
 
     const stale = await me("one", one.key);
-    expect(stale.status).toBe(403);
-    expect(stale.body.code).toBe("auth.insufficient_scope");
+    expect(stale.status).toBe(404);
+    expect(stale.body.code).toBe("endpoint.not_found");
     expect((await me("two", one.key)).status).toBe(200);
     expect((await me("one", two.key)).status).toBe(200);
   });
@@ -526,8 +526,8 @@ describe("scope escalation with an endpoint key", () => {
       mine.endpoint.id,
     ]);
     const own = await me("stats", mine.key);
-    expect(own.status).toBe(403);
-    expect(own.body.code).toBe("auth.insufficient_scope");
+    expect(own.status).toBe(404);
+    expect(own.body.code).toBe("endpoint.not_found");
     // The slug resolves among the KEY OWNER's endpoints, so the other user's slug does not exist.
     expect((await me("private-b", mine.key)).status).toBe(404);
   });
@@ -576,6 +576,7 @@ describe("cross-tenant", () => {
       http().get(`/v1/endpoints/${victimEndpoint.endpoint.id}`).set("Cookie", h.a.cookie),
       put(h.a, `/v1/endpoints/${victimEndpoint.endpoint.id}`, {
         slug: "hijacked",
+        enabled: true,
         definition: countByDay,
       }),
       http().delete(`/v1/endpoints/${victimEndpoint.endpoint.id}`).set("Cookie", h.a.cookie),

@@ -150,7 +150,8 @@ export const ruleActionSchema = z.discriminatedUnion("action", [
 ]);
 export type RuleAction = z.output<typeof ruleActionSchema>;
 
-const typePatternSchema = z
+/** An event type or a `*` glob over types. Shared with the type restriction of a read key. */
+export const typePatternSchema = z
   .string()
   .min(1)
   .max(RULE_LIMITS.globMax)

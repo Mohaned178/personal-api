@@ -1,8 +1,7 @@
 import { z } from "zod";
 import { safeMessage } from "./errors.js";
-import { EVENT_TYPE_MAX_LENGTH } from "./events.js";
 import { utcDateTimeSchema } from "./primitives.js";
-import { GLOB_MAX_WILDCARDS } from "./rule-glob.js";
+import { typePatternSchema } from "./rules.js";
 
 /**
  * Read keys (`pa_read_`, PLAN §6 `/v1/keys`). A read key can only read, within its scopes, and
@@ -36,22 +35,10 @@ export const readScopeSchema = z.union([
 ]);
 
 /**
- * An event type, or a `*` glob over types (`browser.*`), as in rules. Lowercase letters, digits,
- * `_`, `.` and `*` only, so a pattern never carries a SQL LIKE wildcard, a regex or a space.
- */
-export const typePatternSchema = z
-  .string()
-  .min(1)
-  .max(EVENT_TYPE_MAX_LENGTH)
-  .regex(/^[a-z0-9_.*]+$/, safeMessage("Expected an event type or a * pattern such as browser.*"))
-  .refine((pattern) => pattern.split("*").length - 1 <= GLOB_MAX_WILDCARDS, {
-    message: safeMessage("Too many * in the pattern"),
-  });
-
-/**
- * Narrows what a key reads. `sources` are integration ids; `types` are event types or `*` globs.
- * A key matches an event when it passes every list that is present. "No restriction" is `null`
- * on the key, never `{}`.
+ * Narrows what a key reads. `sources` are integration ids; `types` are event types or `*` globs,
+ * judged by the same schema as the `type` of a rule (lowercase letters, digits, `_`, `.` and `*`,
+ * so a pattern never carries a SQL LIKE wildcard, a regex or a space). A key matches an event when
+ * it passes every list that is present. "No restriction" is `null` on the key, never `{}`.
  */
 export const readKeyRestrictionSchema = z
   .strictObject({

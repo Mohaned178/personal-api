@@ -94,7 +94,7 @@ endpoints.
 | -------------------------------------- | ------- | -------------------------------------------------------------------------------------- |
 | `POST /v1/endpoints`                   | session | Creates the endpoint and its key. Answers `{ endpoint, key }`; the key is shown once.  |
 | `GET /v1/endpoints`, `GET /:id`        | session | List (by slug) and read. Never a key.                                                  |
-| `PUT /v1/endpoints/:id`                | session | Replaces slug, `enabled` and definition. The key keeps working.                        |
+| `PUT /v1/endpoints/:id`                | session | Replaces slug, `enabled` (required) and definition. The key keeps working.             |
 | `DELETE /v1/endpoints/:id`             | session | Deletes the endpoint and its keys.                                                     |
 | `POST /v1/endpoints/:id/rotate-key`    | session | Revokes the endpoint's keys, answers `{ endpoint, key }` with a new one.               |
 | `POST /v1/endpoints/preview`           | session | Runs an unsaved `{ definition }` with the same limits. Stores nothing.                 |
@@ -103,6 +103,7 @@ endpoints.
 The key is a read key (`pa_read_`) with the single scope `endpoint:<id>`, stored with `endpoint_id`. It
 cannot call `/v1/events`, `/v1/activity/*` or another endpoint, and a general read key
 (`events:read`, `activity:read`) cannot run an endpoint. The slug is looked up among the **key
-owner's** endpoints. An unknown, malformed or disabled endpoint is `404 endpoint.not_found`; a key
-without the endpoint's scope is `403 auth.insufficient_scope`. The key also shows in `GET /v1/keys`,
+owner's** endpoints. An unknown, malformed or disabled endpoint, and an endpoint whose scope the key
+does not carry, are all the same `404 endpoint.not_found` (same body), so a key cannot be used to
+find out which slugs its owner has. The key also shows in `GET /v1/keys`,
 where it can be revoked (rotate to get a working one again).

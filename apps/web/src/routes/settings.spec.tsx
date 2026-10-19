@@ -32,6 +32,19 @@ describe("settings page", () => {
     await waitFor(() => expect(backend.timeZone).toBe("Europe/Berlin"));
   });
 
+  it("suggests the zones the server accepts, not the ones the browser knows", async () => {
+    backend.timeZones = ["Asia/Kolkata", "Europe/Berlin", "UTC"];
+    const { container } = mount("/settings");
+    await screen.findByLabelText("Time zone");
+    await waitFor(() =>
+      expect(
+        Array.from(container.querySelectorAll("datalist#time-zones option")).map((o) =>
+          o.getAttribute("value"),
+        ),
+      ).toEqual(["Asia/Kolkata", "Europe/Berlin", "UTC"]),
+    );
+  });
+
   it("does not send a value that is not an IANA zone", async () => {
     mount("/settings");
     const input = await screen.findByLabelText("Time zone");

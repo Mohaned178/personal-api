@@ -4,7 +4,13 @@ import {
   activityDomainsQuerySchema,
   activityDomainsResponseSchema,
 } from "./activity.js";
-import { settingsSchema, timeZoneSchema, updateSettingsRequestSchema } from "./settings.js";
+import {
+  settingsSchema,
+  TIME_ZONE_UNSUPPORTED_CODE,
+  timeZoneSchema,
+  timeZonesResponseSchema,
+  updateSettingsRequestSchema,
+} from "./settings.js";
 
 describe("activity queries", () => {
   it("accepts no range, and a range of up to 90 days", () => {
@@ -17,15 +23,17 @@ describe("activity queries", () => {
     ).toBe(true);
   });
 
-  it("rejects an empty, reversed or too wide range", () => {
+  it("leaves the range check to the server, which has one code for it and fills in a missing end", () => {
+    // The pair is checked by ActivityService (activity.range_invalid), so a bad pair is never a
+    // different error depending on whether an end was defaulted.
     const t = "2026-10-01T00:00:00.000Z";
-    expect(activityDailyQuerySchema.safeParse({ from: t, to: t }).success).toBe(false);
+    expect(activityDailyQuerySchema.safeParse({ from: t, to: t }).success).toBe(true);
     expect(
       activityDailyQuerySchema.safeParse({ from: t, to: "2026-09-01T00:00:00.000Z" }).success,
-    ).toBe(false);
+    ).toBe(true);
     expect(
-      activityDailyQuerySchema.safeParse({ from: "2026-01-01T00:00:00.000Z", to: t }).success,
-    ).toBe(false);
+      activityDomainsQuerySchema.safeParse({ from: "2026-01-01T00:00:00.000Z", to: t }).success,
+    ).toBe(true);
   });
 
   it("rejects unknown keys, including userId", () => {
@@ -70,6 +78,15 @@ describe("time zone setting", () => {
     ]) {
       expect(timeZoneSchema.safeParse(tz).success, tz).toBe(false);
     }
+  });
+
+  it("lists time zones, each of which the PATCH accepts", () => {
+    expect(TIME_ZONE_UNSUPPORTED_CODE).toBe("settings.time_zone_unsupported");
+    expect(timeZonesResponseSchema.parse({ timeZones: ["Europe/Berlin", "UTC"] })).toEqual({
+      timeZones: ["Europe/Berlin", "UTC"],
+    });
+    expect(timeZonesResponseSchema.safeParse({ timeZones: ["+02:00"] }).success).toBe(false);
+    expect(timeZonesResponseSchema.safeParse({ timeZones: [], extra: 1 }).success).toBe(false);
   });
 
   it("is strict", () => {

@@ -8,6 +8,7 @@ import {
   readKeySchema,
   readScopeSchema,
 } from "./read-keys.js";
+import { ruleWhenSchema } from "./rules.js";
 
 const ID = "0192f1c2-7c1e-7a3b-9f00-1c2d3e4f5a6b";
 const OTHER_ID = "0192f1c2-7c1e-7a3b-9f00-1c2d3e4f5a6c";
@@ -51,6 +52,27 @@ describe("createReadKeyRequestSchema", () => {
 });
 
 describe("readKeyRestrictionSchema", () => {
+  it("judges a type pattern exactly as a rule does (one shared schema)", () => {
+    const patterns = [
+      "browser.*",
+      "a.b",
+      "",
+      "A",
+      "a b",
+      "a%",
+      "*a*a*a*a*a*a*a*a*",
+      "a".repeat(64),
+      "a".repeat(65),
+      "a".repeat(128),
+      "a".repeat(129),
+    ];
+    for (const pattern of patterns) {
+      expect(readKeyRestrictionSchema.safeParse({ types: [pattern] }).success, pattern).toBe(
+        ruleWhenSchema.safeParse({ type: [pattern] }).success,
+      );
+    }
+  });
+
   it("accepts sources only, types only, or both", () => {
     expect(readKeyRestrictionSchema.safeParse({ sources: [ID] }).success).toBe(true);
     expect(readKeyRestrictionSchema.safeParse({ types: ["browser.*"] }).success).toBe(true);
@@ -73,7 +95,7 @@ describe("readKeyRestrictionSchema", () => {
     ["a type with a single-character wildcard", { types: ["browser.?"] }],
     ["a regex type", { types: ["browser\\..*"] }],
     ["a type with a space", { types: ["browser page"] }],
-    ["a type that is too long", { types: ["a".repeat(65)] }],
+    ["a type that is too long", { types: ["a".repeat(129)] }],
     ["a type with more than 8 wildcards", { types: ["*a*a*a*a*a*a*a*a*"] }],
     ["an unknown key", { sources: [ID], integrationId: ID }],
   ])("rejects %s", (_label, body) => {

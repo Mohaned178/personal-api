@@ -43,7 +43,8 @@ export function restrictionConditions(
     const matches = types.map((t) =>
       t.includes("*") ? sql`${events.type} LIKE ${globToLike(t)}` : eq(events.type, t),
     );
-    conditions.push(or(...matches) as SQL);
+    // `or()` of nothing is undefined, which would drop the restriction; an empty list matches nothing.
+    conditions.push(matches.length === 0 ? sql`false` : (or(...matches) as SQL));
   }
   return conditions;
 }

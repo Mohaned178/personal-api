@@ -5,27 +5,13 @@ import {
   type SavedQueryResult,
 } from "@personal-api/contracts";
 import { CLOCK, type Clock } from "../../platform/clock/clock";
+import { hasPgErrorCode, PG_QUERY_CANCELED } from "../../platform/db/pg-error";
 import { assertUserScope } from "../../platform/db/tenant-scope";
 import { AppException } from "../../platform/errors/problem";
 import { SettingsService } from "../settings/settings.service";
+import { withSavedTimeZone } from "../settings/time-zone.errors";
 import { compileSavedQuery, InvalidSavedQueryError } from "./saved-query.compiler";
 import { SavedQueryRepository } from "./saved-query.repository";
-
-/** Postgres `query_canceled`: what `statement_timeout` raises. */
-const QUERY_CANCELED = "57014";
-
-/** The pg error may be wrapped by the ORM, which keeps it as `cause`. */
-function isStatementTimeout(error: unknown): boolean {
-  for (
-    let e = error as { code?: unknown; cause?: unknown } | undefined, depth = 0;
-    e && depth < 3;
-    depth++
-  ) {
-    if (e.code === QUERY_CANCELED) return true;
-    e = e.cause as typeof e;
-  }
-  return false;
-}
 
 /**
  * Runs a stored saved-query definition for one user: the user's time zone and the clock decide
@@ -53,9 +39,9 @@ export class SavedQueryService {
       throw error;
     }
     try {
-      return await this.repository.run(userId, compiled);
+      return await withSavedTimeZone(() => this.repository.run(userId, compiled));
     } catch (error) {
-      if (isStatementTimeout(error)) {
+      if (hasPgErrorCode(error, PG_QUERY_CANCELED)) {
         throw new AppException(504, SAVED_QUERY_TIMEOUT_CODE, "Saved query timed out");
       }
       throw error;
