@@ -285,6 +285,23 @@ and such a name is `400 settings.time_zone_unsupported`. A zone that was saved e
 longer works makes `/v1/activity/daily` and the endpoints answer `409 settings.time_zone_unsupported`
 until you choose another one.
 
+### Retention
+
+Every stored event gets an `expires_at` (`receivedAt` plus its retention days). The days come from
+the first of: a `set_retention` rule, the policy for the event's **type**, the policy for its
+**source** (the integration id), then the default of 90 days. Policies apply to events stored from
+now on; the purge itself comes with M6-02.
+
+```bash
+curl -s "$BASE/v1/retention" -b "$JAR"                        # { "defaultDays": 90, "policies": [...] }
+curl -s -X PUT "$BASE/v1/retention/type/browser.page_visited" -b "$JAR"   -H "Content-Type: application/json" -d '{"days":30}'        # a policy for one event type
+curl -s -X PUT "$BASE/v1/retention/source/$INTEGRATION_ID" -b "$JAR"   -H "Content-Type: application/json" -d '{"days":14}'        # a policy for one integration
+curl -s -X DELETE "$BASE/v1/retention/type/browser.page_visited" -b "$JAR"   # 204
+```
+
+`days` is a whole number from 1 to 3650. An event whose `occurredAt` is older than its own
+retention is rejected with `ingest.occurred_at_too_old`.
+
 ### Endpoints (saved queries)
 
 An endpoint is a saved query with a slug and a read key of its own. The definition format is in
@@ -342,7 +359,7 @@ Errors are `application/problem+json` (RFC 9457) with a stable `code`:
 | `ingest.type_unknown`           | `type` is not a registered event type.                                                  |
 | `ingest.type_version_unknown`   | `typeVersion` is not registered for that type.                                          |
 | `ingest.payload_invalid`        | `data` fails the schema for that type (for example a `path` with `?`, or an unknown key). |
-| `ingest.occurred_at_too_old`    | `occurredAt` is older than the accepted window.                                         |
+| `ingest.occurred_at_too_old`    | `occurredAt` is older than the event's retention (90 days by default, see Retention).   |
 | `ingest.rule_error`             | Your rules could not be run on this event (a stored rule is invalid, or the engine failed). Nothing is stored. |
 
 ### Whole-request codes
@@ -368,6 +385,8 @@ Errors are `application/problem+json` (RFC 9457) with a stable `code`:
 | 404  | `endpoint.not_found`       | The endpoint id or slug is unknown, belongs to another user, or is malformed. For `/v1/me/<slug>` also: the endpoint is disabled, or the key does not carry its scope. |
 | 400  | `settings.time_zone_unsupported` | `PATCH /v1/settings`: the database does not know this time zone (for example `Asia/Calcutta`). |
 | 409  | `settings.time_zone_unsupported` | The time zone saved in your settings no longer works in a query (`/v1/activity/daily`, endpoints and their preview). Choose another one. |
+| 400  | `retention.target_invalid` | A retention route names an unknown scope, an unknown event type or a malformed integration id. |
+| 404  | `retention.target_not_found` | `PUT`/`DELETE /v1/retention/...`: the integration is not yours or unknown, or there is no such policy to delete. |
 | 409  | `endpoint.slug_taken`      | You already have an endpoint with this slug.                                           |
 | 409  | `endpoint.limit_reached`   | The user already has the maximum number of endpoints.                                  |
 | 409  | `saved_query.definition_invalid` | The saved query definition is invalid (the same check the preview runs).         |

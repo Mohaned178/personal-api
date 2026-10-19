@@ -416,7 +416,9 @@ describe("stored row mapping", () => {
       matched: [],
       decidedBy: "default_policy",
     });
-    expect(row?.expires_at).toBeNull();
+    expect(row?.expires_at?.toISOString()).toBe(
+      new Date(Date.parse(FIXED_NOW) + 90 * DAY_MS).toISOString(),
+    );
   });
 
   it("takes receivedAt from the server clock, not from the client", async () => {

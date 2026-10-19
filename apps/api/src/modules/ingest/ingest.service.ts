@@ -10,6 +10,8 @@ import {
   ingestBatchRequestSchema,
   isPlainObject,
   parseEvent,
+  RETENTION_DEFAULT_DAYS,
+  resolveRetentionDays,
   toContractIssues,
 } from "@personal-api/contracts";
 import { canTrustCollected, evaluate } from "@personal-api/rules";
@@ -18,6 +20,7 @@ import { CLOCK, type Clock } from "../../platform/clock/clock";
 import { assertUserScope } from "../../platform/db/tenant-scope";
 import { AppException } from "../../platform/errors/problem";
 import { INVALID_KEY_CODE } from "../keys/ingest-key.guard";
+import { RetentionService } from "../retention/retention.service";
 import { type LoadedRuleSet, RuleSetProvider } from "../rules/rule-set.provider";
 import { etagOf } from "./etag";
 import {
@@ -32,11 +35,12 @@ const HOUR_MS = 60 * MINUTE_MS;
 const DAY_MS = 24 * HOUR_MS;
 
 /**
- * Events whose `occurredAt` is further than this before the server clock are rejected with
- * `ingest.occurred_at_too_old` (inclusive: exactly 90 days old is accepted). Fixed until M6 makes
- * it follow the user's retention.
+ * The age limit when no policy or rule says otherwise. An event whose `occurredAt` is further than
+ * its own retention (`resolveRetentionDays`) before the server clock is rejected with
+ * `ingest.occurred_at_too_old` (inclusive: exactly that old is accepted), because it would
+ * already be expired.
  */
-export const INGEST_MAX_EVENT_AGE_MS = 90 * DAY_MS;
+export const INGEST_MAX_EVENT_AGE_MS = RETENTION_DEFAULT_DAYS * DAY_MS;
 
 /**
  * Events whose `occurredAt` is further than this ahead of the server clock are clamped to
@@ -54,6 +58,8 @@ export function hourBucket(at: Date): Date {
 export interface Enforcement {
   caller: Caller;
   rules: LoadedRuleSet;
+  /** The user's retention policies: days by event type, and for the sending integration. */
+  retention?: { type: ReadonlyMap<string, number>; sourceDays: number | null };
 }
 
 /** What happens to one item of a batch, decided before anything is stored. */
@@ -86,12 +92,25 @@ export function planBatch(
     const occurredAt = Date.parse(event.occurredAt);
     // The contract only accepts parseable date-times; this keeps one bad item from failing the batch.
     if (!Number.isFinite(occurredAt)) return rejected("ingest.envelope_invalid", event.id);
-    if (now - occurredAt > INGEST_MAX_EVENT_AGE_MS) {
-      return rejected("ingest.occurred_at_too_old", event.id);
+    const age = now - occurredAt;
+    const policy = {
+      type: enforcement.retention?.type.get(event.type) ?? null,
+      source: enforcement.retention?.sourceDays ?? null,
+    };
+    let decided: ReturnType<typeof enforce> | undefined;
+    if (age > resolveRetentionDays({ rule: null, ...policy }) * DAY_MS) {
+      // Only a `set_retention` rule can still keep an event this old.
+      decided = enforce(event, enforcement);
+      const ruleDays = decided.kind === "allow" ? decided.result.retentionDays : null;
+      if (ruleDays === null || age > ruleDays * DAY_MS) {
+        return rejected("ingest.occurred_at_too_old", event.id);
+      }
     }
     if (seen.has(event.id)) return { kind: "repeat", id: event.id };
-    const decided = enforce(event, enforcement);
+    decided ??= enforce(event, enforcement);
     if (decided.kind !== "allow") return decided.plan;
+    const days = resolveRetentionDays({ rule: decided.result.retentionDays, ...policy });
+    if (age > days * DAY_MS) return rejected("ingest.occurred_at_too_old", event.id);
     seen.add(event.id);
     const clamped = occurredAt - now > INGEST_MAX_FUTURE_SKEW_MS;
     const { result } = decided;
@@ -107,8 +126,7 @@ export function planBatch(
         data: result.event.data,
         tags: result.tags,
         trace: result.trace,
-        expiresAt:
-          result.retentionDays === null ? null : new Date(now + result.retentionDays * DAY_MS),
+        expiresAt: new Date(now + days * DAY_MS),
       },
     };
   });
@@ -216,6 +234,7 @@ export class IngestService {
   constructor(
     private readonly repository: IngestRepository,
     private readonly ruleSets: RuleSetProvider,
+    private readonly retention: RetentionService,
     @Inject(CLOCK) private readonly clock: Clock,
   ) {}
 
@@ -241,9 +260,14 @@ export class IngestService {
     // The integration was revoked after the guard let this request through.
     if (caller === null) throw new AppException(401, INVALID_KEY_CODE, "Invalid API key");
     const rules = await this.ruleSets.get(userId);
+    const policies = await this.retention.daysByTarget(userId);
 
     const receivedAt = this.clock.now();
-    const plan = planBatch(batch.data.events, receivedAt, { caller, rules });
+    const plan = planBatch(batch.data.events, receivedAt, {
+      caller,
+      rules,
+      retention: { type: policies.type, sourceDays: policies.source.get(integrationId) ?? null },
+    });
     const events = plan.flatMap((item) => (item.kind === "store" ? [item.event] : []));
     const stored = await this.repository.storeBatch(
       userId,

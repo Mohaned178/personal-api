@@ -9,6 +9,7 @@ import { HealthPage } from "@/routes/health-page";
 import { IndexPage } from "@/routes/index";
 import { IntegrationsPage } from "@/routes/integrations-page";
 import { KeysPage } from "@/routes/keys-page";
+import { RetentionPage } from "@/routes/retention-page";
 import { RulesPage } from "@/routes/rules-page";
 import { SettingsPage } from "@/routes/settings-page";
 
@@ -73,6 +74,13 @@ const healthRoute = createRoute({
   component: HealthPage,
 });
 
+const retentionRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/retention",
+  beforeLoad: requireAuth,
+  component: RetentionPage,
+});
+
 const rulesRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/rules",
@@ -130,6 +138,7 @@ export const routeTree = rootRoute.addChildren([
   endpointsRoute,
   eventsRoute,
   healthRoute,
+  retentionRoute,
   rulesRoute,
   settingsRoute,
   loginRoute,

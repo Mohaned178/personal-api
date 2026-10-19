@@ -224,7 +224,7 @@ export async function startIngestHarness(): Promise<IngestHarness> {
     b,
     reset: async () => {
       await testDb.pool.query(
-        "truncate events, ingestion_log, pairing_codes, rules, rule_sets, rule_history restart identity",
+        "truncate events, ingestion_log, pairing_codes, rules, rule_sets, rule_history, retention_policies restart identity",
       );
       // Deleted, not truncated: api_keys references it, and the users' own keys must stay.
       await testDb.pool.query("delete from endpoints");

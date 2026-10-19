@@ -23,6 +23,7 @@ export * from "./parse-event.js";
 export * from "./primitives.js";
 export * from "./read-keys.js";
 export * from "./registry.js";
+export * from "./retention.js";
 export * from "./rule-fields.js";
 export * from "./rule-glob.js";
 export * from "./rule-trace.js";

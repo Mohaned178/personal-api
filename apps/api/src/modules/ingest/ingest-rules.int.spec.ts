@@ -85,7 +85,9 @@ describe("the default policy", () => {
     const [row] = await eventRows(h.testDb.pool, h.a.userId);
     expect(row?.trace).toEqual({ ruleSetVersion: 0, matched: [], decidedBy: "default_policy" });
     expect(row?.tags).toEqual([]);
-    expect(row?.expires_at).toBeNull();
+    expect(row?.expires_at?.toISOString()).toBe(
+      new Date(Date.parse(FIXED_NOW) + 90 * DAY_MS).toISOString(),
+    );
   });
 });
 

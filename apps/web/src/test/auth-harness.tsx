@@ -30,6 +30,8 @@ export interface FakeBackend {
   diagnostics?: unknown;
   /** Rules store for /v1/rules. Leave unset and those routes answer 404. */
   rules?: FakeRuleStore;
+  /** Retention policies for /v1/retention. Leave unset and those routes answer 404. */
+  retention?: Array<{ scope: "source" | "type"; target: string; days: number; updatedAt: string }>;
   /** Time zone for /v1/settings. Leave unset and those routes answer 404. */
   timeZone?: string;
   /** Names for GET /v1/settings/time-zones (what the database accepts). */
@@ -227,6 +229,37 @@ function keysRoute(
   return json(200, { readKey: target });
 }
 
+function retentionRoute(
+  b: FakeBackend,
+  method: string,
+  pathname: string,
+  body: unknown,
+): Response | null {
+  const list = b.retention;
+  if (!list) return null;
+  if (method === "GET" && pathname === "/v1/retention") {
+    return json(200, { defaultDays: 90, policies: list });
+  }
+  const m = /^\/v1\/retention\/(source|type)\/([^/]+)$/.exec(pathname);
+  if (!m) return null;
+  const scope = m[1] as "source" | "type";
+  const target = decodeURIComponent(m[2] as string);
+  const at = list.findIndex((p) => p.scope === scope && p.target === target);
+  if (method === "PUT") {
+    const days = (body as { days: number }).days;
+    const policy = { scope, target, days, updatedAt: "2026-10-19T00:00:00.000Z" };
+    if (at === -1) list.push(policy);
+    else list[at] = policy;
+    return json(200, policy);
+  }
+  if (method === "DELETE") {
+    if (at === -1) return json(404, { code: "retention.target_not_found" });
+    list.splice(at, 1);
+    return new Response(null, { status: 204 });
+  }
+  return null;
+}
+
 export const PAIRING_CODE = "ABCD-EFGH-JKLM-NPQR-STUV";
 export const INGEST_KEY = "pa_ing_secretsecretsecret";
 
@@ -400,6 +433,7 @@ export function installFetch(b: FakeBackend) {
           : json(200, b.diagnostics);
       default:
         return (
+          retentionRoute(b, method, url.pathname, body) ??
           rulesRoute(b, method, url.pathname, body) ??
           eventsRoute(b, method, url, body) ??
           integrationsRoute(b, method, url.pathname, body) ??
