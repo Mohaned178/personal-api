@@ -157,6 +157,9 @@ async function seedActivity(user: FixtureUser): Promise<void> {
     .set("Cookie", user.cookie)
     .send({ filter: { domain: "never-matches.example" } });
   expect(bulk.status, JSON.stringify(bulk.body)).toBe(202);
+  // exports (+ a queued export job; its files are covered by exports.int.spec.ts)
+  const exported = await post("/v1/exports", {});
+  expect(exported.status, JSON.stringify(exported.body)).toBe(202);
   // verification rows are keyed by identifier/value, not by user_id (Better Auth's own shape)
   await testDb.pool.query(
     `insert into verification (id, identifier, value, expires_at) values

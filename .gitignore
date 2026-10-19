@@ -16,6 +16,9 @@ coverage/
 playwright-report/
 test-results/
 
+# Local data (export files)
+data/
+
 # Environment files (keep the example)
 .env
 .env.*

@@ -78,6 +78,13 @@
       "when": 1792440335837,
       "tag": "0010_classy_sphinx",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1792445929892,
+      "tag": "0011_mighty_rafael_vega",
+      "breakpoints": true
     }
   ]
 }
