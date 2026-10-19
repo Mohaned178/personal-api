@@ -60,8 +60,11 @@ Keep the stack in PLAN §2, with the deviations below. Pins live in the `package
    avoided a dependency. M2-05 adds `idb` as PLAN §2 says, because it supports the `durability`
    option and the read-compute-write transaction pattern (see ADR 0002). `idb` is not yet in any
    package.
-6. **`nestjs-zod` and `@nestjs/swagger` are not added yet.** They arrive with the first DTOs and
-   the API docs task; until then Zod is used directly.
+6. **`nestjs-zod` and `@nestjs/swagger` arrived with the first DTOs and the API docs task.**
+   `@nestjs/swagger` is pinned exactly at 11.4.7 (M5-07) and serves OpenAPI at `/docs`. Swagger's
+   routes bypass Nest's guards, pipes and filters, so `/docs` is public. It lists request shapes
+   only, from the Zod DTOs through nestjs-zod's `cleanupOpenApiDoc`. Its `@scarf/scarf` telemetry
+   postinstall is disabled in `pnpm-workspace.yaml`.
 7. **Dependency age policy.** `pnpm-workspace.yaml` sets `minimumReleaseAge: 20160` (14 days, in
    minutes), so pnpm refuses versions published less than 14 days ago. Build scripts are blocked
    unless listed in `allowBuilds`.

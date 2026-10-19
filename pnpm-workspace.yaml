@@ -18,3 +18,5 @@ allowBuilds:
   "ssh2": false
   "esbuild": false
   "protobufjs": false
+  # Telemetry postinstall pulled in by swagger-ui-dist (via @nestjs/swagger); the UI does not need it.
+  "@scarf/scarf": false

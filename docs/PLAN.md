@@ -332,7 +332,7 @@ Targets changed on 2026-10-14: Firefox + Edge (free stores only) instead of Chro
 - [x] **M5-04 [S · high] Saved-query compiler:** definition schema → parameterized Drizzle query, a field-allowlist projection, aggregate modes, row limits, `statement_timeout`, and aggregate-only enforcement.
 - [x] **M5-05 [S · medium] Endpoints:** CRUD, `GET /v1/me/:slug`, and a UI with live preview + a copyable `curl`.
 - [x] **M5-06 [S · high] Tests:** injection attempts through field names and values, limit and timeout, scope escalation (endpoint A's key calling B or `/events`), and cross-tenant.
-- [ ] **M5-07 [H · low] OpenAPI** at `/docs`, and `docs/api.md`.
+- [x] **M5-07 [H · low] OpenAPI** at `/docs`, and `docs/api.md`.
 - [ ] **M5-R [O · xhigh] Milestone review** (`/code-review` + `/security-review`).
 
 ### M6: Data lifecycle

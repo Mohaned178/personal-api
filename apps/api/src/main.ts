@@ -6,6 +6,7 @@ import { Logger } from "nestjs-pino";
 import { AppModule } from "./app.module";
 import type { AppConfig } from "./config/config";
 import { APP_CONFIG } from "./config/config.module";
+import { mountOpenApi } from "./platform/docs/openapi";
 import { mountWebApp } from "./platform/web/web-static";
 
 async function bootstrap(): Promise<void> {
@@ -17,6 +18,7 @@ async function bootstrap(): Promise<void> {
   app.useLogger(app.get(Logger));
   app.enableShutdownHooks();
   const config = app.get<AppConfig>(APP_CONFIG);
+  mountOpenApi(app);
   // Optional dashboard build (apps/web/dist); without it the API serves only its own routes.
   mountWebApp(app, config.WEB_DIST_DIR ?? join(__dirname, "../../web/dist"));
   await app.listen(config.PORT);
