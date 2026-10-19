@@ -12,6 +12,8 @@ import {
 import { CLOCK, type Clock } from "../../platform/clock/clock";
 import { assertUserScope } from "../../platform/db/tenant-scope";
 import { AppException } from "../../platform/errors/problem";
+import { JobsService } from "../../platform/jobs/jobs.service";
+import { RECOMPUTE_DELAY_SECONDS, RETENTION_RECOMPUTE_QUEUE } from "./retention.jobs";
 import { type PolicyDays, RetentionRepository } from "./retention.repository";
 
 @Injectable()
@@ -19,6 +21,7 @@ export class RetentionService {
   constructor(
     private readonly repository: RetentionRepository,
     @Inject(CLOCK) private readonly clock: Clock,
+    private readonly jobs: JobsService,
   ) {}
 
   async list(userId: string): Promise<RetentionResponse> {
@@ -47,13 +50,30 @@ export class RetentionService {
     if (scope === "source" && !(await this.repository.ownsIntegration(userId, target))) {
       throw targetNotFound();
     }
-    return this.repository.upsert(userId, scope, target, days, this.clock.now());
+    const policy = await this.repository.upsert(userId, scope, target, days, this.clock.now());
+    await this.requestRecompute(userId);
+    return policy;
   }
 
   async remove(userId: string, scopeParam: string, targetParam: string): Promise<void> {
     assertUserScope(userId);
     const { scope, target } = parseTarget(scopeParam, targetParam);
     if (!(await this.repository.remove(userId, scope, target))) throw targetNotFound();
+    await this.requestRecompute(userId);
+  }
+
+  /**
+   * Asks the worker to re-derive the user's `expires_at` values, after a short delay (see
+   * `RECOMPUTE_DELAY_SECONDS`). One waiting job per user: a burst of edits is one run. The job
+   * carries only the user id. If the queue is down this throws after the policy was saved, and
+   * repeating the (idempotent) request enqueues again.
+   */
+  private async requestRecompute(userId: string): Promise<void> {
+    await this.jobs.enqueue(
+      RETENTION_RECOMPUTE_QUEUE,
+      { userId },
+      { singletonKey: userId, startAfter: RECOMPUTE_DELAY_SECONDS },
+    );
   }
 }
 

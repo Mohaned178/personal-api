@@ -45,12 +45,13 @@ export class JobsService implements OnModuleInit, OnApplicationBootstrap, OnModu
   async onApplicationBootstrap(): Promise<void> {
     await this.boss.start();
     this.started = true;
-    for (const { queue, queueOptions, handler } of this.registry.list()) {
+    for (const { queue, queueOptions, handler, schedule } of this.registry.list()) {
       await this.boss.createQueue(queue, queueOptions);
       if (!this.options.work) continue;
       await this.boss.work(queue, async (jobs) => {
         for (const job of jobs) await handler({ id: job.id, data: job.data });
       });
+      if (schedule !== undefined) await this.boss.schedule(queue, schedule, {});
     }
   }
 

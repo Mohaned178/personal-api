@@ -18,6 +18,12 @@ export interface JobRegistration {
   handler: (job: JobContext) => Promise<void>;
   /** Passed to `createQueue` (retry limit, dead-letter queue, ...). */
   queueOptions?: Omit<Queue, "name">;
+  /**
+   * A cron expression (UTC) that sends this queue a job. Only the worker process registers it, so
+   * the API never owns the clock. Pair it with a queue policy that drops a send while a run is
+   * still active, so a slow run is not overlapped by the next tick.
+   */
+  schedule?: string;
 }
 
 /**

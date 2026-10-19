@@ -289,8 +289,18 @@ until you choose another one.
 
 Every stored event gets an `expires_at` (`receivedAt` plus its retention days). The days come from
 the first of: a `set_retention` rule, the policy for the event's **type**, the policy for its
-**source** (the integration id), then the default of 90 days. Policies apply to events stored from
-now on; the purge itself comes with M6-02.
+**source** (the integration id), then the default of 90 days.
+
+Two jobs in the worker (`pnpm worker`) act on that date:
+
+- **Purge**, every hour on the hour (UTC): deletes events whose `expires_at` has passed, in batches
+  of 1 000 (at most 200 000 per run; the next run carries on). Events without an `expires_at` are
+  never purged.
+- **Recompute**, about a minute after you change or delete a policy: sets `expires_at` to
+  `received_at` plus the days the policies now give, for your stored events, so a policy applies to
+  past events too. Events a `set_retention` rule governs keep the date the rule gave. Lowering a
+  policy can put old events past their date, and the next purge deletes them for good; raising one
+  brings back only events that have not been purged yet.
 
 ```bash
 curl -s "$BASE/v1/retention" -b "$JAR"                        # { "defaultDays": 90, "policies": [...] }
