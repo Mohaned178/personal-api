@@ -5,6 +5,7 @@ import { ApiKeysService } from "./api-keys.service";
 import { IngestKeyGuard } from "./ingest-key.guard";
 import { KeysController } from "./keys.controller";
 import { ReadKeyGuard } from "./read-key.guard";
+import { SessionOrReadKeyGuard } from "./session-or-read-key.guard";
 
 /**
  * API keys: generation, hashed storage, ingest-key and read-key authentication, IngestKeyGuard
@@ -15,7 +16,13 @@ import { ReadKeyGuard } from "./read-key.guard";
 @Module({
   imports: [AuthModule],
   controllers: [KeysController],
-  providers: [ApiKeysRepository, ApiKeysService, IngestKeyGuard, ReadKeyGuard],
-  exports: [ApiKeysService, IngestKeyGuard, ReadKeyGuard],
+  providers: [
+    ApiKeysRepository,
+    ApiKeysService,
+    IngestKeyGuard,
+    ReadKeyGuard,
+    SessionOrReadKeyGuard,
+  ],
+  exports: [ApiKeysService, IngestKeyGuard, ReadKeyGuard, SessionOrReadKeyGuard],
 })
 export class KeysModule {}

@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, desc, eq, gte, inArray, lt, type SQL, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, lt, or, type SQL, sql } from "drizzle-orm";
 import type { Database } from "../../platform/db/db";
 import { DB } from "../../platform/db/db.tokens";
 import { events } from "../../platform/db/schema";
@@ -16,6 +16,20 @@ export interface EventFilters {
   to?: Date | undefined;
   domain?: string | undefined;
   after?: EventsCursor | undefined;
+  /** A read key's restriction: ANDed with the filters above, so it can only narrow a result. */
+  sources?: string[] | undefined;
+  /** Event types or `*` globs (see `globToLike`); a row passes if any one matches. */
+  types?: string[] | undefined;
+}
+
+/**
+ * A type glob as a LIKE pattern. The contract limits patterns to `[a-z0-9_.*]`, so `_` (a LIKE
+ * wildcard) is the only character to escape; `*` becomes `%`. The result is a bound parameter.
+ * Anything outside that alphabet is refused rather than escaped, so a bad pattern never widens.
+ */
+export function globToLike(pattern: string): string {
+  if (!/^[a-z0-9_.*]+$/.test(pattern)) throw new Error("Unsupported type pattern");
+  return pattern.replaceAll("_", "\\_").replaceAll("*", "%");
 }
 
 /**
@@ -36,6 +50,13 @@ export class EventsRepository {
     if (filters.type) conditions.push(eq(events.type, filters.type));
     if (filters.from) conditions.push(gte(events.occurredAt, filters.from));
     if (filters.to) conditions.push(lt(events.occurredAt, filters.to));
+    if (filters.sources) conditions.push(inArray(events.integrationId, filters.sources));
+    if (filters.types) {
+      const matches = filters.types.map((t) =>
+        t.includes("*") ? sql`${events.type} LIKE ${globToLike(t)}` : eq(events.type, t),
+      );
+      conditions.push(or(...matches) as SQL);
+    }
     if (filters.domain) conditions.push(sql`${events.data} ->> 'domain' = ${filters.domain}`);
     if (filters.after) {
       conditions.push(

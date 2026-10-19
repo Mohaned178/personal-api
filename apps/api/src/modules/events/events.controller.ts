@@ -4,29 +4,45 @@ import type {
   GetEventResponse,
   ListEventsResponse,
 } from "@personal-api/contracts";
-import { CurrentAuth, type SessionAuthContext } from "../auth/auth-context";
+import {
+  CurrentAuth,
+  CurrentReader,
+  type ReaderAuthContext,
+  type SessionAuthContext,
+} from "../auth/auth-context";
 import { SessionGuard } from "../auth/session.guard";
+import { RequireReadScope } from "../keys/read-key.guard";
+import { SessionOrReadKeyGuard } from "../keys/session-or-read-key.guard";
 import { DeleteEventsDto, ListEventsQueryDto } from "./events.dto";
 import { EventsService } from "./events.service";
 
 /**
- * Dashboard routes for stored events. The user is the session's; neither the query nor the body
- * names a user. The read-key variant of `GET /v1/events` comes with M5.
+ * Stored events. The user is the session's or the read key's; neither the query nor the body names
+ * a user. The list is open to a read key with `events:read`; getting one and deleting are
+ * dashboard-only.
  */
 @Controller("v1/events")
-@UseGuards(SessionGuard)
 export class EventsController {
   constructor(private readonly events: EventsService) {}
 
   @Get()
+  @UseGuards(SessionOrReadKeyGuard)
+  @RequireReadScope("events:read")
   list(
-    @CurrentAuth("session") auth: SessionAuthContext,
+    @CurrentReader() auth: ReaderAuthContext,
     @Query() query: ListEventsQueryDto,
   ): Promise<ListEventsResponse> {
-    return this.events.list(auth.userId, query);
+    return this.events.list(
+      auth.userId,
+      query,
+      auth.kind === "read"
+        ? { restriction: auth.restriction, withTrace: false }
+        : { restriction: null, withTrace: true },
+    );
   }
 
   @Get(":id")
+  @UseGuards(SessionGuard)
   get(
     @CurrentAuth("session") auth: SessionAuthContext,
     @Param("id") id: string,
@@ -35,6 +51,7 @@ export class EventsController {
   }
 
   @Delete()
+  @UseGuards(SessionGuard)
   @HttpCode(200)
   delete(
     @CurrentAuth("session") auth: SessionAuthContext,

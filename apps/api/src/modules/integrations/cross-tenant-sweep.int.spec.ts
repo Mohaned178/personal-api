@@ -1007,7 +1007,9 @@ describe("the table covers every M1 route, and each refuses a missing or wrong-k
     (r) =>
       !r.route.includes("/v1/ingest/") &&
       r.route !== "POST /v1/pair" &&
-      r.route !== "GET /v1/setup/status",
+      r.route !== "GET /v1/setup/status" &&
+      // Open to a read key too (M5-02); its credential matrix is in events.int.spec.ts.
+      r.route !== "GET /v1/events",
   );
   const ingestRoutes = ROUTES.filter((r) => r.route.includes("/v1/ingest/"));
 
@@ -1041,6 +1043,14 @@ describe("the table covers every M1 route, and each refuses a missing or wrong-k
       }
     },
   );
+
+  it("GET /v1/events: no credential is 401 auth.unauthenticated; any bearer takes the key path", async () => {
+    expectProblem(await call("GET /v1/events"), 401, "auth.unauthenticated");
+    for (const bearer of [h.a.ingestKey, generateApiKey("read").plaintext, randomUUID()]) {
+      const res = await call("GET /v1/events").set("Authorization", `Bearer ${bearer}`);
+      expectProblem(res, 401, "auth.invalid_key");
+    }
+  });
 
   it("POST /v1/pair is the one open route: no credential is needed, and none changes the answer", async () => {
     const attempts: Array<(req: ReturnType<typeof call>) => ReturnType<typeof call>> = [
