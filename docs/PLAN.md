@@ -179,7 +179,7 @@ Errors use RFC 9457 `application/problem+json`. Lists use keyset cursors on `(oc
 | session | `/v1/integrations` (CRUD, pairing code, revoke) | Connect and disconnect sources |
 | session | `/v1/rules` (CRUD), `POST /v1/rules/test` | Manage rules and dry-run them against a sample event |
 | session | `DELETE /v1/events` (ids or filter), `/v1/exports`, `/v1/retention` | Data management |
-| session | `/v1/keys`, `/v1/endpoints` | Read keys and saved queries |
+| session | `/v1/keys`, `/v1/endpoints` (CRUD, `POST /v1/endpoints/:id/rotate-key`, `POST /v1/endpoints/preview`) | Read keys and saved queries. Creating or rotating an endpoint answers with its `endpoint:<id>` key, once |
 | session | `GET /v1/settings`, `PATCH /v1/settings` | The user's time zone, which the activity aggregates cut days in |
 | session | `GET /v1/diagnostics` | Ingestion log, integration last-seen, queue backlog, job failures, and drop counts per rule over the window (M4-07) |
 | session or read key | `GET /v1/events?source=&type=&from=&to=&domain=&cursor=` | Raw events |
@@ -330,7 +330,7 @@ Targets changed on 2026-10-14: Firefox + Edge (free stores only) instead of Chro
 - [x] **M5-02 [S · medium] `GET /v1/events`** for a session or read key, with scope filtering applied.
 - [x] **M5-03 [S · medium] Aggregates:** `/v1/activity/daily` and `/v1/activity/domains` (time from focus segments), plus a user time zone setting.
 - [x] **M5-04 [S · high] Saved-query compiler:** definition schema → parameterized Drizzle query, a field-allowlist projection, aggregate modes, row limits, `statement_timeout`, and aggregate-only enforcement.
-- [ ] **M5-05 [S · medium] Endpoints:** CRUD, `GET /v1/me/:slug`, and a UI with live preview + a copyable `curl`.
+- [x] **M5-05 [S · medium] Endpoints:** CRUD, `GET /v1/me/:slug`, and a UI with live preview + a copyable `curl`.
 - [ ] **M5-06 [S · high] Tests:** injection attempts through field names and values, limit and timeout, scope escalation (endpoint A's key calling B or `/events`), and cross-tenant.
 - [ ] **M5-07 [H · low] OpenAPI** at `/docs`, and `docs/api.md`.
 - [ ] **M5-R [O · xhigh] Milestone review** (`/code-review` + `/security-review`).

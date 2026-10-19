@@ -5,6 +5,7 @@
 export * from "./activity.js";
 export * from "./browser-events.js";
 export * from "./diagnostics.js";
+export * from "./endpoints.js";
 export * from "./envelope.js";
 export {
   type ContractIssue,
