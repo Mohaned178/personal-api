@@ -30,6 +30,10 @@ export interface FakeBackend {
   diagnostics?: unknown;
   /** Rules store for /v1/rules. Leave unset and those routes answer 404. */
   rules?: FakeRuleStore;
+  /** Time zone for /v1/settings. Leave unset and those routes answer 404. */
+  timeZone?: string;
+  /** Answer PATCH /v1/settings with this error status. */
+  rejectSettings?: number;
   /** Read keys for /v1/keys. Leave unset and those routes answer 404. */
   readKeys?: FakeReadKey[];
   /** Answer the next POST /v1/keys with this error status. */
@@ -299,6 +303,17 @@ export function installFetch(b: FakeBackend) {
       case "POST /api/auth/sign-out":
         b.authed = false;
         return json(200, { success: true });
+      case "GET /v1/settings":
+        return b.timeZone === undefined
+          ? json(404, { code: "not_found" })
+          : json(200, { timeZone: b.timeZone });
+      case "PATCH /v1/settings": {
+        if (b.timeZone === undefined) return json(404, { code: "not_found" });
+        const next = (body as { timeZone: string }).timeZone;
+        if (b.rejectSettings) return json(b.rejectSettings, { code: "request.invalid" });
+        b.timeZone = next;
+        return json(200, { timeZone: next });
+      }
       case "GET /v1/diagnostics":
         return b.diagnostics === undefined
           ? json(404, { code: "not_found" })

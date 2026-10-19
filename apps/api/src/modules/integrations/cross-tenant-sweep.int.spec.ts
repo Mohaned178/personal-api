@@ -923,6 +923,96 @@ const ROUTES: Route[] = [
       expect(res.body.readKey.revokedAt).not.toBeNull();
     },
   },
+  {
+    route: "GET /v1/activity/daily",
+    attacks: [
+      {
+        label: "reading daily totals while the victim has activity, naming the victim",
+        run: async (attacker, victim) => {
+          const res = await cookieGet(attacker, "/v1/activity/daily").set(
+            "X-User-Id",
+            victim.userId,
+          );
+          expect(res.status).toBe(200);
+          // Each user has one visit: the victim's would make it 2.
+          expect(res.body.days.map((d: { pageVisits: number }) => d.pageVisits)).toEqual([1]);
+          const named = await cookieGet(attacker, `/v1/activity/daily?userId=${victim.userId}`);
+          expectProblem(named, 400, "request.invalid");
+        },
+      },
+    ],
+    control: async (owner) => {
+      const res = await cookieGet(owner, "/v1/activity/daily");
+      expect(res.status).toBe(200);
+      expect(res.body.days).toHaveLength(1);
+    },
+  },
+  {
+    route: "GET /v1/activity/domains",
+    attacks: [
+      {
+        label: "reading domain totals while the victim has activity, naming the victim",
+        run: async (attacker, victim) => {
+          const res = await cookieGet(attacker, "/v1/activity/domains").set(
+            "X-User-Id",
+            victim.userId,
+          );
+          expect(res.status).toBe(200);
+          expect(res.body.domains.map((d: { pageVisits: number }) => d.pageVisits)).toEqual([1]);
+          const named = await cookieGet(attacker, `/v1/activity/domains?userId=${victim.userId}`);
+          expectProblem(named, 400, "request.invalid");
+        },
+      },
+    ],
+    control: async (owner) => {
+      const res = await cookieGet(owner, "/v1/activity/domains");
+      expect(res.status).toBe(200);
+      expect(res.body.domains).toHaveLength(1);
+    },
+  },
+  {
+    route: "GET /v1/settings",
+    attacks: [
+      {
+        label: "reading settings while the victim has another time zone, naming the victim",
+        run: async (attacker, victim) => {
+          const res = await cookieGet(attacker, "/v1/settings").set("X-User-Id", victim.userId);
+          expect(res.status).toBe(200);
+          expect(res.body).toEqual({ timeZone: zoneOf(attacker) });
+        },
+      },
+    ],
+    control: async (owner) => {
+      const res = await cookieGet(owner, "/v1/settings");
+      expect(res.status).toBe(200);
+      expect(res.body.timeZone).toBeTypeOf("string");
+    },
+  },
+  {
+    route: "PATCH /v1/settings",
+    attacks: [
+      {
+        label: "changing settings, naming the victim in the body, query and headers",
+        run: async (attacker, victim) => {
+          const res = await cookiePatch(attacker, `/v1/settings?userId=${victim.userId}`, {
+            timeZone: "Europe/Berlin",
+          }).set("X-User-Id", victim.userId);
+          expect(res.status).toBe(200);
+          expect(res.body).toEqual({ timeZone: "Europe/Berlin" });
+          const named = await cookiePatch(attacker, "/v1/settings", {
+            timeZone: "Europe/Berlin",
+            userId: victim.userId,
+          });
+          expectProblem(named, 400, "request.invalid");
+        },
+      },
+    ],
+    control: async (owner) => {
+      const res = await cookiePatch(owner, "/v1/settings", { timeZone: "UTC" });
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual({ timeZone: "UTC" });
+    },
+  },
 ];
 
 /**
@@ -934,6 +1024,10 @@ async function seedActivity() {
     // `GET /v1/ingest/config` is for browser extensions, so the fixture's integration is one.
     await h.testDb.pool.query("update integrations set kind = 'browser-extension' where id = $1", [
       user.integrationId,
+    ]);
+    await h.testDb.pool.query('update "user" set time_zone = $1 where id = $2', [
+      zoneOf(user),
+      user.userId,
     ]);
     const integrationId = await createExtension(h.app, user, "sweep extension");
     const { pairingCode } = await issueCode(h.app, user, integrationId);
@@ -948,6 +1042,9 @@ async function seedActivity() {
     readKeys.set(user.userId, { id: readKey.body.readKey.id, key: readKey.body.key });
   }
 }
+
+/** Each user gets a different non-default zone, so a settings leak or write is visible. */
+const zoneOf = (user: FixtureUser) => (user === h.a ? "Asia/Tokyo" : "Europe/Berlin");
 
 const directions = (): Array<[string, FixtureUser, FixtureUser]> => [
   ["A attacks B", h.a, h.b],
@@ -1009,7 +1106,8 @@ describe("the table covers every M1 route, and each refuses a missing or wrong-k
       r.route !== "POST /v1/pair" &&
       r.route !== "GET /v1/setup/status" &&
       // Open to a read key too (M5-02); its credential matrix is in events.int.spec.ts.
-      r.route !== "GET /v1/events",
+      r.route !== "GET /v1/events" &&
+      !r.route.startsWith("GET /v1/activity/"),
   );
   const ingestRoutes = ROUTES.filter((r) => r.route.includes("/v1/ingest/"));
 
@@ -1044,13 +1142,16 @@ describe("the table covers every M1 route, and each refuses a missing or wrong-k
     },
   );
 
-  it("GET /v1/events: no credential is 401 auth.unauthenticated; any bearer takes the key path", async () => {
-    expectProblem(await call("GET /v1/events"), 401, "auth.unauthenticated");
-    for (const bearer of [h.a.ingestKey, generateApiKey("read").plaintext, randomUUID()]) {
-      const res = await call("GET /v1/events").set("Authorization", `Bearer ${bearer}`);
-      expectProblem(res, 401, "auth.invalid_key");
-    }
-  });
+  it.each(["GET /v1/events", "GET /v1/activity/daily", "GET /v1/activity/domains"])(
+    "%s: no credential is 401 auth.unauthenticated; any bearer takes the key path",
+    async (route) => {
+      expectProblem(await call(route), 401, "auth.unauthenticated");
+      for (const bearer of [h.a.ingestKey, generateApiKey("read").plaintext, randomUUID()]) {
+        const res = await call(route).set("Authorization", `Bearer ${bearer}`);
+        expectProblem(res, 401, "auth.invalid_key");
+      }
+    },
+  );
 
   it("POST /v1/pair is the one open route: no credential is needed, and none changes the answer", async () => {
     const attempts: Array<(req: ReturnType<typeof call>) => ReturnType<typeof call>> = [

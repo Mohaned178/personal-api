@@ -20,6 +20,8 @@ export const user = pgTable("user", {
   email: text("email").notNull().unique(),
   emailVerified: boolean("email_verified").notNull().default(false),
   image: text("image"),
+  /** IANA zone the activity aggregates cut days in (`/v1/settings`). Not a Better Auth field. */
+  timeZone: text("time_zone").notNull().default("UTC"),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
 });

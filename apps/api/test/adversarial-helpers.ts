@@ -66,6 +66,7 @@ export async function tenantState(pool: Pool, userId: string): Promise<Record<st
   const q = async (sql: string): Promise<unknown[]> =>
     (await pool.query(sql, [userId])).rows as unknown[];
   return {
+    users: await q('select id, time_zone from "user" where id = $1'),
     integrations: await q("select * from integrations where user_id = $1 order by id"),
     apiKeys: await q("select * from api_keys where user_id = $1 order by id"),
     events: await q("select * from events where user_id = $1 order by client_event_id"),

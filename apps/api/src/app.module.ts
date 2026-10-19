@@ -4,6 +4,7 @@ import { INGEST_MAX_BATCH_BYTES } from "@personal-api/contracts";
 import { LoggerModule } from "nestjs-pino";
 import type { AppConfig } from "./config/config";
 import { APP_CONFIG, ConfigModule } from "./config/config.module";
+import { ActivityModule } from "./modules/activity/activity.module";
 import { isAuthPath } from "./modules/auth/auth.http";
 import { AuthModule } from "./modules/auth/auth.module";
 import { DiagnosticsModule } from "./modules/diagnostics/diagnostics.module";
@@ -14,6 +15,7 @@ import { IntegrationsModule } from "./modules/integrations/integrations.module";
 import { KeysModule } from "./modules/keys/keys.module";
 import { PairingModule } from "./modules/pairing/pairing.module";
 import { RulesModule } from "./modules/rules/rules.module";
+import { SettingsModule } from "./modules/settings/settings.module";
 import { ClockModule } from "./platform/clock/clock.module";
 import { DbModule } from "./platform/db/db.module";
 import { ProblemFilter } from "./platform/errors/problem.filter";
@@ -49,6 +51,8 @@ import { buildPinoHttpOptions } from "./platform/logging/logging";
     IntegrationsModule,
     DiagnosticsModule,
     EventsModule,
+    ActivityModule,
+    SettingsModule,
     IngestModule,
     PairingModule,
     RulesModule,

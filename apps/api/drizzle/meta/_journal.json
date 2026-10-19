@@ -50,6 +50,13 @@
       "when": 1792416276060,
       "tag": "0006_married_quasimodo",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1792418582769,
+      "tag": "0007_happy_speed",
+      "breakpoints": true
     }
   ]
 }
