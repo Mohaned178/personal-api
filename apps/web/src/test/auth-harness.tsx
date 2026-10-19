@@ -30,6 +30,10 @@ export interface FakeBackend {
   diagnostics?: unknown;
   /** Rules store for /v1/rules. Leave unset and those routes answer 404. */
   rules?: FakeRuleStore;
+  /** Read keys for /v1/keys. Leave unset and those routes answer 404. */
+  readKeys?: FakeReadKey[];
+  /** Answer the next POST /v1/keys with this error status. */
+  rejectKeyCreate?: number | undefined;
   calls: { method: string; path: string; body: unknown; search?: string }[];
 }
 
@@ -149,6 +153,56 @@ export interface FakeIntegration {
   createdAt: string;
 }
 
+export interface FakeReadKey {
+  id: string;
+  name: string | null;
+  prefix: string;
+  scopes: string[];
+  restriction: { sources?: string[]; types?: string[] } | null;
+  createdAt: string;
+  lastUsedAt: string | null;
+  revokedAt: string | null;
+}
+
+export const READ_KEY = "pa_read_secretsecretsecret";
+
+function keysRoute(
+  b: FakeBackend,
+  method: string,
+  pathname: string,
+  body: unknown,
+): Response | null {
+  const list = b.readKeys;
+  if (!list) return null;
+  const route = `${method} ${pathname}`;
+  if (route === "GET /v1/keys") return json(200, { readKeys: list });
+  if (route === "POST /v1/keys") {
+    if (b.rejectKeyCreate) {
+      const status = b.rejectKeyCreate;
+      b.rejectKeyCreate = undefined;
+      return json(status, { code: "request.invalid" });
+    }
+    const request = body as Pick<FakeReadKey, "scopes" | "restriction"> & { name?: string };
+    const readKey: FakeReadKey = {
+      id: crypto.randomUUID(),
+      name: request.name ?? null,
+      prefix: "pa_read_secret",
+      scopes: request.scopes,
+      restriction: request.restriction ?? null,
+      createdAt: "2026-10-19T00:00:00.000Z",
+      lastUsedAt: null,
+      revokedAt: null,
+    };
+    list.unshift(readKey);
+    return json(201, { readKey, key: READ_KEY });
+  }
+  const id = /^\/v1\/keys\/([^/]+)\/revoke$/.exec(pathname)?.[1];
+  const target = method === "POST" ? list.find((k) => k.id === id) : undefined;
+  if (!target) return null;
+  target.revokedAt ??= "2026-10-19T01:00:00.000Z";
+  return json(200, { readKey: target });
+}
+
 export const PAIRING_CODE = "ABCD-EFGH-JKLM-NPQR-STUV";
 export const INGEST_KEY = "pa_ing_secretsecretsecret";
 
@@ -254,6 +308,7 @@ export function installFetch(b: FakeBackend) {
           rulesRoute(b, method, url.pathname, body) ??
           eventsRoute(b, method, url, body) ??
           integrationsRoute(b, method, url.pathname, body) ??
+          keysRoute(b, method, url.pathname, body) ??
           json(404, { code: "not_found" })
         );
     }

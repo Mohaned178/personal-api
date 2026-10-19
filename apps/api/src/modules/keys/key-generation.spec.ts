@@ -4,7 +4,7 @@
  */
 import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
-import { generateApiKey, hashApiKey } from "./key-generation";
+import { generateApiKey, hashApiKey, INGEST_KEY_PATTERN, READ_KEY_PATTERN } from "./key-generation";
 
 const INGEST = /^pa_ing_[A-Za-z0-9_-]{43}$/;
 const READ = /^pa_read_[A-Za-z0-9_-]{43}$/;
@@ -100,6 +100,24 @@ describe("hashApiKey", () => {
   it("hashes any string without throwing (empty, unicode, very long)", () => {
     for (const input of ["", "pa_ing_", "ключ-🔑", "x".repeat(100_000), "\u0000"]) {
       expect(hashApiKey(input)).toBe(createHash("sha256").update(input).digest("hex"));
+    }
+  });
+});
+
+describe("key patterns", () => {
+  it("each pattern accepts its own kind of key and refuses the other", () => {
+    const ingest = generateApiKey("ingest").plaintext;
+    const read = generateApiKey("read").plaintext;
+    expect(INGEST_KEY_PATTERN.test(ingest)).toBe(true);
+    expect(READ_KEY_PATTERN.test(read)).toBe(true);
+    expect(INGEST_KEY_PATTERN.test(read)).toBe(false);
+    expect(READ_KEY_PATTERN.test(ingest)).toBe(false);
+  });
+
+  it("the read pattern refuses a truncated, padded or suffixed key", () => {
+    const read = generateApiKey("read").plaintext;
+    for (const bad of [read.slice(0, -1), `${read}A`, `${read}\n`, ` ${read}`, "pa_read_"]) {
+      expect(READ_KEY_PATTERN.test(bad), JSON.stringify(bad)).toBe(false);
     }
   });
 });

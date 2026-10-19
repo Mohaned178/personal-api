@@ -7,6 +7,7 @@ import { EventsPage } from "@/routes/events-page";
 import { HealthPage } from "@/routes/health-page";
 import { IndexPage } from "@/routes/index";
 import { IntegrationsPage } from "@/routes/integrations-page";
+import { KeysPage } from "@/routes/keys-page";
 import { RulesPage } from "@/routes/rules-page";
 
 /**
@@ -40,6 +41,13 @@ const integrationsRoute = createRoute({
   path: "/integrations",
   beforeLoad: requireAuth,
   component: IntegrationsPage,
+});
+
+const keysRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/keys",
+  beforeLoad: requireAuth,
+  component: KeysPage,
 });
 
 const eventsRoute = createRoute({
@@ -102,6 +110,7 @@ const setupRoute = createRoute({
 export const routeTree = rootRoute.addChildren([
   indexRoute,
   integrationsRoute,
+  keysRoute,
   eventsRoute,
   healthRoute,
   rulesRoute,

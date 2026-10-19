@@ -23,6 +23,9 @@ const PREFIX_SECRET_CHARS = 6;
 /** The exact shape of an ingest key. Anything else is rejected before it is hashed or looked up. */
 export const INGEST_KEY_PATTERN = /^pa_ing_[A-Za-z0-9_-]{43}$/;
 
+/** The exact shape of a read key, checked before it is hashed or looked up. */
+export const READ_KEY_PATTERN = /^pa_read_[A-Za-z0-9_-]{43}$/;
+
 function markerFor(kind: ApiKeyKind): string {
   switch (kind) {
     case "ingest":
