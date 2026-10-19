@@ -222,6 +222,87 @@ column.
 only: no payload, domain or URL is kept for a dropped event. A deleted rule's id can still appear, and
 the dashboard shows only the rules it knows.
 
+## 7. Read your data (read keys and endpoints)
+
+Read routes take a read key (`pa_read_...`) as `Authorization: Bearer`. Make one from the
+dashboard session. The `key` is shown once, in this response; the server keeps only its hash.
+
+```bash
+curl -s -X POST "$BASE/v1/keys" -H "Content-Type: application/json" -b "$JAR" \
+  -d '{"name":"Docs run read","scopes":["events:read","activity:read"]}'
+export READ=pa_read_<paste-the-key>
+```
+
+Scopes are `events:read` (the events routes) and `activity:read` (the activity routes). A key can
+only read; a key without the scope gets `403 auth.insufficient_scope`. Endpoint keys
+(`endpoint:<id>`) are made with an endpoint, not here.
+
+### Events
+
+```bash
+curl -s "$BASE/v1/events?limit=5" -H "Authorization: Bearer $READ"
+```
+
+Filters: `source` (integration id), `type`, `from`, `to`, `domain`. `limit` is 1 to 200 (default
+50). Pass the previous page's `nextCursor` as `cursor`; it is opaque and paged on
+`(occurredAt, id)`, so offsets are not used. The list also accepts the dashboard session cookie.
+`GET /v1/events/<id>` (one event) and `DELETE /v1/events` (a body of ids) take the session cookie
+only.
+
+Each event carries `origin` (`collected`), `tags`, and `trace` (why it was kept; `null` for events
+stored before rules existed). The payload is in `data`.
+
+### Activity
+
+```bash
+curl -s "$BASE/v1/activity/daily?from=2026-10-01T00:00:00.000Z&to=2026-10-31T00:00:00.000Z" \
+  -H "Authorization: Bearer $READ"
+curl -s "$BASE/v1/activity/domains?from=2026-10-01T00:00:00.000Z&to=2026-10-31T00:00:00.000Z&limit=5" \
+  -H "Authorization: Bearer $READ"
+```
+
+`from` must be before `to`, at most 90 days apart (`400 activity.range_invalid` otherwise). When
+both are omitted the range is the last 7 days. `daily` answers with `timeZone` (the user's setting)
+and one entry per local day that has activity, with `activeMs` and `pageVisits`. `domains` takes
+`limit` up to 100. Time comes from focus segments; a day with page visits and no focus time shows
+`activeMs: 0`.
+
+### Endpoints (saved queries)
+
+An endpoint is a saved query with a slug and a read key of its own. The definition format is in
+[saved-queries.md](saved-queries.md). These routes take the session cookie.
+
+```bash
+# Dry run: runs the definition with the same limits and stores nothing
+curl -s -X POST "$BASE/v1/endpoints/preview" -H "Content-Type: application/json" -b "$JAR" \
+  -d '{"definition":{"when":{"type":["browser.page_visited"]},"window":{"kind":"last_n_days","days":7},"aggregate":"count_by_day"}}'
+
+# Create (201): { "endpoint": {...}, "key": "pa_read_..." }  (the key is shown once)
+curl -s -X POST "$BASE/v1/endpoints" -H "Content-Type: application/json" -b "$JAR" \
+  -d '{"slug":"visits-by-day","definition":{"when":{"type":["browser.page_visited"]},"window":{"kind":"last_n_days","days":7},"aggregate":"count_by_day"}}'
+
+curl -s "$BASE/v1/endpoints" -b "$JAR"                       # list
+curl -s "$BASE/v1/endpoints/<id>" -b "$JAR"                  # one
+curl -s -X PUT "$BASE/v1/endpoints/<id>" -b "$JAR" -H "Content-Type: application/json" -d '<slug, enabled, definition>'
+curl -s -X POST "$BASE/v1/endpoints/<id>/rotate-key" -b "$JAR"   # new key, old one stops working
+curl -s -X DELETE "$BASE/v1/endpoints/<id>" -b "$JAR"
+
+# The public read: the endpoint's own key, nothing else
+curl -s "$BASE/v1/me/visits-by-day" -H "Authorization: Bearer $ENDPOINT_KEY"
+```
+
+`GET /v1/me/<slug>` answers with the result only (for example
+`{ "kind": "count_by_day", "rows": [{ "date": "2026-10-13", "count": 1 }], "truncated": false }`).
+An endpoint key on `/v1/events` gets `403 auth.insufficient_scope`. A slug is unique per user
+(`endpoint.slug_taken`), and a user can have a limited number of endpoints (`endpoint.limit_reached`).
+
+## 8. OpenAPI
+
+The API serves its OpenAPI document at `/docs` (a browsable UI), `/docs/json` and `/docs/yaml`.
+It is public, because it describes request shapes only and holds no data. Request bodies and
+query parameters come from the same Zod schemas the API validates with. The document does not yet
+list response schemas or each route's auth, so the sections above remain the reference for those.
+
 ## Error codes
 
 Errors are `application/problem+json` (RFC 9457) with a stable `code`:
@@ -256,4 +337,14 @@ Errors are `application/problem+json` (RFC 9457) with a stable `code`:
 | 409  | `rule.limit_reached`       | The user already has 100 rules.                                                        |
 | 409  | `ingest.rule_error`        | `GET /v1/ingest/config` only: a stored rule is invalid, so no rules are sent.          |
 | 413  | `http.payload_too_large`   | The body is over the route's limit (100 KB, or 256 KB for `/v1/ingest/events`), or has no declared length on the auth routes. |
+| 400  | `activity.range_invalid`   | `from` is not before `to`, or the range is more than 90 days.                          |
+| 400  | `events.cursor_invalid`    | The `cursor` is not one `nextCursor` returned.                                         |
+| 403  | `auth.insufficient_scope`  | The read key lacks the scope the route needs (for example an endpoint key on `/v1/events`). |
+| 404  | `event.not_found`          | The event id is unknown, belongs to another user, or is malformed.                     |
+| 404  | `key.not_found`            | The read key id is unknown or belongs to another user.                                 |
+| 404  | `endpoint.not_found`       | The endpoint id or slug is unknown, belongs to another user, or is malformed (or disabled for `/v1/me/<slug>`). |
+| 409  | `endpoint.slug_taken`      | You already have an endpoint with this slug.                                           |
+| 409  | `endpoint.limit_reached`   | The user already has the maximum number of endpoints.                                  |
+| 409  | `saved_query.definition_invalid` | The saved query definition is invalid (the same check the preview runs).         |
+| 504  | `saved_query.timeout`      | The query ran past its time limit. Narrow the window or the filters.                   |
 | 500  | `internal.error`           | Unexpected failure. Details are logged, not returned.                                  |

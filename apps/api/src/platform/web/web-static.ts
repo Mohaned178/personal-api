@@ -7,10 +7,11 @@ import express from "express";
 /**
  * Paths that belong to the API. The SPA fallback must never answer for them: a mistyped API
  * route should be a 404 problem+json, not the dashboard. `/api` covers Better Auth, `/v1` the
- * platform endpoints, and the health routes are plain GETs that a fallback would otherwise eat.
- * A route added outside these prefixes (for example OpenAPI UI in M5-07) must be listed here.
+ * platform endpoints, `/docs` the OpenAPI UI and its JSON/YAML (platform/docs), and the health
+ * routes are plain GETs that a fallback would otherwise eat. A route added outside these prefixes
+ * must be listed here.
  */
-const RESERVED_PREFIXES = ["/api", "/v1", "/healthz", "/readyz"];
+const RESERVED_PREFIXES = ["/api", "/v1", "/docs", "/healthz", "/readyz"];
 
 /** Decoded, lowercased path without a trailing slash, matched at least as loosely as any router. */
 function isReservedPath(rawUrl: string): boolean {

@@ -71,7 +71,7 @@ describe("dashboard static hosting", () => {
 
   it("does not shadow API routes", async () => {
     await start(true);
-    for (const path of ["/api", "/api/auth/session", "/v1/events"]) {
+    for (const path of ["/api", "/api/auth/session", "/v1/events", "/docs", "/docs/json"]) {
       const res = await request(app.getHttpServer()).get(path);
       expect(res.status).toBe(404);
       expect(res.headers["content-type"]).toMatch(/^application\/problem\+json/);
