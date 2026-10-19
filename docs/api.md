@@ -338,11 +338,28 @@ retried. An integration deletion starts about a minute after the request, so an 
 was already in flight when the key was revoked is swept up too. The integration stays in your list
 as `revoked`; only its events are deleted.
 
+### Export your data
+
+`POST /v1/exports` starts an export job (`202`, session cookie only). The optional `filter` takes the
+same fields as the event list (`source`, `type`, `from`, `to`, `domain`); no filter exports everything. Poll
+`GET /v1/exports/<id>` until `status` is `completed`, then download `GET /v1/exports/<id>/download`
+(`events.ndjson.gz`: one stored event per line, newest first) and `GET /v1/exports/<id>/manifest`
+(`manifest.json`: count, filter, and the size and SHA-256 of the gzip file). A completed export can be
+downloaded for 24 hours, then the hourly cleanup job removes the files and the row.
+`GET /v1/exports` lists your 50 most recent. The worker writes the files to `EXPORT_DIR` (default
+`data/exports`), which the API must see too.
+
+```bash
+curl -s -X POST "$BASE/v1/exports" -b "$JAR" -H "Content-Type: application/json" -d '{"filter":{"domain":"example.com"}}'
+curl -s "$BASE/v1/exports/<export-id>" -b "$JAR"                          # progress
+curl -s "$BASE/v1/exports/<export-id>/download" -b "$JAR" -o events.ndjson.gz
+```
+
 ### Delete your account
 
 `DELETE /v1/account` deletes your account and everything it owns: events, integrations, every
-ingest and read key, rules, endpoints, retention policies, deletion records, sessions and queued
-jobs. It takes the session cookie only (no key can call it), and the account is the session's.
+ingest and read key, rules, endpoints, retention policies, deletion records, exports (files too), sessions
+and queued jobs. It takes the session cookie only (no key can call it), and the account is the session's.
 
 ```bash
 curl -s -i -X DELETE "$BASE/v1/account" -b "$JAR" -H "Content-Type: application/json" \
@@ -438,6 +455,9 @@ Errors are `application/problem+json` (RFC 9457) with a stable `code`:
 | 400  | `events.cursor_invalid`    | The `cursor` is not one `nextCursor` returned.                                         |
 | 403  | `auth.insufficient_scope`  | The read key lacks the scope the route needs (for example an endpoint key on `/v1/events`). |
 | 404  | `deletion.not_found`       | `GET /v1/events/deletions/<id>`: the id is unknown, belongs to another user, or is malformed. |
+| 404  | `export.not_found`         | An `/v1/exports/<id>` route: the id is unknown, belongs to another user, or is malformed. |
+| 409  | `export.not_ready`         | `/download` or `/manifest` of an export that has not completed.                          |
+| 410  | `export.expired`           | `/download` or `/manifest` after the 24-hour window, or the file is gone.                |
 | 404  | `event.not_found`          | The event id is unknown, belongs to another user, or is malformed.                     |
 | 404  | `key.not_found`            | The read key id is unknown or belongs to another user.                                 |
 | 404  | `endpoint.not_found`       | The endpoint id or slug is unknown, belongs to another user, or is malformed. For `/v1/me/<slug>` also: the endpoint is disabled, or the key does not carry its scope. |

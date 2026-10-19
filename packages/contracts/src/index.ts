@@ -17,6 +17,7 @@ export {
   toContractIssues,
 } from "./errors.js";
 export * from "./events.js";
+export * from "./exports.js";
 export * from "./ingest.js";
 export * from "./ingest-config.js";
 export * from "./integrations.js";

@@ -1314,6 +1314,116 @@ const ROUTES: Route[] = [
     },
   },
   {
+    route: "POST /v1/exports",
+    attacks: [
+      {
+        label: "naming the victim in the body or the filter",
+        run: async (attacker, victim) => {
+          for (const payload of [
+            { userId: victim.userId },
+            { filter: { userId: victim.userId } },
+          ]) {
+            const res = await cookiePost(attacker, "/v1/exports", payload);
+            expectProblem(res, 400, "request.invalid");
+            expect(JSON.stringify(res.body)).not.toContain(victim.userId);
+          }
+        },
+      },
+    ],
+    control: async (owner) => {
+      const res = await cookiePost(owner, "/v1/exports", {});
+      expect(res.status).toBe(202);
+      expect(res.body.export.status).toBe("queued");
+    },
+  },
+  {
+    route: "GET /v1/exports",
+    attacks: [
+      {
+        label: "listing while the victim has exports",
+        run: async (attacker, victim) => {
+          const started = await cookiePost(victim, "/v1/exports", {});
+          expect(started.status).toBe(202);
+          const res = await cookieGet(attacker, `/v1/exports?userId=${victim.userId}`);
+          expect(res.status).toBe(200);
+          expect(JSON.stringify(res.body)).not.toContain(started.body.export.id);
+        },
+      },
+    ],
+    control: async (owner) => {
+      const started = await cookiePost(owner, "/v1/exports", {});
+      const res = await cookieGet(owner, "/v1/exports");
+      expect(res.status).toBe(200);
+      expect(res.body.exports.map((e: { id: string }) => e.id)).toContain(started.body.export.id);
+    },
+  },
+  {
+    route: "GET /v1/exports/:id",
+    attacks: [
+      {
+        label: "reaching the victim's export by its id",
+        run: async (attacker, victim) => {
+          const started = await cookiePost(victim, "/v1/exports", {});
+          expect(started.status).toBe(202);
+          const res = await cookieGet(attacker, `/v1/exports/${started.body.export.id}`);
+          expectProblem(res, 404, "export.not_found");
+          const unknown = await cookieGet(attacker, `/v1/exports/${missing}`);
+          await expectSameAsUnknown(res, unknown);
+        },
+      },
+    ],
+    // The owner's export is queued, not run: the file routes answer 409, the status route 200.
+    control: async (owner) => {
+      const started = await cookiePost(owner, "/v1/exports", {});
+      const res = await cookieGet(owner, `/v1/exports/${started.body.export.id}`);
+      expect(res.status).toBe(200);
+    },
+  },
+  {
+    route: "GET /v1/exports/:id/download",
+    attacks: [
+      {
+        label: "reaching the victim's export by its id",
+        run: async (attacker, victim) => {
+          const started = await cookiePost(victim, "/v1/exports", {});
+          expect(started.status).toBe(202);
+          const res = await cookieGet(attacker, `/v1/exports/${started.body.export.id}/download`);
+          expectProblem(res, 404, "export.not_found");
+          const unknown = await cookieGet(attacker, `/v1/exports/${missing}/download`);
+          await expectSameAsUnknown(res, unknown);
+        },
+      },
+    ],
+    // The owner's export is queued, not run: the file routes answer 409, the status route 200.
+    control: async (owner) => {
+      const started = await cookiePost(owner, "/v1/exports", {});
+      const res = await cookieGet(owner, `/v1/exports/${started.body.export.id}/download`);
+      expect(res.status).toBe(409);
+    },
+  },
+  {
+    route: "GET /v1/exports/:id/manifest",
+    attacks: [
+      {
+        label: "reaching the victim's export by its id",
+        run: async (attacker, victim) => {
+          const started = await cookiePost(victim, "/v1/exports", {});
+          expect(started.status).toBe(202);
+          const res = await cookieGet(attacker, `/v1/exports/${started.body.export.id}/manifest`);
+          expectProblem(res, 404, "export.not_found");
+          const unknown = await cookieGet(attacker, `/v1/exports/${missing}/manifest`);
+          await expectSameAsUnknown(res, unknown);
+        },
+      },
+    ],
+    // The owner's export is queued, not run: the file routes answer 409, the status route 200.
+    control: async (owner) => {
+      const started = await cookiePost(owner, "/v1/exports", {});
+      const res = await cookieGet(owner, `/v1/exports/${started.body.export.id}/manifest`);
+      expect(res.status).toBe(409);
+    },
+  },
+  {
     route: "DELETE /v1/integrations/:id/data",
     attacks: [
       {

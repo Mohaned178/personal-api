@@ -12,6 +12,7 @@ import { DeletionsModule } from "./modules/deletions/deletions.module";
 import { DiagnosticsModule } from "./modules/diagnostics/diagnostics.module";
 import { EndpointsModule } from "./modules/endpoints/endpoints.module";
 import { EventsModule } from "./modules/events/events.module";
+import { ExportsModule } from "./modules/exports/exports.module";
 import { INGEST_EVENTS_PATH } from "./modules/ingest/ingest.controller";
 import { IngestModule } from "./modules/ingest/ingest.module";
 import { IntegrationsModule } from "./modules/integrations/integrations.module";
@@ -64,6 +65,7 @@ import { buildPinoHttpOptions } from "./platform/logging/logging";
     PairingModule,
     RulesModule,
     RetentionModule,
+    ExportsModule,
   ],
   providers: [
     { provide: APP_FILTER, useClass: ProblemFilter },

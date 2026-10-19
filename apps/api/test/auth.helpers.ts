@@ -13,6 +13,8 @@
  */
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { INestApplication } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import type { Pool } from "pg";
@@ -37,6 +39,8 @@ export function authTestConfig(testDb: TestDatabase, options: AuthAppOptions) {
     ALLOW_SIGNUP: options.allowSignup,
     BETTER_AUTH_SECRET: `test-secret-${randomUUID()}${randomUUID()}`,
     BETTER_AUTH_URL: TEST_ORIGIN,
+    // A directory per app, so export files never leak between tests or into the working tree.
+    EXPORT_DIR: join(tmpdir(), `pa-exports-test-${randomUUID()}`),
   };
 }
 

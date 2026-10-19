@@ -101,7 +101,7 @@ ingestion_log  user_id, integration_id, bucket (hour), accepted, duplicate, drop
 retention_policies  user_id, match (source/type), days
 bulk_deletions user_id, kind (events/integration), filter jsonb, status, total, deleted, finished_at (M6-03: progress of a delete-by-filter job; no event data)
 endpoints      id, user_id, slug, definition jsonb (saved query), enabled, created_at, updated_at
-exports        id, user_id, status, filter jsonb, file_path, expires_at
+exports        id, user_id, status, filter jsonb, file_path, event_count, size_bytes, created_at, finished_at, expires_at  (M6-05: the files live in EXPORT_DIR/<id>/, never in the database)
 ```
 
 **Event envelope** (what a source sends):
@@ -181,7 +181,7 @@ Errors use RFC 9457 `application/problem+json`. Lists use keyset cursors on `(oc
 | ingest key | `POST /v1/ingest/heartbeat` | Queue depth, oldest queued age, version |
 | session | `/v1/integrations` (CRUD, pairing code, revoke) | Connect and disconnect sources |
 | session | `/v1/rules` (CRUD), `POST /v1/rules/test` | Manage rules and dry-run them against a sample event |
-| session | `DELETE /v1/events` (ids: 200; filter: 202 job), `GET /v1/events/deletions/:id`, `DELETE /v1/integrations/:id/data`, `/v1/exports`, `/v1/retention` | Data management |
+| session | `DELETE /v1/events` (ids: 200; filter: 202 job), `GET /v1/events/deletions/:id`, `DELETE /v1/integrations/:id/data`, `/v1/exports` (`POST` 202 job, `GET` list, `GET /:id`, `GET /:id/download` NDJSON.gz, `GET /:id/manifest`; 409 `export.not_ready`, 410 `export.expired`), `/v1/retention` | Data management |
 | session | `/v1/keys`, `/v1/endpoints` (CRUD, `POST /v1/endpoints/:id/rotate-key`, `POST /v1/endpoints/preview`) | Read keys and saved queries. Creating or rotating an endpoint answers with its `endpoint:<id>` key, once |
 | session | `GET /v1/settings`, `PATCH /v1/settings`, `GET /v1/settings/time-zones` | The user's time zone, which the activity aggregates cut days in. `PATCH` checks the name against the database (`pg_timezone_names`, not Node's list: `400 settings.time_zone_unsupported`), and `time-zones` lists the names it accepts |
 | session | `DELETE /v1/account` | Delete the account and all its data. The body carries the current password and `confirm: "delete my account"`; `204` clears the session cookies, `403 account.password_invalid`, `429 account.rate_limited` (M6-04). One transaction; modules that keep data outside the database register an `AccountDeletionStep` that runs first |
@@ -345,7 +345,7 @@ Targets changed on 2026-10-14: Firefox + Edge (free stores only) instead of Chro
 - [x] **M6-02 [S · high] Retention jobs:** an hourly batched purge (pg-boss cron, singleton), a recompute job when policies change, and safety while ingest runs concurrently.
 - [x] **M6-03 [S · medium] Bulk delete:** delete by filter as a job with progress, and "disconnect and delete this integration's data".
 - [x] **M6-04 [S · high] Account deletion:** every table, key, session and export file. *Done when:* a completeness test that lists tables from the schema finds zero rows left for the user. *(Done for the database: the completeness test discovers the tables and fails if one is unseeded or its key to `user` does not cascade. The export files part is `AccountDeletionSteps`, which M6-05 fills: see below.)*
-- [ ] **M6-05 [S · medium] Export:** a job producing NDJSON.gz + `manifest.json`, an expiring download link, and a cleanup job. **Also owes M6-04's export-file half:** register an `AccountDeletionStep` (`apps/api/src/modules/account/account.steps.ts`) that removes the user's export files, idempotent (a missing file is fine) and run before the deletion transaction, with an int test that creates an export, deletes the account and finds no file left. The `exports` table gets a row in the completeness test's seeding (`account.int.spec.ts`), which fails until it does.
+- [x] **M6-05 [S · medium] Export:** a job producing NDJSON.gz + `manifest.json`, an expiring download link, and a cleanup job. **Also owes M6-04's export-file half:** register an `AccountDeletionStep` (`apps/api/src/modules/account/account.steps.ts`) that removes the user's export files, idempotent (a missing file is fine) and run before the deletion transaction, with an int test that creates an export, deletes the account and finds no file left. The `exports` table gets a row in the completeness test's seeding (`account.int.spec.ts`), which fails until it does.
 - [ ] **M6-06 [S · high] Tests:** retention with a fake clock, deletion completeness, and an export round trip (every line validates against `contracts`).
 - [ ] **M6-07 [H · low] Docs:** the export format and a data-lifecycle page.
 - [ ] **M6-R [O · high] Milestone review.**

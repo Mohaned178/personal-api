@@ -69,6 +69,11 @@ export const configSchema = z
     }),
     /** Directory with the built dashboard. Defaults to apps/web/dist next to the API package. */
     WEB_DIST_DIR: z.string().min(1).optional(),
+    /**
+     * Where export files are written (M6-05). The API and the worker must see the same directory.
+     * Relative paths resolve against the process working directory. Defaults to data/exports.
+     */
+    EXPORT_DIR: z.string().min(1).optional(),
   })
   .refine(
     (config) => config.NODE_ENV !== "production" || isSecureOrLoopback(config.BETTER_AUTH_URL),
