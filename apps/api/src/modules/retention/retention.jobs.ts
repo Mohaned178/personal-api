@@ -12,8 +12,9 @@ export const RETENTION_PURGE_CRON = "0 * * * *";
 
 /**
  * How long a recompute waits after a policy change. An ingest batch that read the old policies
- * just before the change can commit after it; this is longer than any request, so the recompute
- * (which reads the policies when it runs) sees that event too.
+ * just before the change can commit after it; this is longer than a request, so the recompute
+ * (which reads the policies when it runs) sees that event too. Edits inside the window fold into
+ * the waiting job, so for the later ones the margin is shorter; a repeat edit re-checks.
  */
 export const RECOMPUTE_DELAY_SECONDS = 60;
 

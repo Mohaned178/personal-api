@@ -6,8 +6,9 @@ import { events } from "../../platform/db/schema";
 
 /**
  * The one place that touches events of every user at once, for the hourly purge. It is on the
- * tenant-scoping allowlist on purpose: a cron job has no AuthContext, and the inputs here are a
- * clock reading and a batch size, never anything a request supplied. It returns counts, never rows
+ * exception to the scoped helpers on purpose: a cron job has no AuthContext, and the inputs here are
+ * a clock reading and a batch size, never anything a request supplied. `retention-purge.repository
+ * .spec.ts` pins it to this single method. It returns counts, never rows
  * (invariants 2 and 6). Anything else that reads or writes events takes a `userId` and goes
  * through the scoped helpers.
  */

@@ -177,6 +177,31 @@ describe("the purge", () => {
     expect((await eventRows(h.testDb.pool)).map((r) => r.id)).toEqual([kept]);
   });
 
+  it("skips a row another transaction holds locked instead of waiting, and takes it next run", async () => {
+    const { pool } = h.testDb;
+    const locked = await seed(pool, { user: h.a, expiresAt: at(-DAY_MS) });
+    const free = await seed(pool, { user: h.a, expiresAt: at(-DAY_MS) });
+    const holder = await pool.connect();
+    try {
+      await holder.query("begin");
+      await holder.query("select id from events where id = $1 for update", [locked]);
+
+      // Without SKIP LOCKED the delete would wait for the holder; the race makes that a failure.
+      const outcome = await Promise.race([
+        purge.run(),
+        new Promise<"blocked">((resolve) => setTimeout(() => resolve("blocked"), 5000)),
+      ]);
+      expect(outcome).toBe(1);
+      expect((await eventRows(pool)).map((r) => r.id)).toEqual([locked]);
+      expect(free).not.toBe(locked);
+    } finally {
+      await holder.query("commit");
+      holder.release();
+    }
+    expect(await purge.run()).toBe(1);
+    expect(await count()).toBe(0);
+  }, 20_000);
+
   it("running while ingest stores events deletes only expired rows and loses no new event", async () => {
     await setDefaultAllow();
     for (let i = 0; i < 30; i++) await seed(h.testDb.pool, { user: h.b, expiresAt: at(-DAY_MS) });
