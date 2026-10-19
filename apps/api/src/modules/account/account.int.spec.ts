@@ -14,7 +14,7 @@
  * throttle, and nothing secret reaching the logs.
  */
 import { randomUUID } from "node:crypto";
-import type { INestApplication } from "@nestjs/common";
+import { ConsoleLogger, type INestApplication } from "@nestjs/common";
 import { ACCOUNT_DELETE_CONFIRMATION } from "@personal-api/contracts";
 import type { Pool } from "pg";
 import request from "supertest";
@@ -500,17 +500,23 @@ describe("DELETE /v1/account", () => {
 
   describe("logs", () => {
     it("never carry the password or the email, on success or on a wrong password", async () => {
+      // The testing module's logger prints errors only; this puts the service's own log lines on
+      // the captured stream too, so the checks below can fail (the marker proves they are seen).
+      app.useLogger(new ConsoleLogger());
       const capture = captureOutput();
+      let output: string;
       try {
         await deleteAccount(a, body(a, { password: "wrong-secret-4f2a" }));
         await deleteAccount(a);
       } finally {
-        const output = capture.stop();
-        expect(output).not.toContain("wrong-secret-4f2a");
-        expect(output).not.toContain(a.credentials.password);
-        expect(output).not.toContain(a.credentials.email);
-        expect(output).not.toContain(a.cookie.slice(a.cookie.indexOf("=") + 1));
+        output = capture.stop();
       }
+      expect(output).toContain("account deleted");
+      expect(output).toContain("request completed");
+      expect(output).not.toContain("wrong-secret-4f2a");
+      expect(output).not.toContain(a.credentials.password);
+      expect(output).not.toContain(a.credentials.email);
+      expect(output).not.toContain(a.cookie.slice(a.cookie.indexOf("=") + 1));
     });
   });
 });
