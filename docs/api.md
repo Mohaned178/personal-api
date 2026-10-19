@@ -246,8 +246,8 @@ curl -s "$BASE/v1/events?limit=5" -H "Authorization: Bearer $READ"
 Filters: `source` (integration id), `type`, `from`, `to`, `domain`. `limit` is 1 to 200 (default
 50). Pass the previous page's `nextCursor` as `cursor`; it is opaque and paged on
 `(occurredAt, id)`, so offsets are not used. The list also accepts the dashboard session cookie.
-`GET /v1/events/<id>` (one event) and `DELETE /v1/events` (a body of ids) take the session cookie
-only.
+`GET /v1/events/<id>` (one event) and `DELETE /v1/events` take the session cookie only (see
+[Delete data](#delete-data)).
 
 Each event carries `origin` (`collected`), `tags`, and `trace` (why it was kept; `null` for events
 stored before rules existed). The payload is in `data`.
@@ -311,6 +311,32 @@ curl -s -X DELETE "$BASE/v1/retention/type/browser.page_visited" -b "$JAR"   # 2
 
 `days` is a whole number from 1 to 3650. An event whose `occurredAt` is older than its own
 retention is rejected with `ingest.occurred_at_too_old`.
+
+### Delete data
+
+Deletion is a hard delete. Database backups keep deleted data until they rotate.
+
+```bash
+# By ids: deleted now, 200 {"deleted": n}. Ids that are not yours are not counted.
+curl -s -X DELETE "$BASE/v1/events" -b "$JAR" -H "Content-Type: application/json" -d '{"ids":["<event-id>"]}'
+
+# By filter: a job. 202 {"deletion": {...}}
+curl -s -X DELETE "$BASE/v1/events" -b "$JAR" -H "Content-Type: application/json"   -d '{"filter":{"domain":"example.com","from":"2026-10-01T00:00:00.000Z"}}'
+curl -s "$BASE/v1/events/deletions/<deletion-id>" -b "$JAR"   # progress
+
+# Disconnect and delete everything one integration stored: revokes it (its key stops working at
+# once), then starts the deletion. 202 {"integration": {...}, "deletion": {...}}
+curl -s -X DELETE "$BASE/v1/integrations/$INTEGRATION_ID/data" -b "$JAR"
+```
+
+A filter takes the same fields as the list (`source`, `type`, `from` inclusive, `to` exclusive,
+`domain`), and at least one is required; send `ids` or a `filter`, not both. A deletion has a
+`status` (`queued`, `running`, `completed`, `failed`), `deleted` (events removed so far) and `total`
+(events that matched when the job started, `null` before that; events that arrive during the run can
+make `deleted` pass it). The worker (`pnpm worker`) runs it in batches of 1 000, and a failed job is
+retried. An integration deletion starts about a minute after the request, so an ingest batch that
+was already in flight when the key was revoked is swept up too. The integration stays in your list
+as `revoked`; only its events are deleted.
 
 ### Endpoints (saved queries)
 
@@ -390,6 +416,7 @@ Errors are `application/problem+json` (RFC 9457) with a stable `code`:
 | 400  | `activity.range_invalid`   | `from` is not before `to`, or the range is more than 90 days.                          |
 | 400  | `events.cursor_invalid`    | The `cursor` is not one `nextCursor` returned.                                         |
 | 403  | `auth.insufficient_scope`  | The read key lacks the scope the route needs (for example an endpoint key on `/v1/events`). |
+| 404  | `deletion.not_found`       | `GET /v1/events/deletions/<id>`: the id is unknown, belongs to another user, or is malformed. |
 | 404  | `event.not_found`          | The event id is unknown, belongs to another user, or is malformed.                     |
 | 404  | `key.not_found`            | The read key id is unknown or belongs to another user.                                 |
 | 404  | `endpoint.not_found`       | The endpoint id or slug is unknown, belongs to another user, or is malformed. For `/v1/me/<slug>` also: the endpoint is disabled, or the key does not carry its scope. |

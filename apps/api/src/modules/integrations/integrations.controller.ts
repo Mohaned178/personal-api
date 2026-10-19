@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Header,
   HttpCode,
@@ -11,6 +12,7 @@ import {
 } from "@nestjs/common";
 import type {
   CreateIntegrationResponse,
+  DeleteIntegrationDataResponse,
   IntegrationListResponse,
   IntegrationResponse,
 } from "@personal-api/contracts";
@@ -66,7 +68,20 @@ export class IntegrationsController {
     return this.integrations.rename(auth.userId, id, body.name);
   }
 
-  /** Not DELETE: there is no hard delete until M6-03. Revokes the integration and its keys. */
+  /**
+   * Disconnect and delete this integration's data: revokes it, then answers 202 with the
+   * deletion job to poll at `GET /v1/events/deletions/:id`.
+   */
+  @Delete(":id/data")
+  @HttpCode(202)
+  deleteData(
+    @CurrentAuth("session") auth: SessionAuthContext,
+    @Param("id") id: string,
+  ): Promise<DeleteIntegrationDataResponse> {
+    return this.integrations.deleteData(auth.userId, id);
+  }
+
+  /** Revokes the integration and its keys; its events stay (see `deleteData`). */
   @Post(":id/revoke")
   @HttpCode(200)
   revoke(

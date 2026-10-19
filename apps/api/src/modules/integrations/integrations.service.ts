@@ -2,6 +2,7 @@ import { Inject, Injectable } from "@nestjs/common";
 import {
   type CreateIntegrationRequest,
   type CreateIntegrationResponse,
+  type DeleteIntegrationDataResponse,
   INTEGRATION_NOT_FOUND_CODE,
   type Integration,
   type IntegrationListResponse,
@@ -11,6 +12,7 @@ import { CLOCK, type Clock } from "../../platform/clock/clock";
 import { assertUserScope } from "../../platform/db/tenant-scope";
 import { isUuid } from "../../platform/db/uuid";
 import { AppException } from "../../platform/errors/problem";
+import { DeletionsService } from "../deletions/deletions.service";
 import { generateApiKey } from "../keys/key-generation";
 import { type IntegrationRow, IntegrationsRepository } from "./integrations.repository";
 
@@ -24,6 +26,7 @@ export class IntegrationsService {
   constructor(
     private readonly repository: IntegrationsRepository,
     @Inject(CLOCK) private readonly clock: Clock,
+    private readonly deletions: DeletionsService,
   ) {}
 
   /**
@@ -86,6 +89,18 @@ export class IntegrationsService {
     assertUserScope(userId);
     const row = isUuid(id) ? await this.repository.revoke(userId, id, this.clock.now()) : null;
     return { integration: toIntegration(found(row)) };
+  }
+
+  /**
+   * "Disconnect and delete this integration's data": revokes the integration and its keys (so
+   * nothing new arrives), then starts a bulk deletion of every event it stored. The integration
+   * row stays, revoked, so ingestion counters and its name remain. Repeating it is safe: it
+   * starts another deletion that finds nothing.
+   */
+  async deleteData(userId: string, id: string): Promise<DeleteIntegrationDataResponse> {
+    const { integration } = await this.revoke(userId, id);
+    const deletion = await this.deletions.start(userId, "integration", { source: integration.id });
+    return { integration, deletion };
   }
 }
 

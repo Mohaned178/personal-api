@@ -185,7 +185,7 @@ export interface IngestHarness {
   clock: FakeClock;
   a: FixtureUser;
   b: FixtureUser;
-  /** Empties events, ingestion_log, pairing codes, rules and endpoints, and puts the clock back to FIXED_NOW. Users stay. */
+  /** Empties events, ingestion_log, pairing codes, rules, bulk deletions and endpoints, and puts the clock back to FIXED_NOW. Users stay. */
   reset: () => Promise<void>;
   stop: () => Promise<void>;
 }
@@ -224,7 +224,7 @@ export async function startIngestHarness(): Promise<IngestHarness> {
     b,
     reset: async () => {
       await testDb.pool.query(
-        "truncate events, ingestion_log, pairing_codes, rules, rule_sets, rule_history, retention_policies restart identity",
+        "truncate events, ingestion_log, pairing_codes, rules, rule_sets, rule_history, retention_policies, bulk_deletions restart identity",
       );
       // Deleted, not truncated: api_keys references it, and the users' own keys must stay.
       await testDb.pool.query("delete from endpoints");

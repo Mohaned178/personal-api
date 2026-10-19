@@ -1248,6 +1248,52 @@ const ROUTES: Route[] = [
     },
   },
   {
+    route: "GET /v1/events/deletions/:id",
+    attacks: [
+      {
+        label: "reading the victim's deletion by its id",
+        run: async (attacker, victim) => {
+          const started = await cookieDelete(victim, { filter: { domain: "example.com" } });
+          expect(started.status).toBe(202);
+          const res = await cookieGet(attacker, `/v1/events/deletions/${started.body.deletion.id}`);
+          expectProblem(res, 404, "deletion.not_found");
+          const unknown = await cookieGet(attacker, `/v1/events/deletions/${missing}`);
+          await expectSameAsUnknown(res, unknown);
+        },
+      },
+    ],
+    control: async (owner) => {
+      const started = await cookieDelete(owner, { filter: { domain: "example.com" } });
+      const res = await cookieGet(owner, `/v1/events/deletions/${started.body.deletion.id}`);
+      expect(res.status).toBe(200);
+      expect(res.body.deletion.status).toBe("queued");
+    },
+  },
+  {
+    route: "DELETE /v1/integrations/:id/data",
+    attacks: [
+      {
+        label: "disconnecting and deleting the victim's integration",
+        run: async (attacker, victim) => {
+          const res = await cookieRemove(attacker, `/v1/integrations/${victim.integrationId}/data`);
+          expectProblem(res, 404, NOT_FOUND);
+          const unknown = await cookieRemove(attacker, `/v1/integrations/${missing}/data`);
+          await expectSameAsUnknown(res, unknown);
+        },
+      },
+    ],
+    // The owner's own integration must stay active for the other rows, so it uses a new one.
+    control: async (owner) => {
+      const created = await cookiePost(owner, "/v1/integrations", {
+        kind: "http",
+        name: "scratch",
+      });
+      const res = await cookieRemove(owner, `/v1/integrations/${created.body.integration.id}/data`);
+      expect(res.status).toBe(202);
+      expect(res.body.integration.status).toBe("revoked");
+    },
+  },
+  {
     route: "GET /v1/retention",
     attacks: [
       {
