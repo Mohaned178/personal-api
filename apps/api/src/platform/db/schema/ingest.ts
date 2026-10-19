@@ -42,7 +42,11 @@ export const integrations = pgTable(
   ],
 );
 
-/** Only the SHA-256 hash is stored; the plaintext key is shown once. endpoint_id arrives in M5. */
+/**
+ * Only the SHA-256 hash is stored; the plaintext key is shown once. `name` and `restriction`
+ * belong to read keys (M5-01): the label, and `{sources?, types?}` narrowing what the key reads.
+ * endpoint_id arrives with the endpoints table (M5-05).
+ */
 export const apiKeys = pgTable(
   "api_keys",
   {
@@ -55,6 +59,8 @@ export const apiKeys = pgTable(
     prefix: text("prefix").notNull(),
     hash: text("hash").notNull(),
     scopes: jsonb("scopes").notNull().default(sql`'[]'::jsonb`),
+    name: text("name"),
+    restriction: jsonb("restriction"),
     createdAt: createdAt(),
     lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
     revokedAt: timestamp("revoked_at", { withTimezone: true }),

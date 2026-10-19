@@ -1,4 +1,5 @@
 import { createParamDecorator, type ExecutionContext } from "@nestjs/common";
+import type { ReadKeyRestriction } from "@personal-api/contracts";
 import type { Request } from "express";
 
 /**
@@ -20,7 +21,20 @@ export interface IngestAuthContext {
   keyId: string;
 }
 
-export type AuthContext = SessionAuthContext | IngestAuthContext;
+/**
+ * Set by ReadKeyGuard. Scopes and restriction come from the stored key, parsed and validated; a
+ * read key belongs to the user, not to an integration.
+ */
+export interface ReadAuthContext {
+  kind: "read";
+  userId: string;
+  keyId: string;
+  scopes: readonly string[];
+  /** Narrows which sources and types the key reads; `null` means no narrowing. */
+  restriction: ReadKeyRestriction | null;
+}
+
+export type AuthContext = SessionAuthContext | IngestAuthContext | ReadAuthContext;
 export type AuthKind = AuthContext["kind"];
 
 export type AuthenticatedRequest = Request & { auth?: AuthContext };

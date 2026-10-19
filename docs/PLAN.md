@@ -85,6 +85,7 @@ users, sessions, accounts, verification — Better Auth
 integrations   id, user_id, kind ('browser-extension' | 'http'), name, default_policy ('deny'|'allow'),
                status ('active'|'revoked'), last_seen_at, last_heartbeat jsonb (queue depth, version)
 api_keys       id, user_id, kind ('ingest'|'read'), integration_id?, prefix, hash, scopes jsonb,
+               name? (read keys), restriction jsonb? (read keys: {sources?, types?}),
                endpoint_id?, created_at, last_used_at, revoked_at
 pairing_codes  code_hash, user_id, integration_id, expires_at (10 min), used_at
 rule_sets      user_id, version (int, bumps on every change), updated_at
@@ -324,7 +325,7 @@ Targets changed on 2026-10-14: Firefox + Edge (free stores only) instead of Chro
 
 ### M5: Query API and user endpoints
 
-- [ ] **M5-01 [S · high] Read keys:** scopes (`events:read`, `activity:read`, `endpoint:<id>`), optional source/type restriction, `ReadKeyGuard`, and a keys UI.
+- [x] **M5-01 [S · high] Read keys:** scopes (`events:read`, `activity:read`, `endpoint:<id>`), optional source/type restriction, `ReadKeyGuard`, and a keys UI.
 - [ ] **M5-02 [S · medium] `GET /v1/events`** for a session or read key, with scope filtering applied.
 - [ ] **M5-03 [S · medium] Aggregates:** `/v1/activity/daily` and `/v1/activity/domains` (time from focus segments), plus a user time zone setting.
 - [ ] **M5-04 [S · high] Saved-query compiler:** definition schema → parameterized Drizzle query, a field-allowlist projection, aggregate modes, row limits, `statement_timeout`, and aggregate-only enforcement.

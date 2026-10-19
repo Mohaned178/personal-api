@@ -125,6 +125,8 @@ const ruleBody = {
 };
 const githubVisit = () => pageVisit({ data: { domain: "github.com" } });
 const ruleIds = new Map<string, string>();
+/** Each user's read key (id and plaintext), set per test. */
+const readKeys = new Map<string, { id: string; key: string }>();
 
 /** Each user's extension integration and its pending (unused, unexpired) code, set per test. */
 const pending = new Map<string, { integrationId: string; pairingCode: string }>();
@@ -786,6 +788,141 @@ const ROUTES: Route[] = [
       );
     },
   },
+  {
+    route: "POST /v1/keys",
+    attacks: [
+      {
+        label: "naming the victim as owner in the body",
+        run: async (attacker, victim) => {
+          const res = await cookiePost(attacker, "/v1/keys", {
+            scopes: ["events:read"],
+            userId: victim.userId,
+          });
+          expectProblem(res, 400, "request.invalid");
+          expect(JSON.stringify(res.body)).not.toContain(victim.userId);
+        },
+      },
+      {
+        label: "restricting a key to the victim's integration",
+        run: async (attacker, victim) => {
+          const res = await cookiePost(attacker, "/v1/keys", {
+            scopes: ["events:read"],
+            restriction: { sources: [victim.integrationId] },
+          });
+          expectProblem(res, 404, NOT_FOUND);
+          await expectSameAsUnknown(
+            res,
+            await cookiePost(attacker, "/v1/keys", {
+              scopes: ["events:read"],
+              restriction: { sources: [missing] },
+            }),
+          );
+          expect(JSON.stringify(res.body)).not.toContain(victim.integrationId);
+        },
+      },
+      {
+        label: "creating a key while naming the victim in query and headers",
+        run: async (attacker, victim) => {
+          const res = await cookiePost(attacker, `/v1/keys?userId=${victim.userId}`, {
+            scopes: ["events:read"],
+          }).set("X-User-Id", victim.userId);
+          expect(res.status).toBe(201);
+          const { rows } = await h.testDb.pool.query(
+            "select user_id, integration_id from api_keys where id = $1",
+            [res.body.readKey.id],
+          );
+          expect(rows).toEqual([{ user_id: attacker.userId, integration_id: null }]);
+        },
+      },
+    ],
+    control: async (owner) => {
+      const res = await cookiePost(owner, "/v1/keys", {
+        scopes: ["events:read"],
+        restriction: { sources: [owner.integrationId] },
+      });
+      expect(res.status).toBe(201);
+      expect(res.body.key).toMatch(/^pa_read_/);
+    },
+  },
+  {
+    route: "GET /v1/keys",
+    attacks: [
+      {
+        label: "listing while the victim has a read key, naming the victim in query and headers",
+        run: async (attacker, victim) => {
+          const res = await cookieGet(attacker, `/v1/keys?userId=${victim.userId}`).set(
+            "X-User-Id",
+            victim.userId,
+          );
+          expect(res.status).toBe(200);
+          // Earlier rows in this run left more keys behind, so compare with the rows themselves.
+          const listed = res.body.readKeys.map((k: { id: string }) => k.id);
+          const owned = async (user: FixtureUser) =>
+            (
+              await h.testDb.pool.query<{ id: string }>(
+                "select id from api_keys where user_id = $1 and kind = 'read'",
+                [user.userId],
+              )
+            ).rows.map((r) => r.id);
+          expect([...listed].sort()).toEqual((await owned(attacker)).sort());
+          const victimIds = await owned(victim);
+          expect(victimIds.length).toBeGreaterThan(0);
+          const text = JSON.stringify(res.body);
+          for (const secret of [
+            ...victimIds,
+            readKeys.get(victim.userId)?.key,
+            victim.ingestKeyId,
+            victim.ingestKey,
+          ]) {
+            expect(text).not.toContain(secret);
+          }
+        },
+      },
+    ],
+    control: async (owner) => {
+      const res = await cookieGet(owner, "/v1/keys");
+      expect(res.status).toBe(200);
+      expect(res.body.readKeys.map((k: { id: string }) => k.id)).toContain(
+        readKeys.get(owner.userId)?.id,
+      );
+    },
+  },
+  {
+    route: "POST /v1/keys/:id/revoke",
+    attacks: [
+      {
+        label: "revoking the victim's read key",
+        run: async (attacker, victim) => {
+          const id = readKeys.get(victim.userId)?.id as string;
+          const res = await cookiePost(attacker, `/v1/keys/${id}/revoke`);
+          expectProblem(res, 404, "key.not_found");
+          await expectSameAsUnknown(res, await cookiePost(attacker, `/v1/keys/${missing}/revoke`));
+          // The victim's key is not revoked: their api_keys rows are compared before and after.
+        },
+      },
+      {
+        label: "revoking the victim's ingest key through the read key route",
+        run: async (attacker, victim) => {
+          const res = await cookiePost(attacker, `/v1/keys/${victim.ingestKeyId}/revoke`);
+          expectProblem(res, 404, "key.not_found");
+        },
+      },
+      {
+        label: "revoking the attacker's own ingest key by id (not a read key)",
+        run: async (attacker) => {
+          const res = await cookiePost(attacker, `/v1/keys/${attacker.ingestKeyId}/revoke`);
+          expectProblem(res, 404, "key.not_found");
+        },
+      },
+    ],
+    control: async (owner) => {
+      // A throwaway key, so the seeded one stays usable for the rest of the table.
+      const spare = await cookiePost(owner, "/v1/keys", { scopes: ["activity:read"] });
+      const res = await cookiePost(owner, `/v1/keys/${spare.body.readKey.id}/revoke`);
+      expect(res.status).toBe(200);
+      expect(res.body.readKey.revokedAt).not.toBeNull();
+    },
+  },
 ];
 
 /**
@@ -806,6 +943,9 @@ async function seedActivity() {
     const created = await cookiePost(user, "/v1/rules", ruleBody);
     expect(created.status).toBe(201);
     ruleIds.set(user.userId, created.body.rule.id);
+    const readKey = await cookiePost(user, "/v1/keys", { scopes: ["events:read"] });
+    expect(readKey.status).toBe(201);
+    readKeys.set(user.userId, { id: readKey.body.readKey.id, key: readKey.body.key });
   }
 }
 
