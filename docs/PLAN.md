@@ -347,7 +347,7 @@ Targets changed on 2026-10-14: Firefox + Edge (free stores only) instead of Chro
 - [x] **M6-04 [S · high] Account deletion:** every table, key, session and export file. *Done when:* a completeness test that lists tables from the schema finds zero rows left for the user. *(Done for the database: the completeness test discovers the tables and fails if one is unseeded or its key to `user` does not cascade. The export files part is `AccountDeletionSteps`, which M6-05 fills: see below.)*
 - [x] **M6-05 [S · medium] Export:** a job producing NDJSON.gz + `manifest.json`, an expiring download link, and a cleanup job. **Also owes M6-04's export-file half:** register an `AccountDeletionStep` (`apps/api/src/modules/account/account.steps.ts`) that removes the user's export files, idempotent (a missing file is fine) and run before the deletion transaction, with an int test that creates an export, deletes the account and finds no file left. The `exports` table gets a row in the completeness test's seeding (`account.int.spec.ts`), which fails until it does.
 - [x] **M6-06 [S · high] Tests:** retention with a fake clock, deletion completeness, and an export round trip (every line validates against `contracts`).
-- [ ] **M6-07 [H · low] Docs:** the export format and a data-lifecycle page.
+- [x] **M6-07 [H · low] Docs:** the export format and a data-lifecycle page.
 - [ ] **M6-R [O · high] Milestone review.**
 
 ### M7: Hardening and v1.0
