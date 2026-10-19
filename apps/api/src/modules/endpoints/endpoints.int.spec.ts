@@ -159,14 +159,27 @@ describe("PUT, DELETE and rotate-key", () => {
     expect(updated).toMatchObject({ id: created.endpoint.id, slug: "renamed", enabled: false });
     expect(updated.updatedAt >= updated.createdAt).toBe(true);
 
-    await put(h.a, `/v1/endpoints/${created.endpoint.id}`, body("renamed"));
+    // Disabled endpoints do not run for readers; enabling it again is an explicit change.
+    expect((await me("renamed", created.key)).status).toBe(404);
+    await put(h.a, `/v1/endpoints/${created.endpoint.id}`, body("renamed", { enabled: true }));
     expect((await me("renamed", created.key)).status).toBe(200);
+  });
+
+  it("a replacement without enabled is a 400 and does not re-enable a disabled endpoint", async () => {
+    const created = await create(h.a, "stats", { enabled: false });
+    const res = await put(h.a, `/v1/endpoints/${created.endpoint.id}`, body("stats"));
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe("request.invalid");
+    const { rows } = await h.testDb.pool.query("select enabled from endpoints where id = $1", [
+      created.endpoint.id,
+    ]);
+    expect(rows[0].enabled).toBe(false);
   });
 
   it("refuses a slug the user already uses on another endpoint", async () => {
     await create(h.a, "one");
     const two = await create(h.a, "two");
-    const res = await put(h.a, `/v1/endpoints/${two.endpoint.id}`, body("one"));
+    const res = await put(h.a, `/v1/endpoints/${two.endpoint.id}`, body("one", { enabled: true }));
     expect(res.status).toBe(409);
     expect(res.body.code).toBe("endpoint.slug_taken");
   });
@@ -214,11 +227,94 @@ describe("PUT, DELETE and rotate-key", () => {
     ).toBe("2026-10-14T13:00:00.000Z");
   });
 
+  describe("concurrent rotation", () => {
+    const rotate = (id: string) => post(h.a, `/v1/endpoints/${id}/rotate-key`);
+    const activeKeys = async (id: string) =>
+      (
+        await h.testDb.pool.query(
+          "select count(*)::int as n from api_keys where endpoint_id = $1 and revoked_at is null",
+          [id],
+        )
+      ).rows[0].n as number;
+    const stillPending = async (promise: Promise<unknown>) => {
+      let settled = false;
+      promise.then(
+        () => {
+          settled = true;
+        },
+        () => {
+          settled = true;
+        },
+      );
+      await new Promise((resolve) => setTimeout(resolve, 400));
+      return !settled;
+    };
+
+    it("many rotations at once leave exactly one active key", async () => {
+      const created = await create(h.a, "stats");
+      const results = await Promise.all(
+        Array.from({ length: 8 }, () => rotate(created.endpoint.id)),
+      );
+      expect(results.map((r) => r.status)).toEqual(Array(8).fill(200));
+      expect(await activeKeys(created.endpoint.id)).toBe(1);
+      // Exactly one of the keys that were handed out still works.
+      const keys = results.map((r) => endpointKeyResponseSchema.parse(r.body).key);
+      const statuses = await Promise.all(keys.map(async (key) => (await me("stats", key)).status));
+      expect(statuses.filter((s) => s === 200)).toHaveLength(1);
+    }, 30_000);
+
+    it("a rotation waits for the endpoint row, so it cannot interleave with another change", async () => {
+      const created = await create(h.a, "stats");
+      const holder = await h.testDb.pool.connect();
+      try {
+        await holder.query("begin");
+        // NO KEY UPDATE, not UPDATE: inserting the new key already takes a KEY SHARE lock on the
+        // row (its foreign key), which UPDATE would block. This one only blocks a FOR UPDATE.
+        await holder.query("select id from endpoints where id = $1 for no key update", [
+          created.endpoint.id,
+        ]);
+        const pending = rotate(created.endpoint.id).then((r) => r);
+        expect(await stillPending(pending)).toBe(true);
+        await holder.query("commit");
+        expect((await pending).status).toBe(200);
+      } finally {
+        // Whatever happened above, never leave the lock held for the next test.
+        await holder.query("rollback").catch(() => undefined);
+        holder.release();
+      }
+      expect(await activeKeys(created.endpoint.id)).toBe(1);
+    }, 30_000);
+
+    it("a rotation that races a delete is a 404, never a 500 from the key's foreign key", async () => {
+      const created = await create(h.a, "stats");
+      const holder = await h.testDb.pool.connect();
+      try {
+        await holder.query("begin");
+        await holder.query("delete from endpoints where id = $1", [created.endpoint.id]);
+        const pending = rotate(created.endpoint.id).then((r) => r);
+        expect(await stillPending(pending)).toBe(true);
+        await holder.query("commit");
+        const res = await pending;
+        expect(res.status, JSON.stringify(res.body)).toBe(404);
+        expect(res.body.code).toBe("endpoint.not_found");
+      } finally {
+        // Whatever happened above, never leave the lock held for the next test.
+        await holder.query("rollback").catch(() => undefined);
+        holder.release();
+      }
+      const { rows } = await h.testDb.pool.query(
+        "select count(*)::int as n from api_keys where endpoint_id = $1",
+        [created.endpoint.id],
+      );
+      expect(rows[0].n).toBe(0);
+    }, 30_000);
+  });
+
   it("an unknown or malformed id is a 404 endpoint.not_found", async () => {
     for (const id of ["0192f1c2-7c1e-7a3b-9f00-000000000000", "not-a-uuid"]) {
       for (const res of [
         await get(h.a, `/v1/endpoints/${id}`),
-        await put(h.a, `/v1/endpoints/${id}`, body("x")),
+        await put(h.a, `/v1/endpoints/${id}`, body("x", { enabled: true })),
         await http().delete(`/v1/endpoints/${id}`).set("Cookie", h.a.cookie),
         await post(h.a, `/v1/endpoints/${id}/rotate-key`),
       ]) {
@@ -318,7 +414,7 @@ describe("GET /v1/me/:slug", () => {
     const res = await me("stats", created.key);
     expect(res.status).toBe(404);
     expect(res.body.code).toBe("endpoint.not_found");
-    await put(h.a, `/v1/endpoints/${created.endpoint.id}`, body("stats"));
+    await put(h.a, `/v1/endpoints/${created.endpoint.id}`, body("stats", { enabled: true }));
     expect((await me("stats", created.key)).status).toBe(200);
   });
 
@@ -344,6 +440,23 @@ describe("GET /v1/me/:slug", () => {
     expect(res.body.code).toBe("saved_query.definition_invalid");
   });
 
+  it("a stored time zone that Postgres does not know is a 409, for the endpoint and the preview", async () => {
+    const created = await create(h.a, "stats");
+    await h.testDb.pool.query(`update "user" set time_zone = $1 where id = $2`, [
+      "Asia/Calcutta",
+      h.a.userId,
+    ]);
+    const run = await me("stats", created.key);
+    expect(run.status, JSON.stringify(run.body)).toBe(409);
+    expect(run.headers["content-type"]).toMatch(PROBLEM_JSON);
+    expect(run.body.code).toBe("settings.time_zone_unsupported");
+    const preview = await post(h.a, "/v1/endpoints/preview", { definition: countByDay });
+    expect(preview.status).toBe(409);
+    expect(preview.body.code).toBe("settings.time_zone_unsupported");
+    // Another user is not affected.
+    expect((await post(h.b, "/v1/endpoints/preview", { definition: countByDay })).status).toBe(200);
+  });
+
   describe("credentials and scope", () => {
     it("no credential, a session cookie, or a non-key bearer is refused", async () => {
       await create(h.a, "stats");
@@ -360,16 +473,27 @@ describe("GET /v1/me/:slug", () => {
       await create(h.a, "stats");
       const minted = await post(h.a, "/v1/keys", { scopes: ["events:read", "activity:read"] });
       const res = await me("stats", minted.body.key);
-      expect(res.status).toBe(403);
-      expect(res.body.code).toBe("auth.insufficient_scope");
+      expect(res.status).toBe(404);
+      expect(res.body.code).toBe("endpoint.not_found");
     });
 
-    it("an endpoint key cannot run another endpoint of the same user", async () => {
+    it("an endpoint key cannot run another endpoint of the same user, and it looks like a missing slug", async () => {
       const one = await create(h.a, "one");
       await create(h.a, "two");
       const res = await me("two", one.key);
-      expect(res.status).toBe(403);
-      expect(res.body.code).toBe("auth.insufficient_scope");
+      expect(res.status).toBe(404);
+      expect(res.body.code).toBe("endpoint.not_found");
+      // Byte for byte the answer for a slug that does not exist: no way to probe for slugs.
+      const missing = await me("no-such-slug", one.key);
+      expect(missing.status).toBe(404);
+      expect(res.body).toEqual(missing.body);
+    });
+
+    it("a disabled endpoint answers the same 404 as an out-of-scope or missing one", async () => {
+      const one = await create(h.a, "one", { enabled: false });
+      const res = await me("one", one.key);
+      expect(res.status).toBe(404);
+      expect(res.body).toEqual((await me("no-such-slug", one.key)).body);
     });
 
     it("an endpoint key cannot call /v1/events or the activity routes", async () => {

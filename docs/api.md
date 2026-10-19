@@ -267,6 +267,24 @@ and one entry per local day that has activity, with `activeMs` and `pageVisits`.
 `limit` up to 100. Time comes from focus segments; a day with page visits and no focus time shows
 `activeMs: 0`.
 
+### Time zone
+
+Days are cut in your time zone, which is a setting. Both routes take the session cookie only (a
+read key gets `401 auth.unauthenticated`).
+
+```bash
+curl -s "$BASE/v1/settings" -b "$JAR"                          # { "timeZone": "UTC" }
+curl -s "$BASE/v1/settings/time-zones" -b "$JAR"               # { "timeZones": ["Africa/Abidjan", ...] }
+curl -s -X PATCH "$BASE/v1/settings" -b "$JAR" -H "Content-Type: application/json" \
+  -d '{"timeZone":"Europe/Berlin"}'
+```
+
+`time-zones` lists the names the **database** accepts, sorted. That is not the same list as your
+browser's: the Postgres image has no legacy link names such as `Asia/Calcutta` (use `Asia/Kolkata`),
+and such a name is `400 settings.time_zone_unsupported`. A zone that was saved earlier and no
+longer works makes `/v1/activity/daily` and the endpoints answer `409 settings.time_zone_unsupported`
+until you choose another one.
+
 ### Endpoints (saved queries)
 
 An endpoint is a saved query with a slug and a read key of its own. The definition format is in
@@ -280,10 +298,11 @@ curl -s -X POST "$BASE/v1/endpoints/preview" -H "Content-Type: application/json"
 # Create (201): { "endpoint": {...}, "key": "pa_read_..." }  (the key is shown once)
 curl -s -X POST "$BASE/v1/endpoints" -H "Content-Type: application/json" -b "$JAR" \
   -d '{"slug":"visits-by-day","definition":{"when":{"type":["browser.page_visited"]},"window":{"kind":"last_n_days","days":7},"aggregate":"count_by_day"}}'
+# (enabled defaults to true when you create one)
 
 curl -s "$BASE/v1/endpoints" -b "$JAR"                       # list
 curl -s "$BASE/v1/endpoints/<id>" -b "$JAR"                  # one
-curl -s -X PUT "$BASE/v1/endpoints/<id>" -b "$JAR" -H "Content-Type: application/json" -d '<slug, enabled, definition>'
+curl -s -X PUT "$BASE/v1/endpoints/<id>" -b "$JAR" -H "Content-Type: application/json" -d '<slug, enabled, definition: all three>'
 curl -s -X POST "$BASE/v1/endpoints/<id>/rotate-key" -b "$JAR"   # new key, old one stops working
 curl -s -X DELETE "$BASE/v1/endpoints/<id>" -b "$JAR"
 
@@ -293,7 +312,11 @@ curl -s "$BASE/v1/me/visits-by-day" -H "Authorization: Bearer $ENDPOINT_KEY"
 
 `GET /v1/me/<slug>` answers with the result only (for example
 `{ "kind": "count_by_day", "rows": [{ "date": "2026-10-13", "count": 1 }], "truncated": false }`).
-An endpoint key on `/v1/events` gets `403 auth.insufficient_scope`. A slug is unique per user
+An endpoint key on `/v1/events` gets `403 auth.insufficient_scope`. `PUT` replaces the whole
+endpoint, so `enabled` is required (leaving it out is `400 request.invalid`, and never re-enables
+a disabled endpoint). `GET /v1/me/<slug>` answers the same `404 endpoint.not_found` when the slug
+does not exist, when the endpoint is disabled, and when your key does not cover it, so a key cannot
+be used to find out which slugs exist. A slug is unique per user
 (`endpoint.slug_taken`), and a user can have a limited number of endpoints (`endpoint.limit_reached`).
 
 ## 8. OpenAPI
@@ -328,7 +351,7 @@ Errors are `application/problem+json` (RFC 9457) with a stable `code`:
 | ---- | -------------------------- | -------------------------------------------------------------------------------------- |
 | 400  | `ingest.batch_invalid`     | The batch has no `events` array, an empty one, more than 100 events, or an unknown top-level key. |
 | 400  | `request.invalid`          | A request body fails validation (for example the heartbeat or an integration create).  |
-| 401  | `auth.invalid_key`         | The Bearer ingest key is missing, malformed, unknown or revoked.                       |
+| 401  | `auth.invalid_key`         | The Bearer key (ingest key, or read key on the read routes) is missing, malformed, unknown or revoked. |
 | 401  | `auth.unauthenticated`     | A dashboard route was called without a valid session cookie.                           |
 | 403  | `auth.signup_disabled`     | Sign-up is closed (`ALLOW_SIGNUP=false` and an account already exists).                 |
 | 403  | `ingest.config_unsupported` | `GET /v1/ingest/config` only: the key belongs to an `http` integration, not a browser extension. |
@@ -342,7 +365,9 @@ Errors are `application/problem+json` (RFC 9457) with a stable `code`:
 | 403  | `auth.insufficient_scope`  | The read key lacks the scope the route needs (for example an endpoint key on `/v1/events`). |
 | 404  | `event.not_found`          | The event id is unknown, belongs to another user, or is malformed.                     |
 | 404  | `key.not_found`            | The read key id is unknown or belongs to another user.                                 |
-| 404  | `endpoint.not_found`       | The endpoint id or slug is unknown, belongs to another user, or is malformed (or disabled for `/v1/me/<slug>`). |
+| 404  | `endpoint.not_found`       | The endpoint id or slug is unknown, belongs to another user, or is malformed. For `/v1/me/<slug>` also: the endpoint is disabled, or the key does not carry its scope. |
+| 400  | `settings.time_zone_unsupported` | `PATCH /v1/settings`: the database does not know this time zone (for example `Asia/Calcutta`). |
+| 409  | `settings.time_zone_unsupported` | The time zone saved in your settings no longer works in a query (`/v1/activity/daily`, endpoints and their preview). Choose another one. |
 | 409  | `endpoint.slug_taken`      | You already have an endpoint with this slug.                                           |
 | 409  | `endpoint.limit_reached`   | The user already has the maximum number of endpoints.                                  |
 | 409  | `saved_query.definition_invalid` | The saved query definition is invalid (the same check the preview runs).         |

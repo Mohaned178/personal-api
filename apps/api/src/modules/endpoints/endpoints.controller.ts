@@ -18,7 +18,7 @@ import type {
 } from "@personal-api/contracts";
 import { CurrentAuth, type SessionAuthContext } from "../auth/auth-context";
 import { SessionGuard } from "../auth/session.guard";
-import { EndpointInputDto, PreviewEndpointDto } from "./endpoints.dto";
+import { EndpointInputDto, PreviewEndpointDto, ReplaceEndpointDto } from "./endpoints.dto";
 import { EndpointsService } from "./endpoints.service";
 
 /**
@@ -68,7 +68,7 @@ export class EndpointsController {
   replace(
     @CurrentAuth("session") auth: SessionAuthContext,
     @Param("id") id: string,
-    @Body() body: EndpointInputDto,
+    @Body() body: ReplaceEndpointDto,
   ): Promise<EndpointResponse> {
     return this.endpoints.replace(auth.userId, id, body);
   }

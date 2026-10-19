@@ -3,8 +3,9 @@ import { ENDPOINTS_PER_USER_MAX, endpointScope } from "@personal-api/contracts";
 import { and, eq, isNull } from "drizzle-orm";
 import type { Database } from "../../platform/db/db";
 import { DB } from "../../platform/db/db.tokens";
+import { hasPgErrorCode, PG_UNIQUE_VIOLATION } from "../../platform/db/pg-error";
 import { apiKeys, endpoints } from "../../platform/db/schema";
-import { type TenantScope, tenantScope } from "../../platform/db/tenant-scope";
+import { scopeCondition, type TenantScope, tenantScope } from "../../platform/db/tenant-scope";
 
 export type EndpointRow = typeof endpoints.$inferSelect;
 
@@ -22,19 +23,6 @@ export interface EndpointValues {
 
 /** Why a change was refused. Nothing was written. */
 export type EndpointRefusal = "not_found" | "slug_taken" | "limit_reached";
-
-/** Postgres `unique_violation`; the driver error may be wrapped by the ORM as `cause`. */
-function isUniqueViolation(error: unknown): boolean {
-  for (
-    let e = error as { code?: unknown; cause?: unknown } | undefined, depth = 0;
-    e && depth < 3;
-    depth++
-  ) {
-    if (e.code === "23505") return true;
-    e = e.cause as typeof e;
-  }
-  return false;
-}
 
 /**
  * Every public method takes `userId` as its FIRST argument and goes through `tenantScope`, so a
@@ -84,7 +72,7 @@ export class EndpointsRepository {
         return row;
       });
     } catch (error) {
-      if (isUniqueViolation(error)) return "slug_taken";
+      if (hasPgErrorCode(error, PG_UNIQUE_VIOLATION)) return "slug_taken";
       throw error;
     }
   }
@@ -103,7 +91,7 @@ export class EndpointsRepository {
       );
       return row ?? "not_found";
     } catch (error) {
-      if (isUniqueViolation(error)) return "slug_taken";
+      if (hasPgErrorCode(error, PG_UNIQUE_VIOLATION)) return "slug_taken";
       throw error;
     }
   }
@@ -124,7 +112,14 @@ export class EndpointsRepository {
     tenantScope(this.db, userId);
     return this.db.transaction(async (tx) => {
       const scope = tenantScope(tx, userId);
-      const [row] = await scope.select(endpoints, eq(endpoints.id, id));
+      // Lock the endpoint row first: two rotations then take turns (the second one sees the first
+      // one's key and revokes it), and a delete that commits first leaves no row, so this is a
+      // null (404) and not a foreign key error from the new key.
+      const [row] = await tx
+        .select()
+        .from(endpoints)
+        .where(scopeCondition(endpoints, userId, eq(endpoints.id, id)))
+        .for("update");
       if (!row) return null;
       await scope.update(
         apiKeys,

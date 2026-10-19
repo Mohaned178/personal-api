@@ -1,5 +1,4 @@
 import { z } from "zod";
-import { safeMessage } from "./errors.js";
 import { domainSchema, utcDateTimeSchema } from "./primitives.js";
 
 /**
@@ -13,10 +12,11 @@ export const ACTIVITY_DEFAULT_DAYS = 7;
 export const ACTIVITY_MAX_DAYS = 90;
 export const ACTIVITY_DOMAINS_DEFAULT_LIMIT = 20;
 export const ACTIVITY_DOMAINS_MAX_LIMIT = 100;
-/** Code of the 400 for a `from`/`to` pair that is empty, reversed or wider than the maximum. */
+/**
+ * Code of the 400 for a `from`/`to` pair that is empty, reversed or wider than the maximum. The
+ * service checks the pair after it has filled in a missing end, so every bad range has this code.
+ */
 export const ACTIVITY_RANGE_INVALID_CODE = "activity.range_invalid";
-
-const DAY_MS = 24 * 60 * 60 * 1000;
 
 /** `from` is inclusive and `to` exclusive. Both default: `to` to now and `from` to 7 days before it. */
 const rangeShape = {
@@ -24,19 +24,7 @@ const rangeShape = {
   to: utcDateTimeSchema.optional(),
 };
 
-/** Only the two given ends can be checked here; the server fills in a missing one first. */
-function rangeIsValid(range: { from?: string | undefined; to?: string | undefined }): boolean {
-  if (range.from === undefined || range.to === undefined) return true;
-  const span = Date.parse(range.to) - Date.parse(range.from);
-  return span > 0 && span <= ACTIVITY_MAX_DAYS * DAY_MS;
-}
-const rangeRefinement = {
-  message: safeMessage(`Expected from before to, at most ${ACTIVITY_MAX_DAYS} days apart`),
-};
-
-export const activityDailyQuerySchema = z
-  .strictObject(rangeShape)
-  .refine(rangeIsValid, rangeRefinement);
+export const activityDailyQuerySchema = z.strictObject(rangeShape);
 export type ActivityDailyQuery = z.output<typeof activityDailyQuerySchema>;
 
 const limitSchema = z
@@ -45,9 +33,10 @@ const limitSchema = z
   .transform(Number)
   .pipe(z.number().int().min(1).max(ACTIVITY_DOMAINS_MAX_LIMIT));
 
-export const activityDomainsQuerySchema = z
-  .strictObject({ ...rangeShape, limit: limitSchema.optional() })
-  .refine(rangeIsValid, rangeRefinement);
+export const activityDomainsQuerySchema = z.strictObject({
+  ...rangeShape,
+  limit: limitSchema.optional(),
+});
 export type ActivityDomainsQuery = z.output<typeof activityDomainsQuerySchema>;
 
 /** One local day that has activity. Days with none are left out. */

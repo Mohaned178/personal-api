@@ -6,6 +6,13 @@ import { safeMessage } from "./errors.js";
  * the activity aggregates use to cut days. Requests are strict: `userId` never comes from the body.
  */
 
+/**
+ * 400 when the database does not know a zone that Node accepts (`Asia/Calcutta`: the system tzdata
+ * of the Postgres image has no legacy link names), and 409 when a zone that was saved earlier no
+ * longer works in a query. Either way the fix is to pick another zone in the settings.
+ */
+export const TIME_ZONE_UNSUPPORTED_CODE = "settings.time_zone_unsupported";
+
 export const DEFAULT_TIME_ZONE = "UTC";
 export const TIME_ZONE_MAX_LENGTH = 64;
 
@@ -34,3 +41,10 @@ export type Settings = z.output<typeof settingsSchema>;
 
 export const updateSettingsRequestSchema = z.strictObject({ timeZone: timeZoneSchema });
 export type UpdateSettingsRequest = z.output<typeof updateSettingsRequestSchema>;
+
+/**
+ * `GET /v1/settings/time-zones` (session only): the names the database accepts, sorted. Every one
+ * passes `timeZoneSchema`, so each can be sent back with PATCH.
+ */
+export const timeZonesResponseSchema = z.strictObject({ timeZones: z.array(timeZoneSchema) });
+export type TimeZonesResponse = z.output<typeof timeZonesResponseSchema>;

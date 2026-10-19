@@ -14,6 +14,7 @@ import { CLOCK, type Clock } from "../../platform/clock/clock";
 import { assertUserScope } from "../../platform/db/tenant-scope";
 import { AppException } from "../../platform/errors/problem";
 import { SettingsService } from "../settings/settings.service";
+import { withSavedTimeZone } from "../settings/time-zone.errors";
 import { ActivityRepository } from "./activity.repository";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -39,7 +40,9 @@ export class ActivityService {
     assertUserScope(userId);
     const { from, to } = this.resolveRange(query);
     const { timeZone } = await this.settings.get(userId);
-    const days = await this.repository.daily(userId, filters(from, to, access), timeZone);
+    const days = await withSavedTimeZone(() =>
+      this.repository.daily(userId, filters(from, to, access), timeZone),
+    );
     return { from: from.toISOString(), to: to.toISOString(), timeZone, days };
   }
 

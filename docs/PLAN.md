@@ -99,7 +99,7 @@ events         id uuidv7, user_id, integration_id, client_event_id, type, type_v
 ingestion_log  user_id, integration_id, bucket (hour), accepted, duplicate, dropped, rejected,
                by_reason jsonb  (rule ids / error codes → counts), no payloads
 retention_policies  user_id, match (source/type), days
-endpoints      id, user_id, slug, definition jsonb (saved query), enabled
+endpoints      id, user_id, slug, definition jsonb (saved query), enabled, created_at, updated_at
 exports        id, user_id, status, filter jsonb, file_path, expires_at
 ```
 
@@ -164,7 +164,9 @@ Page titles, full URLs, form contents, keystrokes and incognito activity are **n
 
 ## 6. API surface (v1)
 
-Errors use RFC 9457 `application/problem+json`. Lists use keyset cursors on `(occurred_at, id)`. OpenAPI is served at `/docs`.
+Errors use RFC 9457 `application/problem+json`. Lists use keyset cursors on `(occurred_at, id)`. OpenAPI is served at `/docs`, and `/docs` is public: it describes request shapes only and holds no data (ADR 0001, deviation 6).
+
+**`source` means two things.** On `GET /v1/events?source=` and in a read key's `restriction.sources` it is an **integration id** (a uuid). In a saved query's `when.source` it is an **integration kind** (`browser-extension`, `http`), the same as in a rule's `when`.
 
 **Known exception:** the routes Better Auth serves itself under `/api/auth/*` return Better Auth's own JSON error body, not problem+json. The responses we add in front of it (refused signup `auth.signup_disabled`, oversized body `http.payload_too_large`, unexpected 500) are still problem+json. See `docs/self-hosting.md`.
 
@@ -180,7 +182,7 @@ Errors use RFC 9457 `application/problem+json`. Lists use keyset cursors on `(oc
 | session | `/v1/rules` (CRUD), `POST /v1/rules/test` | Manage rules and dry-run them against a sample event |
 | session | `DELETE /v1/events` (ids or filter), `/v1/exports`, `/v1/retention` | Data management |
 | session | `/v1/keys`, `/v1/endpoints` (CRUD, `POST /v1/endpoints/:id/rotate-key`, `POST /v1/endpoints/preview`) | Read keys and saved queries. Creating or rotating an endpoint answers with its `endpoint:<id>` key, once |
-| session | `GET /v1/settings`, `PATCH /v1/settings` | The user's time zone, which the activity aggregates cut days in |
+| session | `GET /v1/settings`, `PATCH /v1/settings`, `GET /v1/settings/time-zones` | The user's time zone, which the activity aggregates cut days in. `PATCH` checks the name against the database (`pg_timezone_names`, not Node's list: `400 settings.time_zone_unsupported`), and `time-zones` lists the names it accepts |
 | session | `GET /v1/diagnostics` | Ingestion log, integration last-seen, queue backlog, job failures, and drop counts per rule over the window (M4-07) |
 | session or read key | `GET /v1/events?source=&type=&from=&to=&domain=&cursor=` | Raw events |
 | session or read key | `GET /v1/activity/daily?from=&to=`, `GET /v1/activity/domains?from=&to=&limit=` | Aggregates computed with SQL at query time (no materialized tables needed at this volume). Active time is the sum of `focus_segment` durations, visits count `page_visited`; an event counts toward the day of its `occurred_at` in the user's time zone. Default range is the last 7 days, at most 90. Needs `activity:read` for a key. |
@@ -333,7 +335,7 @@ Targets changed on 2026-10-14: Firefox + Edge (free stores only) instead of Chro
 - [x] **M5-05 [S · medium] Endpoints:** CRUD, `GET /v1/me/:slug`, and a UI with live preview + a copyable `curl`.
 - [x] **M5-06 [S · high] Tests:** injection attempts through field names and values, limit and timeout, scope escalation (endpoint A's key calling B or `/events`), and cross-tenant.
 - [x] **M5-07 [H · low] OpenAPI** at `/docs`, and `docs/api.md`.
-- [ ] **M5-R [O · xhigh] Milestone review** (`/code-review` + `/security-review`).
+- [x] **M5-R [O · xhigh] Milestone review** (`/code-review` + `/security-review`).
 
 ### M6: Data lifecycle
 

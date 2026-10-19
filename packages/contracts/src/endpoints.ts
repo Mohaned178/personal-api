@@ -30,7 +30,7 @@ export const ENDPOINT_NOT_FOUND_CODE = "endpoint.not_found";
 export const ENDPOINT_SLUG_TAKEN_CODE = "endpoint.slug_taken";
 export const ENDPOINT_LIMIT_REACHED_CODE = "endpoint.limit_reached";
 
-/** `POST /v1/endpoints` and `PUT /v1/endpoints/:id` (a whole replacement). */
+/** `POST /v1/endpoints`. A new endpoint is enabled unless the request says otherwise. */
 export const endpointInputSchema = z.strictObject({
   slug: endpointSlugSchema,
   enabled: z.boolean().default(true),
@@ -38,6 +38,16 @@ export const endpointInputSchema = z.strictObject({
 });
 export type EndpointInput = z.input<typeof endpointInputSchema>;
 export type EndpointDefinitionInput = z.output<typeof endpointInputSchema>;
+
+/**
+ * `PUT /v1/endpoints/:id` replaces the whole endpoint, so `enabled` has no default here: leaving it
+ * out must not quietly re-enable an endpoint that was switched off.
+ */
+export const replaceEndpointRequestSchema = z.strictObject({
+  ...endpointInputSchema.shape,
+  enabled: z.boolean(),
+});
+export type ReplaceEndpointRequest = z.output<typeof replaceEndpointRequestSchema>;
 
 export const endpointSchema = z.strictObject({
   id: z.uuid(),

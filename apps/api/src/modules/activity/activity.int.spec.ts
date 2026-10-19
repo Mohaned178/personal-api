@@ -9,6 +9,7 @@ import {
   activityDomainsResponseSchema,
   FOCUS_SEGMENT_MAX_MS,
   settingsSchema,
+  timeZonesResponseSchema,
 } from "@personal-api/contracts";
 import request from "supertest";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
@@ -97,6 +98,23 @@ describe("GET /v1/activity/daily", () => {
     expect(tokyo.days).toEqual([{ date: "2026-10-14", activeMs: 60_000, pageVisits: 0 }]);
   });
 
+  it("a stored zone that Postgres does not know is a 409, not a 500", async () => {
+    await seed(h.a, { occurredAt: "2026-10-13T09:00:00Z", durationMs: 60_000 });
+    await h.testDb.pool.query(`update "user" set time_zone = $1 where id = $2`, [
+      "Asia/Calcutta",
+      h.a.userId,
+    ]);
+    expectProblem(await get(h.a, "/v1/activity/daily"), 409, "settings.time_zone_unsupported");
+    // The fix is a settings change, and the domains route does not use the zone at all.
+    expect((await get(h.a, "/v1/activity/domains")).status).toBe(200);
+    const fixed = await http()
+      .patch("/v1/settings")
+      .set("Cookie", h.a.cookie)
+      .send({ timeZone: "Asia/Kolkata" });
+    expect(fixed.status).toBe(200);
+    expect((await get(h.a, "/v1/activity/daily")).status).toBe(200);
+  });
+
   it("clamps a stored duration above the 30-minute maximum", async () => {
     await seed(h.a, { occurredAt: "2026-10-13T09:00:00Z", durationMs: 99_000_000 });
     expect(daily(await get(h.a, "/v1/activity/daily")).days[0]?.activeMs).toBe(
@@ -122,7 +140,17 @@ describe("GET /v1/activity/daily", () => {
 
   it("refuses a bad range, an unknown key and a named user with a 400", async () => {
     const t = "2026-10-13T00:00:00.000Z";
-    expectProblem(await get(h.a, `/v1/activity/daily?from=${t}&to=${t}`), 400, "request.invalid");
+    // One code for every bad range, whether or not an end was defaulted.
+    expectProblem(
+      await get(h.a, `/v1/activity/daily?from=${t}&to=${t}`),
+      400,
+      "activity.range_invalid",
+    );
+    expectProblem(
+      await get(h.a, `/v1/activity/domains?from=${t}&to=2026-01-01T00:00:00.000Z`),
+      400,
+      "activity.range_invalid",
+    );
     expectProblem(
       await get(h.a, "/v1/activity/daily?from=2026-01-01T00:00:00.000Z"),
       400,
@@ -249,6 +277,43 @@ describe("/v1/settings", () => {
       expectProblem(await patch(h.a, body), 400, "request.invalid");
     }
     expect((await get(h.a, "/v1/settings")).body).toEqual({ timeZone: "UTC" });
+  });
+
+  it("refuses a zone that Node knows and Postgres does not (Asia/Calcutta) with a stable code", async () => {
+    // Node (ICU) accepts this link name; the database, which does the day cutting, does not.
+    const res = await patch(h.a, { timeZone: "Asia/Calcutta" });
+    expectProblem(res, 400, "settings.time_zone_unsupported");
+    expect((await get(h.a, "/v1/settings")).body).toEqual({ timeZone: "UTC" });
+    expect((await patch(h.a, { timeZone: "Asia/Kolkata" })).status).toBe(200);
+  });
+
+  it("lists the zones the database accepts, sorted, each of which the PATCH takes", async () => {
+    const res = await get(h.a, "/v1/settings/time-zones");
+    expect(res.status).toBe(200);
+    const { timeZones } = timeZonesResponseSchema.parse(res.body);
+    expect(timeZones).toEqual([...timeZones].sort());
+    expect(timeZones).toEqual(expect.arrayContaining(["UTC", "Europe/Berlin", "Asia/Kolkata"]));
+    expect(timeZones).not.toContain("Asia/Calcutta");
+    // Spot-check a spread of them against the real route.
+    for (const zone of [
+      timeZones[0],
+      timeZones[Math.floor(timeZones.length / 2)],
+      timeZones.at(-1),
+    ]) {
+      expect((await patch(h.a, { timeZone: zone })).status, String(zone)).toBe(200);
+    }
+  });
+
+  it("serves the zone list to a session only", async () => {
+    expectProblem(await http().get("/v1/settings/time-zones"), 401, "auth.unauthenticated");
+    const created = await http()
+      .post("/v1/keys")
+      .set("Cookie", h.a.cookie)
+      .send({ scopes: ["events:read", "activity:read"] });
+    const res = await http()
+      .get("/v1/settings/time-zones")
+      .set("Authorization", `Bearer ${created.body.key}`);
+    expectProblem(res, 401, "auth.unauthenticated");
   });
 
   it("is dashboard-only: a read key is refused", async () => {

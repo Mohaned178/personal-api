@@ -11,9 +11,9 @@ import {
   endpointSchema,
   endpointScope,
   endpointSlugSchema,
-  INSUFFICIENT_SCOPE_CODE,
   type PreviewEndpointRequest,
   type PreviewEndpointResponse,
+  type ReplaceEndpointRequest,
   type SavedQueryResult,
 } from "@personal-api/contracts";
 import { CLOCK, type Clock } from "../../platform/clock/clock";
@@ -72,7 +72,7 @@ export class EndpointsService {
   async replace(
     userId: string,
     id: string,
-    input: EndpointDefinitionInput,
+    input: ReplaceEndpointRequest,
   ): Promise<EndpointResponse> {
     assertUserScope(userId);
     if (!isUuid(id)) throw notFound();
@@ -113,17 +113,17 @@ export class EndpointsService {
   /**
    * `GET /v1/me/:slug`. The owner is the key's, the endpoint is the slug within that owner's, and
    * the key must carry `endpoint:<that id>`: a key for another endpoint, `events:read` and the like
-   * never run it. A disabled endpoint does not exist for readers.
+   * never run it. A disabled endpoint, and one the key does not cover, look exactly like a slug that
+   * does not exist (404).
    */
   async runBySlug(auth: ReadAuthContext, slug: string): Promise<SavedQueryResult> {
     assertUserScope(auth.userId);
     const row = endpointSlugSchema.safeParse(slug).success
       ? await this.repository.findBySlug(auth.userId, slug)
       : null;
-    if (!row?.enabled) throw notFound();
-    if (!auth.scopes.includes(endpointScope(row.id))) {
-      throw new AppException(403, INSUFFICIENT_SCOPE_CODE, "This key cannot read this resource");
-    }
+    // A missing slug, a disabled endpoint and a key without this endpoint's scope are one 404, so a
+    // key can never be used to find out which slugs its owner has.
+    if (!row?.enabled || !auth.scopes.includes(endpointScope(row.id))) throw notFound();
     // The raw stored definition: the runner parses it again and answers 409 when it no longer fits.
     return this.savedQueries.execute(auth.userId, row.definition);
   }

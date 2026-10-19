@@ -32,6 +32,8 @@ export interface FakeBackend {
   rules?: FakeRuleStore;
   /** Time zone for /v1/settings. Leave unset and those routes answer 404. */
   timeZone?: string;
+  /** Names for GET /v1/settings/time-zones (what the database accepts). */
+  timeZones?: string[];
   /** Answer PATCH /v1/settings with this error status. */
   rejectSettings?: number;
   /** Read keys for /v1/keys. Leave unset and those routes answer 404. */
@@ -383,6 +385,8 @@ export function installFetch(b: FakeBackend) {
         return b.timeZone === undefined
           ? json(404, { code: "not_found" })
           : json(200, { timeZone: b.timeZone });
+      case "GET /v1/settings/time-zones":
+        return json(200, { timeZones: b.timeZones ?? ["Europe/Berlin", "UTC"] });
       case "PATCH /v1/settings": {
         if (b.timeZone === undefined) return json(404, { code: "not_found" });
         const next = (body as { timeZone: string }).timeZone;
