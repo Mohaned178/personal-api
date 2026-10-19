@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { FakeClock } from "../../../test/fake-clock";
 import { MissingUserScopeError } from "../../platform/db/tenant-scope";
 import { AppException } from "../../platform/errors/problem";
+import type { DeletionsService } from "../deletions/deletions.service";
 import { hashApiKey, INGEST_KEY_PATTERN } from "../keys/key-generation";
 import type { IntegrationRow, IntegrationsRepository } from "./integrations.repository";
 import { IntegrationsService } from "./integrations.service";
@@ -32,11 +33,13 @@ function setup() {
     rename: vi.fn(async () => row),
     revoke: vi.fn(async () => row),
   };
+  const deletions = { start: vi.fn(async () => ({ id: ID })) };
   const service = new IntegrationsService(
     repository as unknown as IntegrationsRepository,
     new FakeClock(NOW),
+    deletions as unknown as DeletionsService,
   );
-  return { repository, service };
+  return { repository, deletions, service };
 }
 
 describe("IntegrationsService", () => {
@@ -102,6 +105,23 @@ describe("IntegrationsService", () => {
     const { repository, service } = setup();
     await service.revoke(USER, ID);
     expect(repository.revoke).toHaveBeenCalledWith(USER, ID, NOW);
+  });
+
+  it("deleteData revokes first, then starts a deletion filtered to that integration", async () => {
+    const { repository, deletions, service } = setup();
+    const result = await service.deleteData(USER, ID);
+    expect(repository.revoke).toHaveBeenCalledWith(USER, ID, NOW);
+    expect(deletions.start).toHaveBeenCalledWith(USER, "integration", { source: ID });
+    expect(result.integration.id).toBe(ID);
+  });
+
+  it("deleteData starts nothing for an integration that is not the user's", async () => {
+    const { repository, deletions, service } = setup();
+    repository.revoke.mockResolvedValueOnce(null as never);
+    await expect(service.deleteData(USER, ID)).rejects.toMatchObject({
+      code: INTEGRATION_NOT_FOUND_CODE,
+    });
+    expect(deletions.start).not.toHaveBeenCalled();
   });
 
   it("refuses a missing user before any repository call", async () => {

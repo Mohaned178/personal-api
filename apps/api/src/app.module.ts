@@ -7,6 +7,7 @@ import { APP_CONFIG, ConfigModule } from "./config/config.module";
 import { ActivityModule } from "./modules/activity/activity.module";
 import { isAuthPath } from "./modules/auth/auth.http";
 import { AuthModule } from "./modules/auth/auth.module";
+import { DeletionsModule } from "./modules/deletions/deletions.module";
 import { DiagnosticsModule } from "./modules/diagnostics/diagnostics.module";
 import { EndpointsModule } from "./modules/endpoints/endpoints.module";
 import { EventsModule } from "./modules/events/events.module";
@@ -52,6 +53,7 @@ import { buildPinoHttpOptions } from "./platform/logging/logging";
     KeysModule,
     IntegrationsModule,
     DiagnosticsModule,
+    DeletionsModule,
     EventsModule,
     ActivityModule,
     EndpointsModule,

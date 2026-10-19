@@ -1,4 +1,5 @@
 export * from "./auth";
+export * from "./deletions";
 export * from "./endpoints";
 export * from "./ingest";
 export * from "./meta";

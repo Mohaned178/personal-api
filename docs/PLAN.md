@@ -99,6 +99,7 @@ events         id uuidv7, user_id, integration_id, client_event_id, type, type_v
 ingestion_log  user_id, integration_id, bucket (hour), accepted, duplicate, dropped, rejected,
                by_reason jsonb  (rule ids / error codes → counts), no payloads
 retention_policies  user_id, match (source/type), days
+bulk_deletions user_id, kind (events/integration), filter jsonb, status, total, deleted, finished_at (M6-03: progress of a delete-by-filter job; no event data)
 endpoints      id, user_id, slug, definition jsonb (saved query), enabled, created_at, updated_at
 exports        id, user_id, status, filter jsonb, file_path, expires_at
 ```
@@ -180,7 +181,7 @@ Errors use RFC 9457 `application/problem+json`. Lists use keyset cursors on `(oc
 | ingest key | `POST /v1/ingest/heartbeat` | Queue depth, oldest queued age, version |
 | session | `/v1/integrations` (CRUD, pairing code, revoke) | Connect and disconnect sources |
 | session | `/v1/rules` (CRUD), `POST /v1/rules/test` | Manage rules and dry-run them against a sample event |
-| session | `DELETE /v1/events` (ids or filter), `/v1/exports`, `/v1/retention` | Data management |
+| session | `DELETE /v1/events` (ids: 200; filter: 202 job), `GET /v1/events/deletions/:id`, `DELETE /v1/integrations/:id/data`, `/v1/exports`, `/v1/retention` | Data management |
 | session | `/v1/keys`, `/v1/endpoints` (CRUD, `POST /v1/endpoints/:id/rotate-key`, `POST /v1/endpoints/preview`) | Read keys and saved queries. Creating or rotating an endpoint answers with its `endpoint:<id>` key, once |
 | session | `GET /v1/settings`, `PATCH /v1/settings`, `GET /v1/settings/time-zones` | The user's time zone, which the activity aggregates cut days in. `PATCH` checks the name against the database (`pg_timezone_names`, not Node's list: `400 settings.time_zone_unsupported`), and `time-zones` lists the names it accepts |
 | session | `GET /v1/diagnostics` | Ingestion log, integration last-seen, queue backlog, job failures, and drop counts per rule over the window (M4-07) |
@@ -341,7 +342,7 @@ Targets changed on 2026-10-14: Firefox + Edge (free stores only) instead of Chro
 
 - [x] **M6-01 [S · medium] Retention policies:** table, API and UI. `expires_at` is set at insert, with precedence rule `set_retention` > type policy > source policy > default 90 days.
 - [x] **M6-02 [S · high] Retention jobs:** an hourly batched purge (pg-boss cron, singleton), a recompute job when policies change, and safety while ingest runs concurrently.
-- [ ] **M6-03 [S · medium] Bulk delete:** delete by filter as a job with progress, and "disconnect and delete this integration's data".
+- [x] **M6-03 [S · medium] Bulk delete:** delete by filter as a job with progress, and "disconnect and delete this integration's data".
 - [ ] **M6-04 [S · high] Account deletion:** every table, key, session and export file. *Done when:* a completeness test that lists tables from the schema finds zero rows left for the user.
 - [ ] **M6-05 [S · medium] Export:** a job producing NDJSON.gz + `manifest.json`, an expiring download link, and a cleanup job.
 - [ ] **M6-06 [S · high] Tests:** retention with a fake clock, deletion completeness, and an export round trip (every line validates against `contracts`).

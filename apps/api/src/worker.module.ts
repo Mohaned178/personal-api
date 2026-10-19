@@ -2,6 +2,7 @@ import { Module } from "@nestjs/common";
 import { LoggerModule } from "nestjs-pino";
 import type { AppConfig } from "./config/config";
 import { APP_CONFIG, ConfigModule } from "./config/config.module";
+import { DeletionsJobsModule } from "./modules/deletions/deletions-jobs.module";
 import { RetentionJobsModule } from "./modules/retention/retention-jobs.module";
 import { ClockModule } from "./platform/clock/clock.module";
 import { DbModule } from "./platform/db/db.module";
@@ -25,6 +26,7 @@ import { buildPinoHttpOptions } from "./platform/logging/logging";
     DbModule,
     JobsModule.forRoot({ work: true }),
     RetentionJobsModule,
+    DeletionsJobsModule,
   ],
 })
 export class WorkerModule {}

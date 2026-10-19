@@ -4,6 +4,7 @@
  */
 export * from "./activity.js";
 export * from "./browser-events.js";
+export * from "./deletions.js";
 export * from "./diagnostics.js";
 export * from "./endpoints.js";
 export * from "./envelope.js";

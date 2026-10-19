@@ -49,6 +49,18 @@ export function restrictionConditions(
   return conditions;
 }
 
+/** The filter fields as conditions to AND on (not the cursor). Values are bound parameters. */
+export function eventFilterConditions(filters: EventFilters): SQL[] {
+  const conditions: SQL[] = [];
+  if (filters.integrationId) conditions.push(eq(events.integrationId, filters.integrationId));
+  if (filters.type) conditions.push(eq(events.type, filters.type));
+  if (filters.from) conditions.push(gte(events.occurredAt, filters.from));
+  if (filters.to) conditions.push(lt(events.occurredAt, filters.to));
+  conditions.push(...restrictionConditions(filters.sources, filters.types));
+  if (filters.domain) conditions.push(sql`${events.data} ->> 'domain' = ${filters.domain}`);
+  return conditions;
+}
+
 /**
  * Every method takes `userId` as its FIRST argument and ANDs it onto the query through the tenant
  * helpers, so a missing or blank userId rejects before the database is touched and no query can
@@ -62,13 +74,7 @@ export class EventsRepository {
   /** Newest first on `(occurred_at, id)`. The caller asks for one row more than a page. */
   async list(userId: string, filters: EventFilters, limit: number): Promise<EventRow[]> {
     assertUserScope(userId);
-    const conditions: SQL[] = [];
-    if (filters.integrationId) conditions.push(eq(events.integrationId, filters.integrationId));
-    if (filters.type) conditions.push(eq(events.type, filters.type));
-    if (filters.from) conditions.push(gte(events.occurredAt, filters.from));
-    if (filters.to) conditions.push(lt(events.occurredAt, filters.to));
-    conditions.push(...restrictionConditions(filters.sources, filters.types));
-    if (filters.domain) conditions.push(sql`${events.data} ->> 'domain' = ${filters.domain}`);
+    const conditions = eventFilterConditions(filters);
     if (filters.after) {
       conditions.push(
         sql`(${events.occurredAt}, ${events.id}) < (${sql.param(filters.after.occurredAt, events.occurredAt)}, ${filters.after.id}::uuid)`,
