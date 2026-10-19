@@ -12,6 +12,7 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 import { user } from "./auth";
+import { endpoints } from "./endpoints";
 
 const id = () => uuid("id").primaryKey().default(sql`uuidv7()`);
 const userId = () =>
@@ -45,7 +46,7 @@ export const integrations = pgTable(
 /**
  * Only the SHA-256 hash is stored; the plaintext key is shown once. `name` and `restriction`
  * belong to read keys (M5-01): the label, and `{sources?, types?}` narrowing what the key reads.
- * endpoint_id arrives with the endpoints table (M5-05).
+ * `endpoint_id` marks the read keys minted for one endpoint (M5-05); they die with it.
  */
 export const apiKeys = pgTable(
   "api_keys",
@@ -56,6 +57,7 @@ export const apiKeys = pgTable(
     integrationId: uuid("integration_id").references(() => integrations.id, {
       onDelete: "cascade",
     }),
+    endpointId: uuid("endpoint_id").references(() => endpoints.id, { onDelete: "cascade" }),
     prefix: text("prefix").notNull(),
     hash: text("hash").notNull(),
     scopes: jsonb("scopes").notNull().default(sql`'[]'::jsonb`),
@@ -73,6 +75,11 @@ export const apiKeys = pgTable(
       "api_keys_ingest_integration_check",
       sql`${table.kind} <> 'ingest' OR ${table.integrationId} IS NOT NULL`,
     ),
+    check(
+      "api_keys_endpoint_read_check",
+      sql`${table.endpointId} IS NULL OR ${table.kind} = 'read'`,
+    ),
+    index("api_keys_endpoint_id_idx").on(table.endpointId),
   ],
 );
 

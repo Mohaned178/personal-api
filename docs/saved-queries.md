@@ -1,7 +1,7 @@
 # Saved queries
 
-> **Status:** the schema, compiler and runner are implemented (M5-04). The endpoints that store and
-> serve them (`/v1/endpoints`, `GET /v1/me/:slug`) arrive in M5-05.
+> **Status:** implemented. The schema, compiler and runner are M5-04; the endpoints that store and
+> serve them (`/v1/endpoints`, `GET /v1/me/:slug`) are M5-05.
 
 A saved query is what a user-defined endpoint runs. It picks events with the **same `when` as a
 rule** (see `rule-format.md`), inside a relative time window, and returns **either** a projection of
@@ -83,3 +83,26 @@ of the types `when` selects. In a result row the key is the field name without `
   condition on a missing field is false (so a `none` on it holds), except `exists: false`.
 - The query runs for the endpoint owner's `userId` through `scopeCondition`; the `source` filter
   looks only at that user's integrations.
+
+## Endpoints
+
+An endpoint is a slug plus a saved query (`endpointInputSchema` in `packages/contracts/src/endpoints.ts`).
+Slugs are 1 to 40 lowercase letters, digits and inner hyphens, unique per user; a user has at most 50
+endpoints.
+
+| Route                                  | Auth    | Does                                                                                   |
+| -------------------------------------- | ------- | -------------------------------------------------------------------------------------- |
+| `POST /v1/endpoints`                   | session | Creates the endpoint and its key. Answers `{ endpoint, key }`; the key is shown once.  |
+| `GET /v1/endpoints`, `GET /:id`        | session | List (by slug) and read. Never a key.                                                  |
+| `PUT /v1/endpoints/:id`                | session | Replaces slug, `enabled` and definition. The key keeps working.                        |
+| `DELETE /v1/endpoints/:id`             | session | Deletes the endpoint and its keys.                                                     |
+| `POST /v1/endpoints/:id/rotate-key`    | session | Revokes the endpoint's keys, answers `{ endpoint, key }` with a new one.               |
+| `POST /v1/endpoints/preview`           | session | Runs an unsaved `{ definition }` with the same limits. Stores nothing.                 |
+| `GET /v1/me/:slug`                     | read key| Runs the endpoint. The key must carry `endpoint:<id>` of the endpoint the slug names.  |
+
+The key is a read key (`pa_read_`) with the single scope `endpoint:<id>`, stored with `endpoint_id`. It
+cannot call `/v1/events`, `/v1/activity/*` or another endpoint, and a general read key
+(`events:read`, `activity:read`) cannot run an endpoint. The slug is looked up among the **key
+owner's** endpoints. An unknown, malformed or disabled endpoint is `404 endpoint.not_found`; a key
+without the endpoint's scope is `403 auth.insufficient_scope`. The key also shows in `GET /v1/keys`,
+where it can be revoked (rotate to get a working one again).

@@ -15,6 +15,15 @@ const READ_SCOPE_METADATA = "pa:read-scope";
  */
 export const RequireReadScope = (scope: ReadScope) => SetMetadata(READ_SCOPE_METADATA, scope);
 
+const ENDPOINT_ROUTE = "endpoint" as const;
+
+/**
+ * For `GET /v1/me/:slug`: the scope a key needs is `endpoint:<id>` of the endpoint the slug names,
+ * which only the route can look up. The guard still requires a valid read key, and the route MUST
+ * check the key's scopes against that endpoint (EndpointsService.runBySlug does, and a test pins it).
+ */
+export const RequireEndpointScope = () => SetMetadata(READ_SCOPE_METADATA, ENDPOINT_ROUTE);
+
 /**
  * Requires a read key. Reads ONLY `Authorization: Bearer pa_read_...` (never cookies, query, body
  * or other headers). Every authentication failure is the same 401 problem+json, `auth.invalid_key`,
@@ -30,10 +39,9 @@ export class ReadKeyGuard implements CanActivate {
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
-    const required = this.reflector.getAllAndOverride<ReadScope | undefined>(READ_SCOPE_METADATA, [
-      context.getHandler(),
-      context.getClass(),
-    ]);
+    const required = this.reflector.getAllAndOverride<
+      ReadScope | typeof ENDPOINT_ROUTE | undefined
+    >(READ_SCOPE_METADATA, [context.getHandler(), context.getClass()]);
     if (required === undefined) {
       throw new Error("ReadKeyGuard is on a route that declares no @RequireReadScope");
     }
@@ -44,7 +52,7 @@ export class ReadKeyGuard implements CanActivate {
     if (auth?.kind !== "read") {
       throw new AppException(401, INVALID_KEY_CODE, "Invalid API key");
     }
-    if (!auth.scopes.includes(required)) {
+    if (required !== ENDPOINT_ROUTE && !auth.scopes.includes(required)) {
       throw new AppException(403, INSUFFICIENT_SCOPE_CODE, "This key cannot read this resource");
     }
     req.auth = auth;
