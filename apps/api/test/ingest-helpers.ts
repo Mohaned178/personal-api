@@ -13,6 +13,7 @@ import { ingestBatchResponseSchema } from "@personal-api/contracts";
 import type { Pool } from "pg";
 import request from "supertest";
 import { expect } from "vitest";
+import { ACCOUNT_RATE_LIMITER } from "../src/modules/account/account.constants";
 import { PAIRING_RATE_LIMITER } from "../src/modules/pairing/pairing.tokens";
 import { RuleSetProvider } from "../src/modules/rules/rule-set.provider";
 import type { RateLimiter } from "../src/platform/rate-limit/rate-limiter";
@@ -233,6 +234,7 @@ export async function startIngestHarness(): Promise<IngestHarness> {
       app.get(RuleSetProvider).clear();
       // Every request in a test run comes from one address, so forget the pairing throttle.
       app.get<RateLimiter>(PAIRING_RATE_LIMITER).reset();
+      app.get<RateLimiter>(ACCOUNT_RATE_LIMITER).reset();
     },
     stop: async () => {
       await app.close();

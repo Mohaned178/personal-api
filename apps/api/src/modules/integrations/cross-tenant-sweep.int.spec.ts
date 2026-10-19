@@ -13,6 +13,7 @@ import { RequestMethod } from "@nestjs/common";
 import { METHOD_METADATA, PATH_METADATA } from "@nestjs/common/constants";
 import { ModulesContainer } from "@nestjs/core";
 import {
+  ACCOUNT_DELETE_CONFIRMATION,
   createIntegrationResponseSchema,
   integrationListResponseSchema,
 } from "@personal-api/contracts";
@@ -1245,6 +1246,49 @@ const ROUTES: Route[] = [
       const res = await cookiePatch(owner, "/v1/settings", { timeZone: "UTC" });
       expect(res.status).toBe(200);
       expect(res.body).toEqual({ timeZone: "UTC" });
+    },
+  },
+  {
+    // The account is the session's and the route has no id, so the attacks name the victim
+    // everywhere a request can. The control cannot delete (it would remove a fixture user): it
+    // shows the route is the real one by reaching the password check, which the full deletion
+    // flow in account.int.spec.ts then passes.
+    route: "DELETE /v1/account",
+    attacks: [
+      {
+        label:
+          "deleting while naming the victim in the query and headers, with the victim's password",
+        run: async (attacker, victim) => {
+          const res = await http()
+            .delete(`/v1/account?userId=${victim.userId}`)
+            .set("Cookie", attacker.cookie)
+            .set("X-User-Id", victim.userId)
+            .send({
+              password: victim.credentials.password,
+              confirm: ACCOUNT_DELETE_CONFIRMATION,
+            });
+          expectProblem(res, 403, "account.password_invalid");
+        },
+      },
+      {
+        label: "deleting with the victim's id in the body",
+        run: async (attacker, victim) => {
+          const res = await http().delete("/v1/account").set("Cookie", attacker.cookie).send({
+            password: attacker.credentials.password,
+            confirm: ACCOUNT_DELETE_CONFIRMATION,
+            userId: victim.userId,
+          });
+          expectProblem(res, 400, "request.invalid");
+          expect(JSON.stringify(res.body)).not.toContain(victim.userId);
+        },
+      },
+    ],
+    control: async (owner) => {
+      const res = await http()
+        .delete("/v1/account")
+        .set("Cookie", owner.cookie)
+        .send({ password: "not-the-password", confirm: ACCOUNT_DELETE_CONFIRMATION });
+      expectProblem(res, 403, "account.password_invalid");
     },
   },
   {
