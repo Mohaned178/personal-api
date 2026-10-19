@@ -3,7 +3,7 @@ import type { ExportFilter } from "@personal-api/contracts";
 import { and, desc, eq, inArray } from "drizzle-orm";
 import type { Database } from "../../platform/db/db";
 import { DB } from "../../platform/db/db.tokens";
-import { exports as exportsTable } from "../../platform/db/schema";
+import { dataExports as exportsTable } from "../../platform/db/schema";
 import { assertUserScope, scopeCondition, tenantScope } from "../../platform/db/tenant-scope";
 
 export type ExportRow = typeof exportsTable.$inferSelect;

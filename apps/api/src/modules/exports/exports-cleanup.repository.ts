@@ -2,7 +2,7 @@ import { Inject, Injectable } from "@nestjs/common";
 import { and, inArray, isNull, lte, or } from "drizzle-orm";
 import type { Database } from "../../platform/db/db";
 import { DB } from "../../platform/db/db.tokens";
-import { exports as exportsTable } from "../../platform/db/schema";
+import { dataExports as exportsTable } from "../../platform/db/schema";
 
 /**
  * The hourly cleanup touches exports of every user at once. A cron job has no AuthContext, so this

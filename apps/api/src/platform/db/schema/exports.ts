@@ -18,7 +18,8 @@ import { user } from "./auth";
  * to `EXPORT_DIR`, and is set when the export completes. The row holds the filter, counters and a
  * path, never events. The files themselves are removed by the cleanup job and by account deletion.
  */
-export const exports = pgTable(
+// `exports` is a reserved name in a CommonJS module, so the table object is `dataExports`.
+export const dataExports = pgTable(
   "exports",
   {
     id: uuid("id").primaryKey().default(sql`uuidv7()`),
