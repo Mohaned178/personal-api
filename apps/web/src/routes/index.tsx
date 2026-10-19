@@ -37,6 +37,9 @@ export function IndexPage() {
       <Link to="/rules" className="text-sm underline">
         Rules
       </Link>
+      <Link to="/settings" className="text-sm underline">
+        Settings
+      </Link>
       <Button variant="outline" onClick={onSignOut}>
         Sign out
       </Button>

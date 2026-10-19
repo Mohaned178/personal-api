@@ -32,6 +32,22 @@ export function globToLike(pattern: string): string {
   return pattern.replaceAll("_", "\\_").replaceAll("*", "%");
 }
 
+/** A read key's restriction as conditions to AND on; empty when the key has none. */
+export function restrictionConditions(
+  sources: string[] | undefined,
+  types: string[] | undefined,
+): SQL[] {
+  const conditions: SQL[] = [];
+  if (sources) conditions.push(inArray(events.integrationId, sources));
+  if (types) {
+    const matches = types.map((t) =>
+      t.includes("*") ? sql`${events.type} LIKE ${globToLike(t)}` : eq(events.type, t),
+    );
+    conditions.push(or(...matches) as SQL);
+  }
+  return conditions;
+}
+
 /**
  * Every method takes `userId` as its FIRST argument and ANDs it onto the query through the tenant
  * helpers, so a missing or blank userId rejects before the database is touched and no query can
@@ -50,13 +66,7 @@ export class EventsRepository {
     if (filters.type) conditions.push(eq(events.type, filters.type));
     if (filters.from) conditions.push(gte(events.occurredAt, filters.from));
     if (filters.to) conditions.push(lt(events.occurredAt, filters.to));
-    if (filters.sources) conditions.push(inArray(events.integrationId, filters.sources));
-    if (filters.types) {
-      const matches = filters.types.map((t) =>
-        t.includes("*") ? sql`${events.type} LIKE ${globToLike(t)}` : eq(events.type, t),
-      );
-      conditions.push(or(...matches) as SQL);
-    }
+    conditions.push(...restrictionConditions(filters.sources, filters.types));
     if (filters.domain) conditions.push(sql`${events.data} ->> 'domain' = ${filters.domain}`);
     if (filters.after) {
       conditions.push(

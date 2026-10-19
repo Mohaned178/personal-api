@@ -81,7 +81,7 @@ Pin exact versions when scaffolding in M0, using releases at least 14 days old. 
 ## 4. Data model (v1)
 
 ```text
-users, sessions, accounts, verification — Better Auth
+users, sessions, accounts, verification — Better Auth (users also carry time_zone, an IANA name, default 'UTC')
 integrations   id, user_id, kind ('browser-extension' | 'http'), name, default_policy ('deny'|'allow'),
                status ('active'|'revoked'), last_seen_at, last_heartbeat jsonb (queue depth, version)
 api_keys       id, user_id, kind ('ingest'|'read'), integration_id?, prefix, hash, scopes jsonb,
@@ -180,9 +180,10 @@ Errors use RFC 9457 `application/problem+json`. Lists use keyset cursors on `(oc
 | session | `/v1/rules` (CRUD), `POST /v1/rules/test` | Manage rules and dry-run them against a sample event |
 | session | `DELETE /v1/events` (ids or filter), `/v1/exports`, `/v1/retention` | Data management |
 | session | `/v1/keys`, `/v1/endpoints` | Read keys and saved queries |
+| session | `GET /v1/settings`, `PATCH /v1/settings` | The user's time zone, which the activity aggregates cut days in |
 | session | `GET /v1/diagnostics` | Ingestion log, integration last-seen, queue backlog, job failures, and drop counts per rule over the window (M4-07) |
 | session or read key | `GET /v1/events?source=&type=&from=&to=&domain=&cursor=` | Raw events |
-| session or read key | `GET /v1/activity/daily`, `GET /v1/activity/domains` | Aggregates computed with SQL at query time (no materialized tables needed at this volume) |
+| session or read key | `GET /v1/activity/daily?from=&to=`, `GET /v1/activity/domains?from=&to=&limit=` | Aggregates computed with SQL at query time (no materialized tables needed at this volume). Active time is the sum of `focus_segment` durations, visits count `page_visited`; an event counts toward the day of its `occurred_at` in the user's time zone. Default range is the last 7 days, at most 90. Needs `activity:read` for a key. |
 | read key scoped to it | `GET /v1/me/:slug` | A user-defined saved query |
 
 **Saved query definition:** source and type filters, a relative time window (`today`, `this_week`, `last_n_days`), the same condition language as rules, a field allowlist for projection, and an optional aggregate (`count_by_day`, `count_by_domain`, `duration_by_domain`). Hard limits: 1,000 rows and a 2-second `statement_timeout`. An aggregate-only endpoint can never return raw events. That covers "share my browsing stats without individual visits".
@@ -327,7 +328,7 @@ Targets changed on 2026-10-14: Firefox + Edge (free stores only) instead of Chro
 
 - [x] **M5-01 [S · high] Read keys:** scopes (`events:read`, `activity:read`, `endpoint:<id>`), optional source/type restriction, `ReadKeyGuard`, and a keys UI.
 - [x] **M5-02 [S · medium] `GET /v1/events`** for a session or read key, with scope filtering applied.
-- [ ] **M5-03 [S · medium] Aggregates:** `/v1/activity/daily` and `/v1/activity/domains` (time from focus segments), plus a user time zone setting.
+- [x] **M5-03 [S · medium] Aggregates:** `/v1/activity/daily` and `/v1/activity/domains` (time from focus segments), plus a user time zone setting.
 - [ ] **M5-04 [S · high] Saved-query compiler:** definition schema → parameterized Drizzle query, a field-allowlist projection, aggregate modes, row limits, `statement_timeout`, and aggregate-only enforcement.
 - [ ] **M5-05 [S · medium] Endpoints:** CRUD, `GET /v1/me/:slug`, and a UI with live preview + a copyable `curl`.
 - [ ] **M5-06 [S · high] Tests:** injection attempts through field names and values, limit and timeout, scope escalation (endpoint A's key calling B or `/events`), and cross-tenant.

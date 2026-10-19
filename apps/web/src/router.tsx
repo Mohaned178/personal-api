@@ -9,6 +9,7 @@ import { IndexPage } from "@/routes/index";
 import { IntegrationsPage } from "@/routes/integrations-page";
 import { KeysPage } from "@/routes/keys-page";
 import { RulesPage } from "@/routes/rules-page";
+import { SettingsPage } from "@/routes/settings-page";
 
 /**
  * File-less, code-based routes on purpose: no codegen step, so `vite build` and `vitest` need no
@@ -71,6 +72,13 @@ const rulesRoute = createRoute({
   component: RulesPage,
 });
 
+const settingsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/settings",
+  beforeLoad: requireAuth,
+  component: SettingsPage,
+});
+
 const loginRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/login",
@@ -114,6 +122,7 @@ export const routeTree = rootRoute.addChildren([
   eventsRoute,
   healthRoute,
   rulesRoute,
+  settingsRoute,
   loginRoute,
   signupRoute,
   setupRoute,
