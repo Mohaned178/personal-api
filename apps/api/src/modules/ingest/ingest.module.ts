@@ -1,5 +1,6 @@
 import { Module } from "@nestjs/common";
 import { KeysModule } from "../keys/keys.module";
+import { RetentionModule } from "../retention/retention.module";
 import { RulesModule } from "../rules/rules.module";
 import { IngestController } from "./ingest.controller";
 import { IngestRepository } from "./ingest.repository";
@@ -11,7 +12,7 @@ import { IngestService } from "./ingest.service";
  * from the global ClockModule.
  */
 @Module({
-  imports: [KeysModule, RulesModule],
+  imports: [KeysModule, RulesModule, RetentionModule],
   controllers: [IngestController],
   providers: [IngestRepository, IngestService],
 })

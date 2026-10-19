@@ -1247,6 +1247,80 @@ const ROUTES: Route[] = [
       expect(res.body).toEqual({ timeZone: "UTC" });
     },
   },
+  {
+    route: "GET /v1/retention",
+    attacks: [
+      {
+        label: "listing while the victim has a policy, naming the victim in query and headers",
+        run: async (attacker, victim) => {
+          const res = await cookieGet(attacker, `/v1/retention?userId=${victim.userId}`).set(
+            "X-User-Id",
+            victim.userId,
+          );
+          expect(res.status).toBe(200);
+          expect(res.body.policies.map((p: { target: string }) => p.target)).toEqual([
+            "browser.page_visited",
+            attacker.integrationId,
+          ]);
+          expect(JSON.stringify(res.body)).not.toContain(victim.integrationId);
+        },
+      },
+    ],
+    control: async (owner) => {
+      const res = await cookieGet(owner, "/v1/retention");
+      expect(res.status).toBe(200);
+      expect(res.body.defaultDays).toBe(90);
+    },
+  },
+  {
+    route: "PUT /v1/retention/:scope/:target",
+    attacks: [
+      {
+        label: "setting a source policy on the victim's integration",
+        run: async (attacker, victim) => {
+          const res = await cookiePut(attacker, `/v1/retention/source/${victim.integrationId}`, {
+            days: 1,
+          });
+          expectProblem(res, 404, "retention.target_not_found");
+        },
+      },
+      {
+        label: "naming the victim in the body",
+        run: async (attacker, victim) => {
+          const res = await cookiePut(attacker, "/v1/retention/type/browser.page_visited", {
+            days: 1,
+            userId: victim.userId,
+          });
+          expectProblem(res, 400, "request.invalid");
+        },
+      },
+    ],
+    control: async (owner) => {
+      const res = await cookiePut(owner, `/v1/retention/source/${owner.integrationId}`, {
+        days: 7,
+      });
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({ scope: "source", days: 7 });
+    },
+  },
+  {
+    route: "DELETE /v1/retention/:scope/:target",
+    attacks: [
+      {
+        label: "deleting the victim's source policy by naming their integration",
+        run: async (attacker, victim) => {
+          const res = await cookieRemove(attacker, `/v1/retention/source/${victim.integrationId}`);
+          expectProblem(res, 404, "retention.target_not_found");
+        },
+      },
+    ],
+    control: async (owner) => {
+      await cookiePut(owner, "/v1/retention/type/browser.page_visited", { days: 30 });
+      expect((await cookieRemove(owner, "/v1/retention/type/browser.page_visited")).status).toBe(
+        204,
+      );
+    },
+  },
 ];
 
 /**
@@ -1271,6 +1345,12 @@ async function seedActivity() {
     const created = await cookiePost(user, "/v1/rules", ruleBody);
     expect(created.status).toBe(201);
     ruleIds.set(user.userId, created.body.rule.id);
+    expect(
+      (await cookiePut(user, "/v1/retention/type/browser.page_visited", { days: 30 })).status,
+    ).toBe(200);
+    expect(
+      (await cookiePut(user, `/v1/retention/source/${user.integrationId}`, { days: 60 })).status,
+    ).toBe(200);
     const readKey = await cookiePost(user, "/v1/keys", { scopes: ["events:read"] });
     expect(readKey.status).toBe(201);
     readKeys.set(user.userId, { id: readKey.body.readKey.id, key: readKey.body.key });

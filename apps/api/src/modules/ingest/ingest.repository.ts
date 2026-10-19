@@ -28,8 +28,8 @@ export interface NewEvent {
   tags: string[];
   /** Why the event is kept: rule ids and action names only. */
   trace: RuleTrace;
-  /** `receivedAt` plus the matching `set_retention`, or null for none. */
-  expiresAt: Date | null;
+  /** `receivedAt` plus the resolved retention days (rule, type policy, source policy, default). */
+  expiresAt: Date;
 }
 
 /** The part of an integration the rules need: its kind and what it does when no rule decides. */

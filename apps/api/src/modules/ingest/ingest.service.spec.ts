@@ -9,6 +9,7 @@ import { compileRuleSet } from "@personal-api/rules";
 import { describe, expect, it } from "vitest";
 import { FakeClock } from "../../../test/fake-clock";
 import { AppException } from "../../platform/errors/problem";
+import type { RetentionService } from "../retention/retention.service";
 import type { RuleSetProvider } from "../rules/rule-set.provider";
 import type {
   Caller,
@@ -57,6 +58,12 @@ function rule(id: string, overrides: Record<string, unknown> = {}) {
 
 const HTTP_ALLOW: Caller = { kind: "http", defaultPolicy: "allow" };
 const ALLOW_ALL: Enforcement = { caller: HTTP_ALLOW, rules: rulesOf(0, []) };
+
+function noPolicies(): RetentionService {
+  return {
+    daysByTarget: async () => ({ type: new Map(), source: new Map() }),
+  } as unknown as RetentionService;
+}
 
 const at = (offsetMs: number) => new Date(NOW.getTime() + offsetMs).toISOString();
 
@@ -177,7 +184,7 @@ describe("planBatch", () => {
         data: event.data,
         tags: [],
         trace: { ruleSetVersion: 0, matched: [], decidedBy: "default_policy" },
-        expiresAt: null,
+        expiresAt: new Date(NOW.getTime() + 90 * 86_400_000),
       },
     });
   });
@@ -462,7 +469,11 @@ describe("IngestService", () => {
   function service() {
     const clock = new FakeClock(NOW);
     const fake = fakeRepository();
-    return { ...fake, clock, ingest: new IngestService(fake.repository, ruleSets(), clock) };
+    return {
+      ...fake,
+      clock,
+      ingest: new IngestService(fake.repository, ruleSets(), noPolicies(), clock),
+    };
   }
 
   it.each([
@@ -547,7 +558,7 @@ describe("IngestService", () => {
         throw new Error("must not touch last_seen_at after a refusal");
       },
     } as unknown as IngestRepository;
-    const error = await new IngestService(repository, ruleSets(), clock)
+    const error = await new IngestService(repository, ruleSets(), noPolicies(), clock)
       .ingestBatch(USER, INTEGRATION, KEY, { events: [visit()] })
       .catch((e: unknown) => e);
     expect(error).toBeInstanceOf(AppException);
@@ -566,7 +577,7 @@ describe("IngestService", () => {
         throw new Error("must not load rules for a revoked caller");
       },
     } as unknown as RuleSetProvider;
-    const error = await new IngestService(repository, rules, new FakeClock(NOW))
+    const error = await new IngestService(repository, rules, noPolicies(), new FakeClock(NOW))
       .ingestBatch(USER, INTEGRATION, KEY, { events: [visit()] })
       .catch((e: unknown) => e);
     expect((error as AppException).getStatus()).toBe(401);
@@ -588,7 +599,10 @@ describe("IngestService.getConfig (M4-R S2)", () => {
         return rulesOf(3, [rule(RULE_A)]);
       },
     } as unknown as RuleSetProvider;
-    return { ingest: new IngestService(repository, rules, new FakeClock(NOW)), loaded };
+    return {
+      ingest: new IngestService(repository, rules, noPolicies(), new FakeClock(NOW)),
+      loaded,
+    };
   }
 
   it("answers a browser extension's key with the rules, the version and its policy", async () => {
@@ -606,5 +620,61 @@ describe("IngestService.getConfig (M4-R S2)", () => {
     expect((error as AppException).getStatus()).toBe(403);
     expect((error as AppException).code).toBe("ingest.config_unsupported");
     expect(loaded).toEqual([]);
+  });
+});
+
+describe("planBatch: retention (M6-01)", () => {
+  const DAY = 86_400_000;
+  const retain = (days: number) =>
+    rulesOf(1, [rule(RULE_A, { stage: "process", then: [{ action: "set_retention", days }] })]);
+  const expiresIn = (enforcement: Enforcement, event = visit()) => {
+    const [item] = planBatch([event], NOW, enforcement);
+    if (item?.kind !== "store") throw new Error(`expected store, got ${item?.kind}`);
+    return (item.event.expiresAt.getTime() - NOW.getTime()) / DAY;
+  };
+  const policies = (type: number | null, sourceDays: number | null) => ({
+    type: new Map(type === null ? [] : [["browser.page_visited", type]]),
+    sourceDays,
+  });
+
+  it("defaults to 90 days with no rule and no policy", () => {
+    expect(expiresIn(ALLOW_ALL)).toBe(90);
+  });
+
+  it("uses the source policy, then the type policy over it, then a rule over both", () => {
+    expect(expiresIn({ ...ALLOW_ALL, retention: policies(null, 30) })).toBe(30);
+    expect(expiresIn({ ...ALLOW_ALL, retention: policies(10, 30) })).toBe(10);
+    expect(expiresIn({ ...ALLOW_ALL, rules: retain(5), retention: policies(10, 30) })).toBe(5);
+  });
+
+  it("ignores a type policy for another type", () => {
+    const retention = { type: new Map([["browser.tab_opened", 3]]), sourceDays: null };
+    expect(expiresIn({ ...ALLOW_ALL, retention })).toBe(90);
+  });
+
+  it("rejects an event older than its policy days (inclusive), as too old", () => {
+    const enforcement = { ...ALLOW_ALL, retention: policies(null, 30) };
+    const exact = visit({ occurredAt: at(-30 * DAY) });
+    const older = visit({ occurredAt: at(-30 * DAY - 1) });
+    const plan = planBatch([exact, older], NOW, enforcement);
+    expect(plan[0]?.kind).toBe("store");
+    expect(plan[1]).toEqual({ kind: "rejected", code: "ingest.occurred_at_too_old", id: older.id });
+  });
+
+  it("lets a set_retention rule keep an event older than the default, and refuses one older than the rule", () => {
+    const hundred = visit({ occurredAt: at(-100 * DAY) });
+    expect(expiresIn({ ...ALLOW_ALL, rules: retain(365) }, hundred)).toBe(365);
+    const [tooOld] = planBatch([visit({ occurredAt: at(-3 * DAY) })], NOW, {
+      ...ALLOW_ALL,
+      rules: retain(2),
+    });
+    expect(tooOld).toMatchObject({ kind: "rejected", code: "ingest.occurred_at_too_old" });
+  });
+
+  it("keeps an old event rejected as too old when a drop rule would also match", () => {
+    const old = visit({ occurredAt: at(-100 * DAY) });
+    const drop = rulesOf(1, [rule(RULE_A, { then: [{ action: "drop" }] })]);
+    const [item] = planBatch([old], NOW, { ...ALLOW_ALL, rules: drop });
+    expect(item).toMatchObject({ kind: "rejected", code: "ingest.occurred_at_too_old" });
   });
 });

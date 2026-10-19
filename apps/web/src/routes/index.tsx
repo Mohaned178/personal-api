@@ -37,6 +37,9 @@ export function IndexPage() {
       <Link to="/keys" className="text-sm underline">
         Read keys
       </Link>
+      <Link to="/retention" className="text-sm underline">
+        Retention
+      </Link>
       <Link to="/rules" className="text-sm underline">
         Rules
       </Link>

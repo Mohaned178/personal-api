@@ -339,7 +339,7 @@ Targets changed on 2026-10-14: Firefox + Edge (free stores only) instead of Chro
 
 ### M6: Data lifecycle
 
-- [ ] **M6-01 [S · medium] Retention policies:** table, API and UI. `expires_at` is set at insert, with precedence rule `set_retention` > type policy > source policy > default 90 days.
+- [x] **M6-01 [S · medium] Retention policies:** table, API and UI. `expires_at` is set at insert, with precedence rule `set_retention` > type policy > source policy > default 90 days.
 - [ ] **M6-02 [S · high] Retention jobs:** an hourly batched purge (pg-boss cron, singleton), a recompute job when policies change, and safety while ingest runs concurrently.
 - [ ] **M6-03 [S · medium] Bulk delete:** delete by filter as a job with progress, and "disconnect and delete this integration's data".
 - [ ] **M6-04 [S · high] Account deletion:** every table, key, session and export file. *Done when:* a completeness test that lists tables from the schema finds zero rows left for the user.

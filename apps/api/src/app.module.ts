@@ -15,6 +15,7 @@ import { IngestModule } from "./modules/ingest/ingest.module";
 import { IntegrationsModule } from "./modules/integrations/integrations.module";
 import { KeysModule } from "./modules/keys/keys.module";
 import { PairingModule } from "./modules/pairing/pairing.module";
+import { RetentionModule } from "./modules/retention/retention.module";
 import { RulesModule } from "./modules/rules/rules.module";
 import { SettingsModule } from "./modules/settings/settings.module";
 import { ClockModule } from "./platform/clock/clock.module";
@@ -58,6 +59,7 @@ import { buildPinoHttpOptions } from "./platform/logging/logging";
     IngestModule,
     PairingModule,
     RulesModule,
+    RetentionModule,
   ],
   providers: [
     { provide: APP_FILTER, useClass: ProblemFilter },
