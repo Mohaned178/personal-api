@@ -38,6 +38,8 @@ describe("RetentionRepository tenant scoping", () => {
       "ownsIntegration",
       "upsert",
       "remove",
+      "expiryPage",
+      "setExpiry",
     ]);
   });
 
@@ -52,6 +54,8 @@ describe("RetentionRepository tenant scoping", () => {
       ownsIntegration: [ID],
       upsert: ["source", ID, 5, AT],
       remove: ["source", ID],
+      expiryPage: [null, 10],
+      setExpiry: [[ID], 5],
     };
     for (const name of publicMethods()) {
       for (const bad of [undefined, null, "", "   "]) {

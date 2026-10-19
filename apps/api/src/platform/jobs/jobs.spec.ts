@@ -14,6 +14,7 @@ function fakeBoss(overrides: Record<string, unknown> = {}) {
     createQueue: vi.fn().mockResolvedValue(undefined),
     work: vi.fn().mockResolvedValue("worker-id"),
     send: vi.fn().mockResolvedValue("job-id"),
+    schedule: vi.fn().mockResolvedValue(undefined),
     getQueue: vi.fn().mockResolvedValue({ name: NOOP_QUEUE }),
     ...overrides,
   };
@@ -62,6 +63,24 @@ describe("JobsService", () => {
     await service.onApplicationBootstrap();
     expect(boss.createQueue).toHaveBeenCalledWith("q1", undefined);
     expect(boss.work).not.toHaveBeenCalled();
+  });
+
+  it("in worker mode schedules a registration's cron after creating its queue", async () => {
+    const { boss, registry, service } = build(true);
+    registry.register({ queue: "q1", handler: async () => {}, schedule: "0 * * * *" });
+    registry.register({ queue: "q2", handler: async () => {} });
+    service.onModuleInit();
+    await service.onApplicationBootstrap();
+    expect(boss.schedule).toHaveBeenCalledOnce();
+    expect(boss.schedule).toHaveBeenCalledWith("q1", "0 * * * *", {});
+  });
+
+  it("in enqueue-only mode never schedules (the worker owns the cron)", async () => {
+    const { boss, registry, service } = build(false);
+    registry.register({ queue: "q1", handler: async () => {}, schedule: "0 * * * *" });
+    service.onModuleInit();
+    await service.onApplicationBootstrap();
+    expect(boss.schedule).not.toHaveBeenCalled();
   });
 
   it("a failing handler propagates so pg-boss can retry the job", async () => {
