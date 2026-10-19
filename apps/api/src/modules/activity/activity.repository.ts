@@ -35,7 +35,7 @@ export interface DomainRow {
  * Active time is the sum of focus-segment durations, each clamped to the 30-minute maximum again
  * here so a bad row can never inflate a total. Visits count page_visited events.
  */
-const activeMs = sql<string>`coalesce(sum(case when ${events.type} = ${FOCUS_SEGMENT} then least(greatest((${events.data} ->> 'durationMs')::bigint, 0), ${FOCUS_SEGMENT_MAX_MS}) else 0 end), 0)`;
+export const activeMs = sql<string>`coalesce(sum(case when ${events.type} = ${FOCUS_SEGMENT} then least(greatest((${events.data} ->> 'durationMs')::bigint, 0), ${FOCUS_SEGMENT_MAX_MS}) else 0 end), 0)`;
 const pageVisits = sql<string>`count(*) filter (where ${events.type} = ${PAGE_VISITED})`;
 
 /**

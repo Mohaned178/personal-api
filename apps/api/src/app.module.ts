@@ -8,6 +8,7 @@ import { ActivityModule } from "./modules/activity/activity.module";
 import { isAuthPath } from "./modules/auth/auth.http";
 import { AuthModule } from "./modules/auth/auth.module";
 import { DiagnosticsModule } from "./modules/diagnostics/diagnostics.module";
+import { EndpointsModule } from "./modules/endpoints/endpoints.module";
 import { EventsModule } from "./modules/events/events.module";
 import { INGEST_EVENTS_PATH } from "./modules/ingest/ingest.controller";
 import { IngestModule } from "./modules/ingest/ingest.module";
@@ -52,6 +53,7 @@ import { buildPinoHttpOptions } from "./platform/logging/logging";
     DiagnosticsModule,
     EventsModule,
     ActivityModule,
+    EndpointsModule,
     SettingsModule,
     IngestModule,
     PairingModule,
