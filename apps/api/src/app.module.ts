@@ -4,6 +4,7 @@ import { INGEST_MAX_BATCH_BYTES } from "@personal-api/contracts";
 import { LoggerModule } from "nestjs-pino";
 import type { AppConfig } from "./config/config";
 import { APP_CONFIG, ConfigModule } from "./config/config.module";
+import { AccountModule } from "./modules/account/account.module";
 import { ActivityModule } from "./modules/activity/activity.module";
 import { isAuthPath } from "./modules/auth/auth.http";
 import { AuthModule } from "./modules/auth/auth.module";
@@ -53,6 +54,7 @@ import { buildPinoHttpOptions } from "./platform/logging/logging";
     KeysModule,
     IntegrationsModule,
     DiagnosticsModule,
+    AccountModule,
     DeletionsModule,
     EventsModule,
     ActivityModule,

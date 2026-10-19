@@ -2,6 +2,7 @@
  * @personal-api/contracts: Zod schemas shared by the API, the extension and the dashboard.
  * A new event type, DTO or format starts here, and both sides import it.
  */
+export * from "./account.js";
 export * from "./activity.js";
 export * from "./browser-events.js";
 export * from "./deletions.js";

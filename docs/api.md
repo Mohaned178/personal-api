@@ -338,6 +338,25 @@ retried. An integration deletion starts about a minute after the request, so an 
 was already in flight when the key was revoked is swept up too. The integration stays in your list
 as `revoked`; only its events are deleted.
 
+### Delete your account
+
+`DELETE /v1/account` deletes your account and everything it owns: events, integrations, every
+ingest and read key, rules, endpoints, retention policies, deletion records, sessions and queued
+jobs. It takes the session cookie only (no key can call it), and the account is the session's.
+
+```bash
+curl -s -i -X DELETE "$BASE/v1/account" -b "$JAR" -H "Content-Type: application/json" \
+  -d '{"password":"<your password>","confirm":"delete my account"}'
+```
+
+The answer is `204` with no body, and the session cookies are expired. The request needs the
+current password and the exact phrase `delete my account`. A wrong password is
+`403 account.password_invalid` and deletes nothing; after 5 attempts in 15 minutes the account is
+`429 account.rate_limited` with a `Retry-After` header (every attempt counts, right or wrong).
+The deletion is one database transaction, so it either happens completely or not at all, and the
+email can be used to sign up again afterwards. It is a hard delete: database backups keep the data
+until they rotate.
+
 ### Endpoints (saved queries)
 
 An endpoint is a saved query with a slug and a read key of its own. The definition format is in
@@ -407,6 +426,8 @@ Errors are `application/problem+json` (RFC 9457) with a stable `code`:
 | 401  | `auth.invalid_key`         | The Bearer key (ingest key, or read key on the read routes) is missing, malformed, unknown or revoked. |
 | 401  | `auth.unauthenticated`     | A dashboard route was called without a valid session cookie.                           |
 | 403  | `auth.signup_disabled`     | Sign-up is closed (`ALLOW_SIGNUP=false` and an account already exists).                 |
+| 403  | `account.password_invalid` | `DELETE /v1/account`: the password is wrong (or the account has no password to check). Nothing is deleted. |
+| 429  | `account.rate_limited`     | `DELETE /v1/account`: 5 attempts in 15 minutes for this account. `Retry-After` says when to try again. |
 | 403  | `ingest.config_unsupported` | `GET /v1/ingest/config` only: the key belongs to an `http` integration, not a browser extension. |
 | 404  | `integration.not_found`    | The integration id is unknown, belongs to another user, or is malformed (all look the same). |
 | 404  | `rule.not_found`           | The rule id is unknown, belongs to another user, or is malformed (all look the same). |
