@@ -326,7 +326,7 @@ Targets changed on 2026-10-14: Firefox + Edge (free stores only) instead of Chro
 ### M5: Query API and user endpoints
 
 - [x] **M5-01 [S · high] Read keys:** scopes (`events:read`, `activity:read`, `endpoint:<id>`), optional source/type restriction, `ReadKeyGuard`, and a keys UI.
-- [ ] **M5-02 [S · medium] `GET /v1/events`** for a session or read key, with scope filtering applied.
+- [x] **M5-02 [S · medium] `GET /v1/events`** for a session or read key, with scope filtering applied.
 - [ ] **M5-03 [S · medium] Aggregates:** `/v1/activity/daily` and `/v1/activity/domains` (time from focus segments), plus a user time zone setting.
 - [ ] **M5-04 [S · high] Saved-query compiler:** definition schema → parameterized Drizzle query, a field-allowlist projection, aggregate modes, row limits, `statement_timeout`, and aggregate-only enforcement.
 - [ ] **M5-05 [S · medium] Endpoints:** CRUD, `GET /v1/me/:slug`, and a UI with live preview + a copyable `curl`.

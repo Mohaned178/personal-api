@@ -143,12 +143,12 @@ describe("GET /v1/events", () => {
     expectProblem(await get(h.a, "/v1/events?cursor=not-a-cursor"), 400, "events.cursor_invalid");
   });
 
-  it("requires a session", async () => {
+  it("requires a session (a bearer takes the read-key path: auth.invalid_key)", async () => {
     expectProblem(await http().get("/v1/events"), 401, "auth.unauthenticated");
     expectProblem(
       await http().get("/v1/events").set("Authorization", `Bearer ${h.a.ingestKey}`),
       401,
-      "auth.unauthenticated",
+      "auth.invalid_key",
     );
   });
 
@@ -246,13 +246,142 @@ describe("DELETE /v1/events", () => {
     expect(ids(await get(h.a, "/v1/events"))).toHaveLength(1);
   });
 
-  it("requires a session", async () => {
+  it("requires a session (a bearer takes the read-key path: auth.invalid_key)", async () => {
     const id = await seed(h.a);
     const res = await http()
       .delete("/v1/events")
       .set("Authorization", `Bearer ${h.a.ingestKey}`)
       .send({ ids: [id] });
     expectProblem(res, 401, "auth.unauthenticated");
+    expect(ids(await get(h.a, "/v1/events"))).toEqual([id]);
+  });
+});
+
+describe("GET /v1/events with a read key (M5-02)", () => {
+  async function mint(user: FixtureUser, body: object = { scopes: ["events:read"] }) {
+    const res = await http().post("/v1/keys").set("Cookie", user.cookie).send(body);
+    expect(res.status, JSON.stringify(res.body)).toBe(201);
+    return res.body.key as string;
+  }
+  const keyGet = (key: string, path = "/v1/events") =>
+    http().get(path).set("Authorization", `Bearer ${key}`);
+
+  it("lists the key owner's events, and only theirs", async () => {
+    const mine = await seed(h.a, { minutesAgo: 1 });
+    const theirs = await seed(h.b, { minutesAgo: 2 });
+    const res = await keyGet(await mint(h.a));
+    expect(res.status).toBe(200);
+    expect(ids(res)).toEqual([mine]);
+    expect(JSON.stringify(res.body)).not.toContain(theirs);
+    expect(ids(await keyGet(await mint(h.b)))).toEqual([theirs]);
+  });
+
+  it("applies the same filters and cursor as a session", async () => {
+    const e1 = await seed(h.a, { minutesAgo: 3 });
+    const e2 = await seed(h.a, { minutesAgo: 2 });
+    const e3 = await seed(h.a, { minutesAgo: 1 });
+    const key = await mint(h.a);
+    const first = await keyGet(key, "/v1/events?limit=2");
+    expect(ids(first)).toEqual([e3, e2]);
+    const cursor = listEventsResponseSchema.parse(first.body).nextCursor;
+    expect(ids(await keyGet(key, `/v1/events?limit=2&cursor=${cursor}`))).toEqual([e1]);
+  });
+
+  it("needs the events:read scope", async () => {
+    await seed(h.a);
+    const res = await keyGet(await mint(h.a, { scopes: ["activity:read"] }));
+    expectProblem(res, 403, "auth.insufficient_scope");
+  });
+
+  it("narrows to the key's sources and types, and a filter cannot widen it", async () => {
+    const visit = await seed(h.a, { type: "browser.page_visited", minutesAgo: 3 });
+    const focus = await seed(h.a, { type: "browser.tab_focus", minutesAgo: 2 });
+    await seed(h.a, { type: "device.battery", minutesAgo: 1 });
+    const globKey = await mint(h.a, {
+      scopes: ["events:read"],
+      restriction: { types: ["browser.*"] },
+    });
+    expect(ids(await keyGet(globKey)).sort()).toEqual([visit, focus].sort());
+    expect(ids(await keyGet(globKey, "/v1/events?type=device.battery"))).toEqual([]);
+
+    const exactKey = await mint(h.a, {
+      scopes: ["events:read"],
+      restriction: { types: ["browser.page_visited"] },
+    });
+    expect(ids(await keyGet(exactKey))).toEqual([visit]);
+
+    const other = await http()
+      .post("/v1/integrations")
+      .set("Cookie", h.a.cookie)
+      .send({ kind: "http", name: "other" });
+    expect(other.status, JSON.stringify(other.body)).toBe(201);
+    const sourceKey = await mint(h.a, {
+      scopes: ["events:read"],
+      restriction: { sources: [other.body.integration.id] },
+    });
+    expect(ids(await keyGet(sourceKey))).toEqual([]);
+    const ownSourceKey = await mint(h.a, {
+      scopes: ["events:read"],
+      restriction: { sources: [h.a.integrationId], types: ["browser.tab_focus"] },
+    });
+    expect(ids(await keyGet(ownSourceKey))).toEqual([focus]);
+  });
+
+  it("treats _ in a type pattern as a literal, not a LIKE wildcard", async () => {
+    const literal = await seed(h.a, { type: "app.page_visited", minutesAgo: 2 });
+    await seed(h.a, { type: "app.pagexvisited", minutesAgo: 1 });
+    const key = await mint(h.a, {
+      scopes: ["events:read"],
+      restriction: { types: ["app.page_*"] },
+    });
+    expect(ids(await keyGet(key))).toEqual([literal]);
+  });
+
+  it("returns events without the rule trace, which a session still sees", async () => {
+    const id = await seed(h.a);
+    await h.testDb.pool.query("update events set trace = $2::jsonb where id = $1", [
+      id,
+      JSON.stringify({
+        ruleSetVersion: 3,
+        matched: [{ ruleId: randomUUID(), actions: ["allow"] }],
+        decidedBy: randomUUID(),
+      }),
+    ]);
+    const viaKey = listEventsResponseSchema.parse((await keyGet(await mint(h.a))).body);
+    expect(viaKey.events[0]?.trace).toBeNull();
+    const viaSession = listEventsResponseSchema.parse((await get(h.a, "/v1/events")).body);
+    expect(viaSession.events[0]?.trace).not.toBeNull();
+  });
+
+  it("refuses bad and wrong-kind credentials with auth.invalid_key, and ignores a cookie beside them", async () => {
+    await seed(h.a);
+    for (const bearer of [h.a.ingestKey, "pa_read_nope", randomUUID()]) {
+      const res = await http()
+        .get("/v1/events")
+        .set("Cookie", h.a.cookie)
+        .set("Authorization", `Bearer ${bearer}`);
+      expectProblem(res, 401, "auth.invalid_key");
+    }
+  });
+
+  it("refuses a revoked key", async () => {
+    const created = await http()
+      .post("/v1/keys")
+      .set("Cookie", h.a.cookie)
+      .send({ scopes: ["events:read"] });
+    await http().post(`/v1/keys/${created.body.readKey.id}/revoke`).set("Cookie", h.a.cookie);
+    expectProblem(await keyGet(created.body.key), 401, "auth.invalid_key");
+  });
+
+  it("keeps get-one and delete dashboard-only", async () => {
+    const id = await seed(h.a);
+    const key = await mint(h.a);
+    expectProblem(await keyGet(key, `/v1/events/${id}`), 401, "auth.unauthenticated");
+    const del = await http()
+      .delete("/v1/events")
+      .set("Authorization", `Bearer ${key}`)
+      .send({ ids: [id] });
+    expectProblem(del, 401, "auth.unauthenticated");
     expect(ids(await get(h.a, "/v1/events"))).toEqual([id]);
   });
 });

@@ -39,6 +39,9 @@ export type AuthKind = AuthContext["kind"];
 
 export type AuthenticatedRequest = Request & { auth?: AuthContext };
 
+/** What a route behind SessionOrReadKeyGuard receives. */
+export type ReaderAuthContext = SessionAuthContext | ReadAuthContext;
+
 /** A route asked for an AuthContext its guard did not provide. A bug, so it is a 500. */
 export class AuthContextMismatchError extends Error {
   constructor() {
@@ -60,4 +63,17 @@ const currentAuth = createParamDecorator((kind: unknown, ctx: ExecutionContext) 
  */
 export function CurrentAuth(kind: AuthKind): ParameterDecorator {
   return currentAuth(kind);
+}
+
+const currentReader = createParamDecorator((_data: unknown, ctx: ExecutionContext) => {
+  const auth = ctx.switchToHttp().getRequest<AuthenticatedRequest>().auth;
+  if (auth === undefined || (auth.kind !== "session" && auth.kind !== "read")) {
+    throw new AuthContextMismatchError();
+  }
+  return auth;
+});
+
+/** Injects the AuthContext set by SessionOrReadKeyGuard: a session or a read key, nothing else. */
+export function CurrentReader(): ParameterDecorator {
+  return currentReader();
 }
