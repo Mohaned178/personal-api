@@ -232,14 +232,23 @@ function valueFits(spec: RuleFieldSpec, cond: RuleCondition): boolean {
   }
 }
 
-function validateRule(rule: RuleBase, ctx: z.RefinementCtx): void {
+/**
+ * Checks a `when` against the event types it selects: every `type` pattern must match a type, and
+ * every condition must name a field, op and value that fit. Issue paths start at `base`. Returns
+ * the selected types. Saved queries (M5-04) use it too, so the condition language cannot drift.
+ */
+export function validateRuleWhen(
+  when: RuleWhen,
+  ctx: z.RefinementCtx,
+  base: (string | number)[],
+): string[] {
   const addIssue = (path: (string | number)[], message: string) =>
     ctx.addIssue({ code: "custom", path, message });
-  const types = selectedEventTypes(rule.when.type);
+  const types = selectedEventTypes(when.type);
 
-  rule.when.type?.forEach((pattern, index) => {
+  when.type?.forEach((pattern, index) => {
     if (![...EVENT_TYPES].some((type) => globMatches(pattern, type))) {
-      addIssue(["when", "type", index], NO_MATCHING_TYPE);
+      addIssue([...base, "type", index], NO_MATCHING_TYPE);
     }
   });
 
@@ -247,8 +256,8 @@ function validateRule(rule: RuleBase, ctx: z.RefinementCtx): void {
   // value must fit at least one of them (`reason eq idle` is fine for `browser.session_*`): on the others the condition simply does
   // not match, which is how `type: ["browser.*"]` can mention `data.path` (PLAN §5 example).
   for (const group of ["all", "any", "none"] as const) {
-    rule.when[group]?.forEach((cond, index) => {
-      const path = ["when", group, index];
+    when[group]?.forEach((cond, index) => {
+      const path = [...base, group, index];
       const specs = specsFor(types, cond.field);
       if (specs.length === 0) {
         addIssue([...path, "field"], UNKNOWN_FIELD);
@@ -259,6 +268,13 @@ function validateRule(rule: RuleBase, ctx: z.RefinementCtx): void {
       }
     });
   }
+  return types;
+}
+
+function validateRule(rule: RuleBase, ctx: z.RefinementCtx): void {
+  const addIssue = (path: (string | number)[], message: string) =>
+    ctx.addIssue({ code: "custom", path, message });
+  const types = validateRuleWhen(rule.when, ctx, ["when"]);
 
   const allowed: readonly string[] = RULE_ACTIONS_BY_STAGE[rule.stage];
   const seen = new Set<string>();

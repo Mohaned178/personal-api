@@ -186,7 +186,7 @@ Errors use RFC 9457 `application/problem+json`. Lists use keyset cursors on `(oc
 | session or read key | `GET /v1/activity/daily?from=&to=`, `GET /v1/activity/domains?from=&to=&limit=` | Aggregates computed with SQL at query time (no materialized tables needed at this volume). Active time is the sum of `focus_segment` durations, visits count `page_visited`; an event counts toward the day of its `occurred_at` in the user's time zone. Default range is the last 7 days, at most 90. Needs `activity:read` for a key. |
 | read key scoped to it | `GET /v1/me/:slug` | A user-defined saved query |
 
-**Saved query definition:** source and type filters, a relative time window (`today`, `this_week`, `last_n_days`), the same condition language as rules, a field allowlist for projection, and an optional aggregate (`count_by_day`, `count_by_domain`, `duration_by_domain`). Hard limits: 1,000 rows and a 2-second `statement_timeout`. An aggregate-only endpoint can never return raw events. That covers "share my browsing stats without individual visits".
+**Saved query definition:** source and type filters, a relative time window (`today`, `this_week`, `last_n_days`), the same condition language as rules, a field allowlist for projection, and an optional aggregate (`count_by_day`, `count_by_domain`, `duration_by_domain`). Hard limits: 1,000 rows and a 2-second `statement_timeout`. An aggregate-only endpoint can never return raw events. That covers "share my browsing stats without individual visits". The exact format is `docs/saved-queries.md`.
 
 ---
 
@@ -223,9 +223,9 @@ personal-api/
   apps/extension/      WXT MV3 extension (firefox-mv3 + chrome-mv3 builds for Edge)
   apps/e2e/            Firefox e2e (web-ext + Selenium, primary) + Edge smoke (Playwright, unpacked Chromium build) + local fixture site
   packages/contracts/  Zod: envelope, event types, API DTOs, rule + saved-query schemas
-  packages/rules/      Pure rule engine + saved-query validator (no Node/DOM deps)
+  packages/rules/      Pure rule engine (no Node/DOM deps). The saved-query schema and validator live in contracts (M5-04).
   packages/tsconfig/   Shared TS config
-  docs/                PLAN.md, self-hosting.md, event-types.md, rule-format.md, api.md, adr/
+  docs/                PLAN.md, self-hosting.md, event-types.md, rule-format.md, saved-queries.md, api.md, adr/
   docker-compose.yml   postgres (5433), api, worker
   CLAUDE.md
 ```
@@ -329,7 +329,7 @@ Targets changed on 2026-10-14: Firefox + Edge (free stores only) instead of Chro
 - [x] **M5-01 [S · high] Read keys:** scopes (`events:read`, `activity:read`, `endpoint:<id>`), optional source/type restriction, `ReadKeyGuard`, and a keys UI.
 - [x] **M5-02 [S · medium] `GET /v1/events`** for a session or read key, with scope filtering applied.
 - [x] **M5-03 [S · medium] Aggregates:** `/v1/activity/daily` and `/v1/activity/domains` (time from focus segments), plus a user time zone setting.
-- [ ] **M5-04 [S · high] Saved-query compiler:** definition schema → parameterized Drizzle query, a field-allowlist projection, aggregate modes, row limits, `statement_timeout`, and aggregate-only enforcement.
+- [x] **M5-04 [S · high] Saved-query compiler:** definition schema → parameterized Drizzle query, a field-allowlist projection, aggregate modes, row limits, `statement_timeout`, and aggregate-only enforcement.
 - [ ] **M5-05 [S · medium] Endpoints:** CRUD, `GET /v1/me/:slug`, and a UI with live preview + a copyable `curl`.
 - [ ] **M5-06 [S · high] Tests:** injection attempts through field names and values, limit and timeout, scope escalation (endpoint A's key calling B or `/events`), and cross-tenant.
 - [ ] **M5-07 [H · low] OpenAPI** at `/docs`, and `docs/api.md`.
