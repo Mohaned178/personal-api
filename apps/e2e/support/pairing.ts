@@ -1,7 +1,7 @@
 import type { Page, Worker } from "@playwright/test";
 import { expect } from "@playwright/test";
 import type { LaunchedExtension } from "./extension";
-import type { LaunchedFirefoxExtension } from "./firefox";
+import type { FirefoxTab, LaunchedFirefoxExtension } from "./firefox";
 import type { StoredEvent } from "./stack";
 
 // Shared by the Chromium and Firefox pairing specs (M2-08).
@@ -111,6 +111,27 @@ export async function storedRuleSetVersionFirefox(
     | undefined;
   const version = stored?.config?.ruleSetVersion;
   return typeof version === "number" ? version : null;
+}
+
+/** Navigates and gives the extension a moment to record the visit in its queue. */
+export async function visitFirefox(
+  firefox: LaunchedFirefoxExtension,
+  tab: FirefoxTab,
+  url: string,
+): Promise<void> {
+  await firefox.navigate(tab, url);
+  await new Promise((resolve) => setTimeout(resolve, 400));
+}
+
+/** Waits until the extension holds the rules of this rule-set version (it syncs on its alarm). */
+export async function syncRulesFirefox(
+  firefox: LaunchedFirefoxExtension,
+  version: number,
+): Promise<void> {
+  await triggerRulesSyncFirefox(firefox);
+  await expect
+    .poll(() => storedRuleSetVersionFirefox(firefox), { timeout: 60_000, intervals: [500] })
+    .toBe(version);
 }
 
 /** `browser.page_visited` rows only (tab and focus events are not what these tests count). */

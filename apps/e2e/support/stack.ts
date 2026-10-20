@@ -1,8 +1,10 @@
 import { type ChildProcess, execFile, spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
+import { mkdtemp, rm } from "node:fs/promises";
 import type { AddressInfo } from "node:net";
 import { createServer } from "node:net";
+import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
@@ -15,6 +17,7 @@ const execFileAsync = promisify(execFile);
 const REPO_ROOT = resolve(fileURLToPath(new URL(".", import.meta.url)), "../../..");
 const API_DIR = join(REPO_ROOT, "apps/api");
 const API_ENTRY = join(API_DIR, "dist/main.js");
+const WORKER_ENTRY = join(API_DIR, "dist/worker.js");
 const DRIZZLE_KIT = join(API_DIR, "node_modules/drizzle-kit/bin.cjs");
 
 // =============================================================================================
@@ -52,8 +55,16 @@ export interface AccountRules {
   replace(id: string, rule: RuleDocument): Promise<{ version: number }>;
 }
 
+/** One call with the user's session cookie, as the dashboard makes it (JSON in, raw Response out). */
+export type SessionRequest = (method: string, path: string, body?: unknown) => Promise<Response>;
+
 export interface PairedAccount {
   userId: string;
+  /** The sign-in the account was made with, for the routes that ask for the password again. */
+  email: string;
+  password: string;
+  /** The user's session over HTTP: the routes the dashboard calls with its cookie. */
+  request: SessionRequest;
   integrationId: string;
   /** Plaintext pairing code exactly as the dashboard shows it (10-minute, single use). */
   pairingCode: string;
@@ -65,6 +76,14 @@ export interface E2eStack {
   apiOrigin: string;
   /** Direct database access for assertions. Read-only by convention. */
   pool: Pool;
+  /** Where the API and the worker keep export files (`EXPORT_DIR`). */
+  exportDir: string;
+  /**
+   * Starts the pg-boss worker (`dist/worker.js`) next to the API, with the same database and export
+   * directory. Needed by the routes that answer 202 and finish as a job (exports). Idempotent; the
+   * stack stops it.
+   */
+  startWorker(): Promise<void>;
   /**
    * A fresh user (own session) with a fresh browser-extension integration and a fresh code. The
    * user gets one rule that allows page events of `allowedDomains` (default `127.0.0.1`, the
@@ -134,18 +153,21 @@ export async function startStack(): Promise<E2eStack> {
 
   const port = await freePort();
   const apiOrigin = `http://127.0.0.1:${port}`;
+  const exportDir = await mkdtemp(join(tmpdir(), "pa-e2e-exports-"));
+  const processEnv = {
+    ...process.env,
+    PORT: String(port),
+    DATABASE_URL: databaseUrl,
+    BETTER_AUTH_SECRET: `e2e-secret-${randomUUID()}${randomUUID()}`,
+    BETTER_AUTH_URL: apiOrigin,
+    ALLOW_SIGNUP: "true",
+    LOG_LEVEL: "warn",
+    EXPORT_DIR: exportDir,
+  };
   let output = "";
   const api: ChildProcess = spawn(process.execPath, [API_ENTRY], {
     cwd: API_DIR,
-    env: {
-      ...process.env,
-      PORT: String(port),
-      DATABASE_URL: databaseUrl,
-      BETTER_AUTH_SECRET: `e2e-secret-${randomUUID()}${randomUUID()}`,
-      BETTER_AUTH_URL: apiOrigin,
-      ALLOW_SIGNUP: "true",
-      LOG_LEVEL: "warn",
-    },
+    env: processEnv,
     stdio: ["ignore", "pipe", "pipe"],
   });
   api.stdout?.on("data", (chunk: Buffer) => {
@@ -161,17 +183,43 @@ export async function startStack(): Promise<E2eStack> {
 
   const pool = new Pool({ connectionString: databaseUrl, max: 4 });
 
+  let worker: ChildProcess | undefined;
+  const stopProcess = async (child: ChildProcess): Promise<void> => {
+    if (child.exitCode !== null || child.signalCode !== null) return;
+    await new Promise<void>((done) => {
+      child.once("exit", () => done());
+      child.kill();
+      setTimeout(done, 5_000).unref();
+    });
+  };
+
   const stop = async (): Promise<void> => {
-    if (!exited) {
-      api.kill();
-      await new Promise<void>((done) => {
-        if (exited) return done();
-        api.once("exit", () => done());
-        setTimeout(done, 5_000).unref();
-      });
-    }
+    if (worker) await stopProcess(worker);
+    await stopProcess(api);
     await pool.end().catch(() => {});
     await container?.stop().catch(() => {});
+    await rm(exportDir, { recursive: true, force: true }).catch(() => {});
+  };
+
+  const startWorker = async (): Promise<void> => {
+    if (worker) return;
+    const child: ChildProcess = spawn(process.execPath, [WORKER_ENTRY], {
+      cwd: API_DIR,
+      env: processEnv,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    let workerOutput = "";
+    const keep = (chunk: Buffer) => {
+      workerOutput = (workerOutput + chunk.toString("utf8")).slice(-4_000);
+    };
+    child.stdout?.on("data", keep);
+    child.stderr?.on("data", keep);
+    worker = child;
+    // The worker has no port to probe: give it a moment and fail if it dies on start-up.
+    await new Promise((r) => setTimeout(r, 3_000));
+    if (child.exitCode !== null) {
+      throw new Error(`the worker exited during start-up. Last output:\n${workerOutput}`);
+    }
   };
 
   try {
@@ -224,6 +272,12 @@ export async function startStack(): Promise<E2eStack> {
     if (!cookie) throw new Error("e2e: sign-in set no session cookie");
 
     const session = { "content-type": "application/json", cookie, origin: apiOrigin };
+    const request: SessionRequest = (method, path, body) =>
+      fetch(`${apiOrigin}${path}`, {
+        method,
+        headers: session,
+        body: body === undefined ? null : JSON.stringify(body),
+      });
     const me = (await (await fetch(`${apiOrigin}/v1/me`, { headers: session })).json()) as {
       id?: string;
       user?: { id?: string };
@@ -280,12 +334,22 @@ export async function startStack(): Promise<E2eStack> {
         `e2e: pairing code ${issued.status} ${await issued.text()} for ${integrationId}`,
       );
     const { pairingCode } = (await issued.json()) as { pairingCode: string };
-    return { userId, integrationId, pairingCode, rules };
+    return {
+      userId,
+      email: credentials.email,
+      password: credentials.password,
+      request,
+      integrationId,
+      pairingCode,
+      rules,
+    };
   };
 
   return {
     apiOrigin,
     pool,
+    exportDir,
+    startWorker,
     createPairableAccount,
     eventsOf: async (integrationId) =>
       (
