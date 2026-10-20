@@ -88,12 +88,26 @@ export function createCaptureEngine(deps: CaptureDeps): CaptureEngine {
     }
   }
 
+  /**
+   * `sanitizeUrl`, plus the excluded origins (M8-01): a page on one is null, like an unsupported
+   * scheme. The check needs the raw URL (scheme, host and port), which the sanitized page drops.
+   */
+  async function pageOf(url: unknown): Promise<SanitizedUrl | null> {
+    const page = sanitizeUrl(url);
+    if (page === null || deps.isExcludedUrl === undefined) return page;
+    try {
+      return (await deps.isExcludedUrl(url as string)) === false ? page : null;
+    } catch {
+      return null;
+    }
+  }
+
   // ---- capture path
 
   async function capture(now: number, tabId: number, tab: CaptureTab): Promise<void> {
     if (tab.incognito !== false) return;
     const session = await browserSession();
-    const sanitized = sanitizeUrl(tab.url);
+    const sanitized = await pageOf(tab.url);
     const page = sanitized !== null && (await allows(sanitized)) ? sanitized : null;
     await store.transact((prev) => captureVisit(prev, { now, session, tabId, page }, ids));
   }
@@ -102,7 +116,7 @@ export function createCaptureEngine(deps: CaptureDeps): CaptureEngine {
     if (tab.incognito !== false || tab.id === undefined) return;
     const tabId = tab.id;
     const session = await browserSession();
-    const page = sanitizeUrl(tab.url) ?? sanitizeUrl(tab.pendingUrl);
+    const page = (await pageOf(tab.url)) ?? (await pageOf(tab.pendingUrl));
     const [emit, pageAllowed] = await Promise.all([
       allows(null),
       page === null ? false : allows(page),
@@ -126,7 +140,7 @@ export function createCaptureEngine(deps: CaptureDeps): CaptureEngine {
       if (win.focused !== true || win.incognito !== false || win.id === undefined) return null;
       const [tab] = await browser.tabs.query({ active: true, windowId: win.id });
       if (!tab || tab.id === undefined || tab.incognito !== false) return null;
-      const page = sanitizeUrl(tab.url);
+      const page = await pageOf(tab.url);
       return page === null ? null : { tabId: tab.id, page };
     } catch {
       return null;
@@ -152,7 +166,7 @@ export function createCaptureEngine(deps: CaptureDeps): CaptureEngine {
         if (tab.id === undefined) continue;
         tabIds.push(tab.id);
         if (tab.incognito !== false || tab.status !== "complete") continue;
-        const page = sanitizeUrl(tab.url);
+        const page = await pageOf(tab.url);
         if (page !== null) pages.push({ tabId: tab.id, page });
       }
       return { at, tabIds, pages };

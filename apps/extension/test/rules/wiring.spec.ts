@@ -35,6 +35,7 @@ function fakeBrowser(
       onActivated: noop,
       onRemoved: noop,
       query: async () => [],
+      remove: async () => undefined,
     },
     windows: {
       onFocusChanged: noop,
@@ -55,7 +56,11 @@ function fakeBrowser(
     },
     runtime: { onStartup: noop, onInstalled: noop },
     storage: {
-      session: { get: async () => ({ id: "x" }), set: async () => undefined },
+      session: {
+        get: async () => ({ id: "x" }),
+        set: async () => undefined,
+        remove: async () => undefined,
+      },
       local: {
         get: async (keys: string | string[]) => {
           onGet(keys);
@@ -333,5 +338,32 @@ describe("rule sync in the background", () => {
     await wired.flusher.flush();
     expect(world.server.acceptedIds()).toHaveLength(1);
     expect((await store.stats()).depth).toBe(0);
+  });
+});
+
+describe("the server's own origin (M8-01)", () => {
+  const allowAll = () => withRules([{ ...domainRule("Everything", "x.com", "allow"), when: {} }]);
+
+  it("never captures a page on the server's origin, even when a rule allows everything", async () => {
+    const { wired, store } = wire({ stored: allowAll() });
+    // The rules allow this host on any other origin: only the exclusion keeps the server out.
+    expect(await wired.gate.allows({ domain: new URL(ORIGIN).hostname, path: "/rules" })).toBe(
+      true,
+    );
+    await navigate(wired, `${ORIGIN}/connect-extension/done#code=ABCD-EFGH`, { tabId: 3 });
+    await navigate(wired, `${ORIGIN}/rules`, { tabId: 4 });
+    const host = new URL(ORIGIN).hostname;
+    expect((await queued(store)).filter((e) => JSON.stringify(e).includes(host))).toEqual([]);
+    expect(await stateText(store)).not.toContain(host);
+  });
+
+  it("still captures the same host on another port or scheme (only the exact origin is skipped)", async () => {
+    const { wired, store } = wire({ stored: allowAll() });
+    const host = new URL(ORIGIN).hostname;
+    await navigate(wired, `https://${host}:8443/app`, { tabId: 5 });
+    const visits = (await queued(store)).filter((e) => e.type === "browser.page_visited");
+    expect(visits.map((e) => e.data)).toContainEqual(
+      expect.objectContaining({ domain: host, path: "/app" }),
+    );
   });
 });

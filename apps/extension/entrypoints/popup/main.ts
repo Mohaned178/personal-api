@@ -2,6 +2,7 @@
 
 import { browser } from "wxt/browser";
 import {
+  CONNECTION_STORAGE_KEY,
   type ConnectDeps,
   ConnectError,
   type Connection,
@@ -9,6 +10,7 @@ import {
   disconnect,
   getConnection,
 } from "../../lib/connect";
+import { ONE_CLICK_ERROR_STORAGE_KEY, startOneClick } from "../../lib/one-click";
 import { setPaused } from "../../lib/pause";
 import {
   clearLocalQueue,
@@ -181,6 +183,30 @@ function render(connection: Connection | null): void {
 
 connectForm.addEventListener("submit", (event) => {
   event.preventDefault();
+  // No code: one-click connect (M8-01). The dashboard opens in a tab; the background pairs and
+  // closes it, and the storage listener below shows the result here. Like connect(), it requests
+  // the permission synchronously, inside the user gesture.
+  if (pairingCodeInput.value.trim() === "") {
+    const started = startOneClick(serverUrlInput.value, {
+      permissions: browser.permissions,
+      tabs: browser.tabs,
+      session: browser.storage.session,
+      now: Date.now,
+    });
+    connectButton.disabled = true;
+    setStatus("Opening the dashboard…");
+    void started.then(
+      () => {
+        connectButton.disabled = false;
+        setStatus("Confirm in the dashboard tab. This page updates when you are connected.");
+      },
+      (error: unknown) => {
+        connectButton.disabled = false;
+        setStatus(error instanceof ConnectError ? error.message : "Something went wrong.", true);
+      },
+    );
+    return;
+  }
   // connect() must run inside the user gesture (Firefox) so nothing may await before the call:
   // it calls browser.permissions.request synchronously.
   const pending = connect(
@@ -241,6 +267,21 @@ async function isInTab(): Promise<boolean> {
     return false;
   }
 }
+
+// One-click connect finishes in the background: show the new connection, or its failure message.
+browser.storage.onChanged.addListener((changes, area) => {
+  if (area === "local" && CONNECTION_STORAGE_KEY in changes) {
+    void getConnection(deps).then((connection) => {
+      render(connection);
+      if (connection !== null) setStatus("Connected.");
+      void refreshState();
+    });
+  }
+  if (area === "session" && ONE_CLICK_ERROR_STORAGE_KEY in changes) {
+    const message = changes[ONE_CLICK_ERROR_STORAGE_KEY]?.newValue;
+    if (typeof message === "string") setStatus(message, true);
+  }
+});
 
 void Promise.all([getConnection(deps), isInTab()]).then(([connection, tab]) => {
   inTab = inTab || tab;

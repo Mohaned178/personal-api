@@ -94,6 +94,8 @@ export interface LaunchedFirefoxExtension {
   tabTitle(tab: FirefoxTab): Promise<string>;
   /** Closes `tab` and returns to the first tab that is left. */
   closeTab(tab: FirefoxTab): Promise<void>;
+  /** Every open tab, including the ones the extension opened or closed by itself (M8-01). */
+  tabs(): Promise<FirefoxTab[]>;
 
   /**
    * Page interaction through WebDriver element commands, which Marionette performs as real
@@ -400,6 +402,10 @@ export async function launchFirefoxExtension(
       if (first === undefined) throw new Error("closeTab: no tab is left");
       await driver.switchTo().window(first);
       current = first;
+    },
+    tabs: async () => {
+      await useContext(Context.CONTENT);
+      return (await driver.getAllWindowHandles()).map((handle) => ({ handle }));
     },
     typeInto: async (tab, selector, text) => {
       const field = await element(tab, selector);

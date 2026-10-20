@@ -109,6 +109,12 @@ export interface CaptureDeps {
   newId: () => string;
   /** Random per-browser-session tab reference, 8 to 64 URL-safe characters (contracts' tabRefSchema). */
   newTabRef: () => string;
+  /**
+   * M8-01: is this raw tab URL on an origin that is never captured (the connected server's own)?
+   * A page it excludes is treated like an unsupported scheme: it never enters the engine's state.
+   * Anything but `false` (true, a throw, a rejection) excludes. Omitted: nothing is excluded.
+   */
+  isExcludedUrl?: (url: string) => boolean | Promise<boolean>;
 }
 
 /**

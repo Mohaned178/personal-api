@@ -171,6 +171,23 @@ export async function connect(
     throw new ConnectError("permission_denied", PERMISSION_DENIED_MESSAGE);
   }
 
+  return pairWithCode(origin, pairingCode, deps);
+}
+
+/** What pairing needs once the origin permission is granted. */
+export type PairDeps = Omit<ConnectDeps, "permissions">;
+
+/**
+ * Exchanges a pairing code for an ingest key at `origin` (already normalized, permission already
+ * granted) and stores the connection. The second half of `connect`, also used by the one-click
+ * flow in the background (M8-01), which has no user gesture to request a permission with. Fails
+ * closed: nothing is stored unless the whole exchange succeeded. The code is never stored.
+ */
+export async function pairWithCode(
+  origin: string,
+  pairingCode: string,
+  deps: PairDeps,
+): Promise<Connection> {
   let response: Response;
   try {
     response = await deps.fetch(`${origin}/v1/pair`, {
@@ -221,7 +238,7 @@ export async function connect(
  * is discarded so its events can never reach the new server or account, then the new owner is
  * recorded. The same owner keeps its queue. If this fails, the pairing fails and nothing is stored.
  */
-async function adoptQueueOwner(deps: ConnectDeps, connection: Connection) {
+async function adoptQueueOwner(deps: PairDeps, connection: Connection) {
   const { queue } = deps;
   if (queue === undefined) return;
   const owner = { serverOrigin: connection.serverOrigin, integrationId: connection.integrationId };

@@ -1,8 +1,10 @@
 import type { RouterHistory } from "@tanstack/react-router";
 import { createRootRoute, createRoute, createRouter, redirect } from "@tanstack/react-router";
 import { fetchIsAuthenticated, fetchSetupStatus } from "@/lib/auth";
+import { safeRedirect } from "@/lib/safe-redirect";
 import { RootLayout } from "@/routes/__root";
 import { LoginPage, SetupPage, SignupPage } from "@/routes/auth-pages";
+import { ConnectExtensionDonePage, ConnectExtensionPage } from "@/routes/connect-extension-page";
 import { EndpointsPage } from "@/routes/endpoints-page";
 import { EventsPage } from "@/routes/events-page";
 import { HealthPage } from "@/routes/health-page";
@@ -22,14 +24,28 @@ import { SettingsPage } from "@/routes/settings-page";
  */
 const rootRoute = createRootRoute({ component: RootLayout });
 
-async function redirectIfAuthenticated(): Promise<void> {
-  if (await fetchIsAuthenticated()) throw redirect({ to: "/" });
+/**
+ * The search of the auth pages: `redirect` survives only as an internal path (`safeRedirect`).
+ * Always set, `undefined` when refused: the router merges the raw search of the root route into
+ * the validated one, so leaving the key out would let the unchecked value through.
+ */
+type AuthSearch = { redirect?: string | undefined };
+function validateAuthSearch(search: Record<string, unknown>): AuthSearch {
+  return { redirect: safeRedirect(search.redirect) };
 }
 
-async function requireAuth(): Promise<void> {
+async function redirectIfAuthenticated(search: AuthSearch): Promise<void> {
+  if (!(await fetchIsAuthenticated())) return;
+  throw search.redirect === undefined ? redirect({ to: "/" }) : redirect({ href: search.redirect });
+}
+
+/** Signed out: to login (or first-run setup), remembering the page to come back to (M8-01). */
+async function requireAuth({ location }: { location: { href: string } }): Promise<void> {
   if (await fetchIsAuthenticated()) return;
   const status = await fetchSetupStatus();
-  throw redirect({ to: status?.needsSetup ? "/setup" : "/login" });
+  const back = safeRedirect(location.href);
+  const search = back === undefined || back === "/" ? {} : { redirect: back };
+  throw redirect({ to: status?.needsSetup ? "/setup" : "/login", search });
 }
 
 const indexRoute = createRoute({
@@ -95,40 +111,69 @@ const settingsRoute = createRoute({
   component: SettingsPage,
 });
 
+const connectExtensionRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/connect-extension",
+  beforeLoad: requireAuth,
+  component: ConnectExtensionPage,
+});
+
+/**
+ * No guard: the page holds no account data, only the code in its own fragment, which a redirect to
+ * login would lose. The extension's background reads the code from this tab's URL.
+ */
+const connectExtensionDoneRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/connect-extension/done",
+  component: ConnectExtensionDonePage,
+});
+
 const loginRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/login",
-  beforeLoad: async () => {
-    await redirectIfAuthenticated();
+  validateSearch: validateAuthSearch,
+  beforeLoad: async ({ search }) => {
+    await redirectIfAuthenticated(search);
     const status = await fetchSetupStatus();
-    if (status?.needsSetup) throw redirect({ to: "/setup" });
+    if (status?.needsSetup) throw redirect({ to: "/setup", search });
     return { signupOpen: status?.signupOpen === true };
   },
   component: function Login() {
-    return <LoginPage signupOpen={loginRoute.useRouteContext().signupOpen} />;
+    return (
+      <LoginPage
+        signupOpen={loginRoute.useRouteContext().signupOpen}
+        redirect={loginRoute.useSearch().redirect}
+      />
+    );
   },
 });
 
 const signupRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/signup",
-  beforeLoad: async () => {
-    await redirectIfAuthenticated();
+  validateSearch: validateAuthSearch,
+  beforeLoad: async ({ search }) => {
+    await redirectIfAuthenticated(search);
     const status = await fetchSetupStatus();
-    if (!status?.signupOpen) throw redirect({ to: "/login" });
+    if (!status?.signupOpen) throw redirect({ to: "/login", search });
   },
-  component: SignupPage,
+  component: function Signup() {
+    return <SignupPage redirect={signupRoute.useSearch().redirect} />;
+  },
 });
 
 const setupRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/setup",
-  beforeLoad: async () => {
-    await redirectIfAuthenticated();
+  validateSearch: validateAuthSearch,
+  beforeLoad: async ({ search }) => {
+    await redirectIfAuthenticated(search);
     const status = await fetchSetupStatus();
-    if (!status?.needsSetup) throw redirect({ to: "/login" });
+    if (!status?.needsSetup) throw redirect({ to: "/login", search });
   },
-  component: SetupPage,
+  component: function Setup() {
+    return <SetupPage redirect={setupRoute.useSearch().redirect} />;
+  },
 });
 
 export const routeTree = rootRoute.addChildren([
@@ -141,6 +186,8 @@ export const routeTree = rootRoute.addChildren([
   retentionRoute,
   rulesRoute,
   settingsRoute,
+  connectExtensionRoute,
+  connectExtensionDoneRoute,
   loginRoute,
   signupRoute,
   setupRoute,

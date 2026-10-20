@@ -31,6 +31,7 @@ function fakeBrowser(world: World, stored: Record<string, unknown>) {
       onActivated: noop,
       onRemoved: noop,
       query: async () => [],
+      remove: async () => undefined,
     },
     windows: {
       onFocusChanged: noop,
@@ -52,7 +53,11 @@ function fakeBrowser(world: World, stored: Record<string, unknown>) {
     },
     runtime: { onStartup: noop, onInstalled: noop },
     storage: {
-      session: { get: async () => ({ id: "x" }), set: async () => undefined },
+      session: {
+        get: async () => ({ id: "x" }),
+        set: async () => undefined,
+        remove: async () => undefined,
+      },
       local: {
         get: async (keys: string | string[]) => pick(stored, keys),
         set: async (items: Record<string, unknown>) => void Object.assign(stored, items),
