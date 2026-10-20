@@ -10,9 +10,10 @@ import {
   pageVisits,
   pairThroughPopupFirefox,
   storedRuleSetVersionFirefox,
+  syncRulesFirefox,
   triggerFlushFirefox,
-  triggerRulesSyncFirefox,
   visitedPaths,
+  visitFirefox,
 } from "../support/pairing";
 import { LOOPBACK_HOST_PERMISSION, patchBuildWithHostPermissions } from "../support/patched-build";
 import { allowDomainsRule, type PairedAccount, type RuleDocument } from "../support/stack";
@@ -75,22 +76,8 @@ const test = base.extend<{ paired: Paired }>({
   },
 });
 
-/** Navigates and gives the extension a moment to record the visit in its queue. */
-async function visit(firefox: LaunchedFirefoxExtension, tab: FirefoxTab, url: string) {
-  await firefox.navigate(tab, url);
-  await new Promise((resolve) => setTimeout(resolve, 400));
-}
-
-/** Waits until the extension holds the rules of this rule-set version (it syncs on its alarm). */
-async function syncRules(firefox: LaunchedFirefoxExtension, version: number) {
-  await triggerRulesSyncFirefox(firefox);
-  await expect
-    .poll(() => storedRuleSetVersionFirefox(firefox), {
-      timeout: SYNC_TIMEOUT_MS,
-      intervals: [500],
-    })
-    .toBe(version);
-}
+const visit = visitFirefox;
+const syncRules = syncRulesFirefox;
 
 /** The one rule the tests change: allow these domains, then any transforms. */
 const allowRule = (domains: string[], transforms: RuleDocument[] = []): RuleDocument => ({
