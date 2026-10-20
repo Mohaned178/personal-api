@@ -69,6 +69,7 @@ describe("License: AGPL-3.0-only", () => {
     "packages/contracts/package.json",
     "packages/rules/package.json",
     "packages/tsconfig/package.json",
+    "spikes/mv3-lifecycle/package.json",
   ];
 
   it("has a LICENSE file with the AGPL-3.0 text", () => {

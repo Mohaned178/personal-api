@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "description": "THROWAWAY Spike A (M0-10) and Spike C (M2-00b) prototype: capture, IndexedDB queue and focus segments under MV3 service-worker kills (Chromium) and event page suspensions (Firefox). Never shipped; see docs/adr/0002-mv3-state-persistence.md.",
+  "license": "AGPL-3.0-only",
   "scripts": {
     "postinstall": "wxt prepare",
     "build": "wxt build && wxt build -b firefox --mv3",
