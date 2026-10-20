@@ -78,18 +78,26 @@ describe("globMatches: `*` is the only wildcard", () => {
     // 100 rules x 20 `matches_glob` conditions is 2000 evaluations of one 2 KB path.
     const text = "a".repeat(2000);
     const pattern = `*${"a".repeat(254)}b`;
+    // Only the matcher is timed: an `expect` per call made the test measure Vitest's assertion
+    // overhead, which flaked on Windows runners (265 and 486 ms; the matching itself is ~1 ms).
+    const results: boolean[] = [];
     const started = performance.now();
-    for (let i = 0; i < 2000; i++) expect(globMatches(pattern, text)).toBe(false);
-    expect(performance.now() - started).toBeLessThan(250);
+    for (let i = 0; i < 2000; i++) results.push(globMatches(pattern, text));
+    const elapsed = performance.now() - started;
+    expect(results.every((matched) => matched === false)).toBe(true);
+    expect(elapsed).toBeLessThan(250);
   });
 
   it("stays fast when the pieces between the stars are searched too (M4-R S1)", () => {
     const text = "a".repeat(2000);
     const piece = `${"a".repeat(120)}b`;
     for (const pattern of [`*${piece}*`, `*${piece}*${piece}*`, `a*${piece}*${piece}*a`]) {
+      const results: boolean[] = [];
       const started = performance.now();
-      for (let i = 0; i < 200; i++) expect(globMatches(pattern, text)).toBe(false);
-      expect(performance.now() - started).toBeLessThan(250);
+      for (let i = 0; i < 200; i++) results.push(globMatches(pattern, text));
+      const elapsed = performance.now() - started;
+      expect(results.every((matched) => matched === false)).toBe(true);
+      expect(elapsed).toBeLessThan(250);
     }
   });
 
