@@ -241,13 +241,24 @@ export async function startStack(): Promise<E2eStack> {
     throw error;
   }
 
-  const authPost = (path: string, body: unknown): Promise<Response> =>
-    fetch(`${apiOrigin}${path}`, {
-      method: "POST",
-      // Better Auth checks the Origin of browser-style POSTs against BETTER_AUTH_URL.
-      headers: { "content-type": "application/json", origin: apiOrigin },
-      body: JSON.stringify(body),
-    });
+  // Sign-in and sign-up are rate limited per address (3 per 10 s, M7-03), and every test of a
+  // worker comes from 127.0.0.1. A test that signs in quickly (M8-01's browser login) can leave the
+  // next test inside the window, so a 429 waits out the window and tries again, as a polite client
+  // would. The limit itself stays on.
+  const authPost = async (path: string, body: unknown): Promise<Response> => {
+    for (let attempt = 1; ; attempt++) {
+      const res = await fetch(`${apiOrigin}${path}`, {
+        method: "POST",
+        // Better Auth checks the Origin of browser-style POSTs against BETTER_AUTH_URL.
+        headers: { "content-type": "application/json", origin: apiOrigin },
+        body: JSON.stringify(body),
+      });
+      if (res.status !== 429 || attempt === 4) return res;
+      const retryAfter = Number(res.headers.get("x-retry-after") ?? res.headers.get("retry-after"));
+      const seconds = Number.isFinite(retryAfter) && retryAfter > 0 ? Math.min(retryAfter, 15) : 10;
+      await new Promise((resolve) => setTimeout(resolve, seconds * 1000 + 250));
+    }
+  };
 
   const createPairableAccount = async (
     label = "e2e",
