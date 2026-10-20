@@ -1,0 +1,19 @@
+# Keep the build context small and free of secrets. The image is built from the repo, not from
+# anything a developer has on disk (local .env files, data, test output).
+.git
+.github
+.claude
+.playwright-mcp
+**/node_modules
+**/dist
+**/.output
+**/.wxt
+**/.turbo
+**/coverage
+**/playwright-report
+**/test-results
+**/*.tsbuildinfo
+.env
+.env.*
+!.env.example
+data

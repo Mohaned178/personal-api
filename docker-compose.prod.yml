@@ -1,0 +1,110 @@
+# Production stack: Postgres, a one-shot migrate job, the API (dashboard included), the pg-boss
+# worker and Caddy for TLS. The dev stack in docker-compose.yml is separate and unchanged.
+#
+#   cp .env.example .env.production      # then set every secret and PA_DOMAIN
+#   docker compose -f docker-compose.prod.yml --env-file .env.production up -d --build
+#
+# Postgres is not published on the host. The API listens on 3000 inside the network only; Caddy is
+# the one public entry point (80/443). Every secret is required: a missing value stops the stack.
+name: personal-api-prod
+
+x-app-env: &app-env
+  NODE_ENV: production
+  # Built from the Postgres settings below. The app refuses port 5432, so Postgres listens on 5433
+  # inside the network too. Use a password of letters and digits only (no URL escaping needed).
+  DATABASE_URL: postgres://${POSTGRES_USER:?set POSTGRES_USER}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5433/${POSTGRES_DB:?set POSTGRES_DB}
+  BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?set BETTER_AUTH_SECRET}
+  BETTER_AUTH_URL: ${BETTER_AUTH_URL:?set BETTER_AUTH_URL}
+  ALLOW_SIGNUP: ${ALLOW_SIGNUP:-false}
+  # Caddy is the one proxy in front of the API, so rate limits count client addresses from it.
+  TRUST_PROXY: "1"
+  EXPORT_DIR: /data/exports
+
+services:
+  postgres:
+    image: postgres:18.6
+    restart: unless-stopped
+    command: ["postgres", "-p", "5433"]
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:?set POSTGRES_DB}
+    volumes:
+      # PG 18+ image layout: mount the parent dir, not /var/lib/postgresql/data.
+      - pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -p 5433 -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
+  # Runs the drizzle migrations once and exits. The API and the worker wait for it to succeed.
+  migrate:
+    build: .
+    image: personal-api:latest
+    command: ["node", "dist/migrate.js"]
+    environment: *app-env
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  api:
+    build: .
+    image: personal-api:latest
+    command: ["node", "dist/main.js"]
+    restart: unless-stopped
+    environment: *app-env
+    expose:
+      - "3000"
+    volumes:
+      - exports:/data/exports
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:3000/healthz').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))"
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 15s
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  worker:
+    build: .
+    image: personal-api:latest
+    command: ["node", "dist/worker.js"]
+    restart: unless-stopped
+    environment: *app-env
+    volumes:
+      - exports:/data/exports
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  # Example TLS front door: Caddy obtains and renews the certificate for PA_DOMAIN. See deploy/Caddyfile.
+  caddy:
+    image: caddy:2.10.2-alpine
+    restart: unless-stopped
+    environment:
+      PA_DOMAIN: ${PA_DOMAIN:?set PA_DOMAIN}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      api:
+        condition: service_healthy
+
+volumes:
+  pgdata:
+  exports:
+  caddy_data:
+  caddy_config:

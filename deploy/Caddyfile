@@ -1,0 +1,7 @@
+# Example reverse proxy for docker-compose.prod.yml. Caddy gets and renews the TLS certificate for
+# PA_DOMAIN and forwards every request to the API, which serves the dashboard too. Behind this proxy
+# set TRUST_PROXY=1 (the prod compose file does).
+{$PA_DOMAIN} {
+	encode zstd gzip
+	reverse_proxy api:3000
+}

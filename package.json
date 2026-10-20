@@ -21,7 +21,9 @@
     "test:int": "turbo run test:int",
     "worker": "pnpm --filter @personal-api/api worker",
     "test:e2e": "turbo run test:e2e",
-    "e2e:install": "pnpm --filter @personal-api/e2e e2e:install"
+    "e2e:install": "pnpm --filter @personal-api/e2e e2e:install",
+    "licenses:check": "node scripts/license-check.mjs",
+    "audit:prod": "pnpm audit --prod"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.14",

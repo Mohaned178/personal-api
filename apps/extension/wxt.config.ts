@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import { defineConfig } from "wxt";
 
 // Only the four permissions the plan allows. The API origin is requested at runtime
@@ -6,6 +7,22 @@ import { defineConfig } from "wxt";
 export default defineConfig({
   // The API uses 3000 (and the web dev server proxies to it), so the WXT dev server stays off it.
   dev: { server: { port: 3100, origin: "http://localhost:3100" } },
+  zip: {
+    // The Firefox sources zip (AMO reviews it) must build the extension on its own. The extension
+    // imports the workspace packages, so the zip covers the repo root, not this folder.
+    sourcesRoot: fileURLToPath(new URL("../..", import.meta.url)),
+    excludeSources: [
+      "**/dist/**",
+      "**/.output/**",
+      "**/.wxt/**",
+      "**/coverage/**",
+      "**/playwright-report/**",
+      "**/test-results/**",
+      "**/*.tsbuildinfo",
+      "data/**",
+      ".playwright-mcp/**",
+    ],
+  },
   manifest: ({ browser }) => ({
     name: "Personal API",
     description:
