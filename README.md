@@ -21,6 +21,8 @@ define. Every account is separate, and nothing is collected until you allow a si
 - **Your own endpoints.** A saved query becomes `GET /v1/me/<slug>`, with a read key that can only
   read that endpoint.
 - **Export and delete.** Export your data as gzipped NDJSON, or delete the account and all of its data.
+  In v1 these are API-only (`POST /v1/exports`, `DELETE /v1/account`, see [docs/api.md](docs/api.md));
+  the dashboard screens come in v1.1.
 
 ## Self-host with Docker (production)
 
@@ -47,9 +49,7 @@ pnpm install
 cp .env.example .env                   # set BETTER_AUTH_SECRET (at least 32 characters)
 pnpm db:up                             # Postgres 18 in Docker, on localhost:5433
 pnpm db:migrate
-pnpm --filter @personal-api/contracts build
-pnpm --filter web build
-pnpm --filter api build
+pnpm build                             # contracts, rules, dashboard, API and the extension
 pnpm --filter api start                # API and dashboard on http://localhost:3000
 ```
 
@@ -59,13 +59,17 @@ Generate `BETTER_AUTH_SECRET` with
 Open <http://localhost:3000> and create the first account. With the default `ALLOW_SIGNUP=false`,
 only the first account can sign up. The API's routes are described in [docs/api.md](docs/api.md),
 and the dashboard runs on its own with `pnpm --filter web dev` (it proxies `/api` and `/v1` to the
-API on port 3000).
+API on port 3000). The Vite dev server is served from <http://localhost:5173>, and the API's CSRF
+check refuses a mutation whose `Origin` is not `BETTER_AUTH_URL`. When you use the dev server, set
+`BETTER_AUTH_URL=http://localhost:5173` in `.env` and restart the API.
 
 Postgres runs on port **5433** on purpose. Never point this project at port 5432.
 
 ## Install the browser extension from source
 
-Build the extension from this repository. The Firefox build is the reference target.
+Build the extension from this repository. The Firefox build is the reference target. Run
+`pnpm build` once after `pnpm install` first: the extension imports the `contracts` and `rules`
+packages, which must be built before `build:firefox` or `build:chrome` can run.
 
 **Firefox (primary):**
 
@@ -118,3 +122,7 @@ pnpm test:e2e        # Firefox end-to-end tests (Selenium + geckodriver)
 ```
 
 The rules and guardrails for contributors are in [CLAUDE.md](CLAUDE.md).
+
+## License
+
+[GNU Affero General Public License v3.0 only](LICENSE) (`AGPL-3.0-only`).

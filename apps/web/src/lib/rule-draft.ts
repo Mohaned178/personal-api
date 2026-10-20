@@ -7,14 +7,14 @@ import {
   type RuleFieldKind,
   type RuleOp,
   type RuleStage,
-  ruleDefinitionSchema,
   ruleFieldRegistry,
+  ruleSaveSchema,
   toContractIssues,
 } from "@personal-api/contracts";
 
 /**
  * The rule form's state and its two-way mapping to the rule document. The form keeps every value
- * as text; `draftToRule` turns it into the document, and the contracts' `ruleDefinitionSchema`
+ * as text; `draftToRule` turns it into the document, and the contracts' `ruleSaveSchema`
  * (the schema the API and the engine use) is the only judge of whether that document is valid.
  * Pure, with no I/O.
  */
@@ -213,7 +213,7 @@ export type RuleValidation =
 
 /** Checks a rule document with the shared schema. Messages are fixed strings, never the input. */
 export function validateRule(document: unknown): RuleValidation {
-  const parsed = ruleDefinitionSchema.safeParse(document);
+  const parsed = ruleSaveSchema.safeParse(document);
   return parsed.success
     ? { ok: true, rule: parsed.data }
     : { ok: false, issues: toContractIssues(parsed.error.issues) };

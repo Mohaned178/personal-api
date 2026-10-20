@@ -315,6 +315,31 @@ function validateRule(rule: RuleBase, ctx: z.RefinementCtx): void {
 export const ruleDefinitionSchema = z.strictObject(ruleBaseShape).superRefine(validateRule);
 export type RuleDefinition = z.output<typeof ruleDefinitionSchema>;
 
+/**
+ * Actions the engine still understands but the save path rejects in v1. `keep_query` is reserved
+ * for v1.1: URLs always lose their query string and fragment (invariant 3). Rules that already
+ * hold one still load and run, so the engine never fails closed on stored data.
+ */
+export const SAVE_RESERVED_ACTIONS = ["keep_query"] as const;
+
+const RESERVED_FOR_LATER = safeMessage("This action is reserved for a later version");
+
+/**
+ * What `POST`/`PUT /v1/rules`, the dry run and the dashboard editor accept: a definition without
+ * the actions in `SAVE_RESERVED_ACTIONS`. Use `ruleDefinitionSchema` for anything already stored.
+ */
+export const ruleSaveSchema = ruleDefinitionSchema.superRefine((rule, ctx) => {
+  rule.then.forEach((action, index) => {
+    if ((SAVE_RESERVED_ACTIONS as readonly string[]).includes(action.action)) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["then", index, "action"],
+        message: RESERVED_FOR_LATER,
+      });
+    }
+  });
+});
+
 /** A stored rule: the definition plus the id the server gave it. What the engine runs. */
 export const ruleSchema = z
   .strictObject({ id: z.uuid(), ...ruleBaseShape })

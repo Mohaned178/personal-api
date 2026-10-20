@@ -3,7 +3,7 @@
 - **Status:** Accepted (M0-11, 2026-10-14).
 - **Source:** `docs/PLAN.md` §2 (tech stack). This ADR records what was actually pinned and where it
   deviates.
-- **Affects:** every package; revisit Node at M7 (hardening).
+- **Affects:** every package; revisit Node after 2026-10-28 (deviation 3).
 
 ## Context
 
@@ -31,6 +31,7 @@ Keep the stack in PLAN §2, with the deviations below. Pins live in the `package
 | Database | PostgreSQL | 18.6 (image `postgres:18.6`) | `docker-compose.yml` |
 | Job queue | pg-boss | 12.35.0 | `apps/api` |
 | Dashboard auth | better-auth | 1.7.6 | `apps/api` |
+| Security headers | helmet | 8.3.0 | `apps/api` |
 | Contracts | zod | 4.6.5 | `apps/api` (contracts package to follow) |
 | Logging | nestjs-pino / pino / pino-http | 5.2.1 / 10.3.1 / 11.0.0 | `apps/api` |
 | Unit and integration tests | vitest | 5.0.2 | `apps/api`, `apps/extension`, `spikes/mv3-lifecycle` |
@@ -50,8 +51,9 @@ Keep the stack in PLAN §2, with the deviations below. Pins live in the `package
 2. **TypeScript 6 instead of 7.** Better Auth and `@nestjs/swagger` peer ranges do not yet allow
    TypeScript 7. TypeScript 6.0.3 is pinned.
 3. **Node 24 is now Maintenance LTS** (from 2026-10-20). The project stays on Node 24 for M0 to
-   M6. Node 26 becomes LTS on 2026-10-28; revisit the runtime at M7 (hardening) and move the
-   `engines` and `.nvmrc` only in a deliberate change.
+   M6, and **v1.0 ships on Node 24** (decided at the M7-R review, 2026-10-20). Node 26 becomes LTS
+   on 2026-10-28; revisit the runtime after that date, and move the `engines` and `.nvmrc` only in
+   a deliberate change.
 4. **Better Auth is mounted by hand**, not through `@thallesp/nestjs-better-auth`. The signup gate
    (`ALLOW_SIGNUP`) has to wrap the request before Better Auth sees it, and the wrapper package
    does not offer that hook. Better Auth's route also needs the raw body, so it is excluded from
@@ -73,6 +75,12 @@ Keep the stack in PLAN §2, with the deviations below. Pins live in the `package
 9. **Bundled Chromium for e2e.** Playwright uses its own bundled Chromium (`pnpm e2e:install`), not
    the system Chrome, so runs are reproducible across machines and CI. The extension is loaded
    unpacked into that browser.
+
+10. **Our own rate limiter instead of `@nestjs/throttler`.** PLAN §2 listed the throttler. The
+    limits need a per-key budget (ingest and read keys), a per-address budget behind
+    `TRUST_PROXY`, and a clock the tests can fix. A small in-process `RateLimiter`
+    (`apps/api/src/platform/rate-limit`) does that with no extra dependency, and Better Auth's own
+    limiter covers login. Limits are per process, which fits the single-instance deployment.
 
 ## Consequences
 

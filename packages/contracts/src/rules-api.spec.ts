@@ -45,6 +45,10 @@ describe("testRuleRequestSchema", () => {
       { ...base, rule, replaceRuleId: RULE_ID, onlyRule: true },
     ],
     ["an invalid draft", { ...base, rule: { ...rule, priority: -1 } }],
+    [
+      "a draft with the reserved keep_query action",
+      { ...base, rule: { ...rule, then: [{ action: "allow" }, { action: "keep_query" }] } },
+    ],
     ["an unknown key", { ...base, userId: "someone" }],
     ["an unknown source", { ...base, source: "mobile" }],
     ["a non-object event", { ...base, event: "page" }],

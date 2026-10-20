@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "description": "Zod schemas shared by the API, the extension and the dashboard.",
+  "license": "AGPL-3.0-only",
   "type": "module",
   "main": "./dist/cjs/index.js",
   "module": "./dist/esm/index.js",

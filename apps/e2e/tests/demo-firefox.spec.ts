@@ -191,6 +191,10 @@ test("the full 8-step demo on Firefox", async ({ stack, site }) => {
         headers: { authorization: `Bearer ${ingestKey}` },
       });
       expect(withIngestKey.status).toBe(401);
+      // The same holds the other way round on the endpoint route: the general read key has no
+      // `endpoint:<id>` scope (one 404, which hides the slug), and an ingest key is not a read key.
+      expect((await readEndpoint(readKey)).status).toBe(404);
+      expect((await readEndpoint(ingestKey)).status).toBe(401);
     });
 
     // ---- 7. change the rule ----------------------------------------------------------------
@@ -277,6 +281,9 @@ test("the full 8-step demo on Firefox", async ({ stack, site }) => {
         ["rules", "user_id"],
         ["endpoints", "user_id"],
         ["api_keys", "user_id"],
+        ["session", "user_id"],
+        ["account", "user_id"],
+        ["exports", "user_id"],
         ["user", "id"],
       ] as const) {
         const { rows } = await stack.pool.query<{ n: string }>(

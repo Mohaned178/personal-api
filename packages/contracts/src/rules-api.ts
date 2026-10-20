@@ -2,7 +2,7 @@ import { z } from "zod";
 import { safeMessage } from "./errors.js";
 import { DEFAULT_POLICIES, INTEGRATION_KINDS } from "./integrations.js";
 import { ruleTraceSchema } from "./rule-trace.js";
-import { ruleDefinitionSchema, ruleSchema, ruleSetSchema } from "./rules.js";
+import { ruleSaveSchema, ruleSchema, ruleSetSchema } from "./rules.js";
 
 /**
  * Rules API DTOs (PLAN §6, `/v1/rules`). A rule is submitted as a `RuleDefinition`; the server
@@ -43,7 +43,7 @@ export const testRuleRequestSchema = z
     event: z.record(z.string(), z.unknown()),
     source: z.enum(INTEGRATION_KINDS),
     defaultPolicy: z.enum(DEFAULT_POLICIES).default("deny"),
-    rule: ruleDefinitionSchema.optional(),
+    rule: ruleSaveSchema.optional(),
     replaceRuleId: z.uuid().optional(),
     onlyRule: z.boolean().optional(),
   })

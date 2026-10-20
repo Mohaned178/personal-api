@@ -17,7 +17,9 @@ x-app-env: &app-env
   BETTER_AUTH_URL: ${BETTER_AUTH_URL:?set BETTER_AUTH_URL}
   ALLOW_SIGNUP: ${ALLOW_SIGNUP:-false}
   # Caddy is the one proxy in front of the API, so rate limits count client addresses from it.
-  TRUST_PROXY: "1"
+  # If you publish the API port directly (no proxy in front), set TRUST_PROXY=0 in the env file;
+  # otherwise a client could choose its own address for the rate limits.
+  TRUST_PROXY: ${TRUST_PROXY:-1}
   EXPORT_DIR: /data/exports
 
 services:

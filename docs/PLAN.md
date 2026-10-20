@@ -12,8 +12,10 @@
 | Where it runs | **Self-hosted, multi-account.** One `docker compose up` on a PC or VPS. Every row is scoped to a user, so hosting for others stays possible later. |
 | Rule authoring | **A JSON rule format edited through a dashboard form**, with a "view/edit JSON" toggle and a "test this rule" preview. |
 | Endpoint customization | **Fixed endpoints plus user-defined saved queries** at `/v1/me/:slug`, each behind an API key scoped to that endpoint. |
-| UI | **A web dashboard** for events, rules, keys, export/delete and health, plus a **small extension popup** for connecting, pausing and queue status. |
-| Default URL capture | **Domain and path only.** The query string and `#fragment` are always stripped unless a rule opts a domain in. |
+| UI | **A web dashboard** for events, rules, keys, health, and (from v1.1) export/delete, plus a **small extension popup** for connecting, pausing and queue status. |
+| Default URL capture | **Domain and path only.** The query string and `#fragment` are always stripped in v1. Opting a domain in with a `keep_query` rule is reserved for v1.1 (decided at the M7-R review, 2026-10-20): the rules API rejects the action on save. |
+| Export and account deletion | **API-only in v1** (`POST /v1/exports`, `DELETE /v1/account`, decided at the M7-R review, 2026-10-20). The README and `docs/api.md` say so; the dashboard screens come in v1.1. |
+| License | **AGPL-3.0-only** (decided at the M7-R review, 2026-10-20): the `LICENSE` file and a `license` field in every `package.json`. |
 | Default collection policy | **Deny by default.** A fresh extension collects nothing until the user allows a site. This matches demo step 3 and "explicitly configure what may be collected". |
 | Element interactions | **Deferred to v1.1.** v1 uses only the tabs and idle APIs, with no content scripts. |
 | Browsers | **Firefox first, then Edge, then Chrome.** Two MV3 builds from one WXT codebase (`firefox-mv3` with an event-page background, `chrome-mv3` for Edge, and later Chrome). Firefox is the primary target: the full demo e2e runs on it, and Firefox-specific behaviour wins when the browsers differ. Edge is second: a smoke e2e in CI. v1 ships through Firefox Add-ons (AMO) first, then Edge Add-ons (both free). Chrome comes after v1 (v1.1): a Chrome smoke e2e and a Chrome Web Store listing. Until then Chrome, Brave and Opera can load the Edge build but are untested. Changed 2026-10-14 (Firefox + Edge) and 2026-10-18 (Firefox first, Chrome after v1). |
@@ -29,7 +31,7 @@ The whole project uses TypeScript in strict mode. Coming from JavaScript, this i
 | Concern | Choice | Why |
 | --- | --- | --- |
 | Runtime | **Node 24 LTS**, **pnpm** workspaces + **Turborepo** | Standard monorepo. One install, cached builds. |
-| Backend | **NestJS 11** on the default **Express 5** platform, with `nestjs-zod` + `@nestjs/swagger`, `@nestjs/throttler` and `nestjs-pino` | Modules and dependency injection keep about 8 domain areas organized. Guards cover the three auth types (session, ingest key, read key) and per-user scoping. The worker reuses the same services through a standalone app context. Express is used over the Fastify adapter because Better Auth, nestjs-zod and Swagger support it best, and raw speed isn't a constraint at this volume. |
+| Backend | **NestJS 11** on the default **Express 5** platform, with `nestjs-zod` + `@nestjs/swagger` and `nestjs-pino`, with `helmet` for headers and an in-process rate limiter of our own (`platform/rate-limit`, plus Better Auth's limiter for login) instead of `@nestjs/throttler`, see ADR 0001 | Modules and dependency injection keep about 8 domain areas organized. Guards cover the three auth types (session, ingest key, read key) and per-user scoping. The worker reuses the same services through a standalone app context. Express is used over the Fastify adapter because Better Auth, nestjs-zod and Swagger support it best, and raw speed isn't a constraint at this volume. |
 | Database | **PostgreSQL 18** | JSONB for payloads with GIN indexes when needed. Unique constraints give real dedupe and transactions give safe ingest. Native `uuidv7()`. It also hosts the job queue, so there's no Redis. SQLite is too weak for multi-account use plus a queue plus a concurrent worker. |
 | Data access | **Drizzle ORM** + drizzle-kit migrations | TS-first and close to SQL. Dynamic JSONB filters for saved queries are built with its query builder, never with string SQL. One tool instead of Prisma + Kysely. |
 | Jobs | **pg-boss** | A Postgres-backed queue with retries, cron and a dead-letter queue. Used for retention purges, bulk deletes, exports and (later) webhook delivery. |
@@ -155,7 +157,7 @@ Page titles, full URLs, form contents, keystrokes and incognito activity are **n
 ```
 
 - **Conditions:** `source`, `type` (with `*` glob), and `all`/`any`/`none` lists of `{field, op, value}`. Ops: `eq`, `neq`, `in`, `starts_with`, `ends_with`, `contains`, `domain_matches` (exact or `*.example.com`), `matches_glob`, `gt/lt` for numbers and times, `exists`. **No regex in v1** (to avoid ReDoS) and **no code execution, ever**.
-- **Collect-stage actions** (run in the extension and on the server): `allow`, `drop` (terminal), `redact` (remove a field), `coarsen` (path → first N segments, or path → none), `keep_query` (opt in to the full URL for this match).
+- **Collect-stage actions** (run in the extension and on the server): `allow`, `drop` (terminal), `redact` (remove a field), `coarsen` (path → first N segments, or path → none), `keep_query` (reserved for v1.1: the rules API rejects it on save, and v1 always strips the query string).
 - **Process-stage actions** (server only): `tag`, `set_retention` (days). `forward` (webhook) is reserved in the schema and ships in v1.1.
 - **Evaluation:** rules are sorted by priority. Transforms apply in order. The **first terminal action decides** the outcome. If no rule decides, the integration's `default_policy` decides (deny for a new extension). On a conflict at the same priority, **drop beats allow**.
 - **Explainability:** every stored event carries `trace = {ruleSetVersion, matched: [{ruleId, actions}], decidedBy}`. The dashboard shows "why is this here", and the popup shows "this page: collected / blocked by rule X" for the current tab using the same engine.
@@ -179,6 +181,7 @@ Errors use RFC 9457 `application/problem+json`. Lists use keyset cursors on `(oc
 | ingest key | `POST /v1/ingest/events` | Batch of up to 100 events and 256 KB. Returns per-item results. |
 | ingest key | `GET /v1/ingest/config` | Collect rules, rule-set version and the integration's `defaultPolicy`, with ETag. `browser-extension` integrations only; an `http` key gets `403 ingest.config_unsupported` |
 | ingest key | `POST /v1/ingest/heartbeat` | Queue depth, oldest queued age, version |
+| session | `GET /v1/me` | The signed-in user (`id`, `email`, `name`), from the session only |
 | session | `/v1/integrations` (CRUD, pairing code, revoke) | Connect and disconnect sources |
 | session | `/v1/rules` (CRUD), `POST /v1/rules/test` | Manage rules and dry-run them against a sample event |
 | session | `DELETE /v1/events` (ids: 200; filter: 202 job), `GET /v1/events/deletions/:id`, `DELETE /v1/integrations/:id/data`, `/v1/exports` (`POST` 202 job, `GET` list, `GET /:id`, `GET /:id/download` NDJSON.gz, `GET /:id/manifest`; 409 `export.not_ready`, 410 `export.expired`), `/v1/retention` | Data management |
@@ -209,7 +212,7 @@ Errors use RFC 9457 `application/problem+json`. Lists use keyset cursors on `(oc
 - Every query is scoped by `user_id` from the auth context through repository helpers. **A cross-tenant test suite** checks that user B's session and keys get a 404 for every one of user A's resources. Postgres RLS is planned as hardening in v1.1.
 - Keys are hashed at rest and shown once. Each key has a prefix for identification and a `last_used_at`. Revocation takes effect immediately.
 - Logs never contain payloads, URLs, domains or keys. pino uses a redaction list, and a test asserts it.
-- Dashboard: secure, HttpOnly, SameSite=Lax cookies, CSRF protection on mutations, and a rate limit on login and pairing.
+- Dashboard: secure, HttpOnly, SameSite=Lax cookies, CSRF protection on mutations, and rate limits on login, pairing, ingest (per key) and reads (per read key).
 - Signups can be disabled after the first account exists (self-host admin setting).
 - Deletion is a hard delete. The docs state that database backups keep deleted data until they rotate.
 - Event types say which part of the system produced them (`origin` + integration), so collected, imported and derived data stay distinguishable.
@@ -229,9 +232,14 @@ personal-api/
   packages/contracts/  Zod: envelope, event types, API DTOs, rule + saved-query schemas
   packages/rules/      Pure rule engine (no Node/DOM deps). The saved-query schema and validator live in contracts (M5-04).
   packages/tsconfig/   Shared TS config
-  docs/                PLAN.md, self-hosting.md, event-types.md, rule-format.md, saved-queries.md, api.md, adr/
-  docker-compose.yml   postgres (5433), api, worker
-  CLAUDE.md
+  docs/                PLAN.md, self-hosting.md, event-types.md, rule-format.md, saved-queries.md, api.md,
+                       export-format.md, data-lifecycle.md, threat-model.md, extension-build.md, adr/
+  deploy/Caddyfile     TLS reverse proxy example for the production stack
+  scripts/             license-check.mjs (fails CI on a production dependency outside the allowlist)
+  Dockerfile           one production image for the API (dashboard included), the worker and the migrate job
+  docker-compose.yml       dev: Postgres only (5433); run the API and worker from the repo
+  docker-compose.prod.yml  production: postgres, one-shot migrate, api, worker and Caddy
+  README.md, CHANGELOG.md, LICENSE (AGPL-3.0-only), CLAUDE.md
 ```
 
 ---
@@ -360,7 +368,7 @@ Targets changed on 2026-10-14: Firefox + Edge (free stores only) instead of Chro
 - [x] **M7-05 [H · medium] Production packaging:** extension zips for AMO (first, with its source-code bundle) and then Edge Add-ons, a multi-stage Dockerfile, a compose prod profile, a Caddy example, and dependency audit and license check. *(Decided 2026-10-20: migrations run in a one-shot `migrate` service (`dist/migrate.js`, drizzle migrator) that `api` and `worker` wait for. The prod stack is its own file, `docker-compose.prod.yml`, so `pnpm db:up` and the dev Postgres port are unchanged. The license check is `pnpm licenses:check` in CI; `pnpm audit:prod` is advisory.)*
 - [x] **M7-06 [H · low] Docs:** README quickstart and `self-hosting.md` (TLS, backups, upgrades), with `rule-format.md` and `api.md` finalized. *(Done: the owner-first order, backup and restore, and the Caddyfile were checked against a local prod stack; `api.md` gained the browser-extension pairing flow. Open: `keep_query` is accepted but does nothing in v1, which differs from §3 and §5. The owner must decide it, see `rule-format.md` open item 2.)*
 - [x] **M7-07 [H · low] Release prep:** CHANGELOG and version bump. Tagging `v1.0.0` needs the user's approval. *(Done: `CHANGELOG.md` has a `1.0.0 - Unreleased` entry. The shipped packages (root, api, web, extension, contracts, rules) are at `1.0.0`, and the extension's `CLIENT_VERSION` matches. No tag was created. Open: `keep_query` is still a no-op in v1, listed under Known limitations; see `rule-format.md` open item 2.)*
-- [ ] **M7-R [O · xhigh] Final review.**
+- [x] **M7-R [O · xhigh] Final review.** *(Done 2026-10-20: approved with fixes, no blockers. The fixes landed in the `m7-r-review-fixes` PR: the sources-zip and Docker-context excludes, README and build docs, `TRUST_PROXY` default, `keep_query` reserved for v1.1, AGPL-3.0-only, and this plan's drift. Tagging `v1.0.0` needs the user's approval.)*
 
 ### v1.1 and later (explicitly out of v1)
 

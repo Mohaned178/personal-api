@@ -1,7 +1,14 @@
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import { toContractIssues } from "./errors.js";
-import { RESERVED_ACTIONS, RULE_LIMITS, ruleDefinitionSchema, ruleSchema } from "./rules.js";
+import {
+  RESERVED_ACTIONS,
+  RULE_LIMITS,
+  ruleDefinitionSchema,
+  ruleSaveSchema,
+  ruleSchema,
+  SAVE_RESERVED_ACTIONS,
+} from "./rules.js";
 
 const RULE_ID = "0192f1c2-7c1e-7a3b-9f00-1c2d3e4f5a6b";
 
@@ -709,5 +716,38 @@ describe("ruleDefinitionSchema: safety", () => {
         ).not.toThrow();
       }),
     );
+  });
+});
+
+// M7-R: `keep_query` is reserved for v1.1. The save path rejects it with a stable, fixed message
+// (as it does `forward`), while stored rules that already use it still load and run.
+describe("ruleSaveSchema: keep_query is reserved for v1.1", () => {
+  const withKeepQuery = collectRule({ then: [{ action: "allow" }, { action: "keep_query" }] });
+
+  it("names keep_query as the one save-reserved action", () => {
+    expect(SAVE_RESERVED_ACTIONS).toEqual(["keep_query"]);
+  });
+
+  it("rejects it on save, pointing at the action with a fixed message", () => {
+    const result = ruleSaveSchema.safeParse(withKeepQuery);
+    expect(result.success).toBe(false);
+    if (result.success) return;
+    const issues = toContractIssues(result.error.issues);
+    expect(issues.map((issue) => issue.path.join("."))).toEqual(["then.1.action"]);
+    expect(JSON.stringify(issues)).not.toContain("github.com");
+  });
+
+  it("still accepts every other action", () => {
+    expect(ruleSaveSchema.safeParse(collectRule()).success).toBe(true);
+    expect(ruleSaveSchema.safeParse(processRule()).success).toBe(true);
+    const coarsen = collectRule({
+      then: [{ action: "allow" }, { action: "coarsen", segments: 1 }],
+    });
+    expect(ruleSaveSchema.safeParse(coarsen).success).toBe(true);
+  });
+
+  it("does not make the engine's schemas stricter: a stored rule with keep_query still loads", () => {
+    expect(ok(withKeepQuery)).toBe(true);
+    expect(ruleSchema.safeParse({ id: RULE_ID, ...withKeepQuery }).success).toBe(true);
   });
 });

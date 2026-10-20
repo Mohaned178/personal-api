@@ -156,6 +156,16 @@ describe("rules page", () => {
     expect(screen.queryByRole("region", { name: /new rule/i })).toBeNull();
   });
 
+  it("does not offer keep_query, which the server rejects until v1.1", async () => {
+    mount("/rules");
+    fireEvent.click(await screen.findByRole("button", { name: "New rule" }));
+    const select = (await screen.findByLabelText(/action 1 type/i)) as HTMLSelectElement;
+    const names = Array.from(select.options).map((option) => option.value);
+    expect(names).toContain("allow");
+    expect(names).toContain("coarsen");
+    expect(names).not.toContain("keep_query");
+  });
+
   it("shows the problems of an invalid rule and sends nothing", async () => {
     mount("/rules");
     fireEvent.click(await screen.findByRole("button", { name: "New rule" }));
