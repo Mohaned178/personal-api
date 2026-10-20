@@ -33,8 +33,9 @@ same body shape (email and password) and `-c "$JAR"`.
 ## 2. Create an `http` integration
 
 `POST /v1/integrations` needs the session cookie (`-b "$JAR"`). The integration belongs to the
-signed-in user; the body cannot name a user. Only `kind: "http"` is accepted here (browser
-integrations come from pairing, M2-01). New integrations start with `defaultPolicy: "deny"`.
+signed-in user; the body cannot name a user. `kind: "http"` gets its ingest key in this response.
+`kind: "browser-extension"` gets no key here; see [Browser-extension integrations](#browser-extension-integrations).
+New integrations start with `defaultPolicy: "deny"`.
 
 ```bash
 curl -s -X POST "$BASE/v1/integrations" \
@@ -72,6 +73,31 @@ Set the key for the next calls:
 export KEY=pa_ing_<paste-the-key-from-the-previous-response>
 ```
 
+### Browser-extension integrations
+
+An extension integration is created and then paired. Pairing hands it its ingest key once:
+
+```bash
+# 1. Create the integration (no key yet)
+curl -s -X POST "$BASE/v1/integrations" -H "Content-Type: application/json" -b "$JAR" \
+  -d '{"kind":"browser-extension","name":"Firefox laptop"}'
+
+# 2. A 10-minute pairing code for it (session cookie). Issuing a new code invalidates the old one.
+curl -s -X POST "$BASE/v1/integrations/<integration-id>/pairing-code" -b "$JAR"
+# 201 {"pairingCode":"GBQH-71ED-NXVT-J45S-JYD9","expiresAt":"…"}
+
+# 3. The extension redeems the code once. No cookie or key: the code is the credential.
+curl -s -X POST "$BASE/v1/pair" -H "Content-Type: application/json" \
+  -d '{"pairingCode":"GBQH-71ED-NXVT-J45S-JYD9"}'
+# 200 {"integration":{…},"ingestKey":{"id":"…","key":"pa_ing_…","prefix":"pa_ing_…"}}
+```
+
+The ingest key in step 3 is shown once (`Cache-Control: no-store`). A redeemed or expired code
+is `400 pairing.code_invalid`. Only an active browser-extension integration can be paired
+(`409 pairing.integration_not_pairable`). `POST /v1/pair` allows 10 attempts a minute per client
+address (`429 pairing.rate_limited`). The extension then reads its rules with
+`GET /v1/ingest/config` (section 4).
+
 ## 3. Ingest a batch
 
 `POST /v1/ingest/events` takes `Authorization: Bearer <ingest key>`. The key decides the user and
@@ -103,7 +129,9 @@ curl -s -X POST "$BASE/v1/ingest/events" \
   }'
 ```
 
-Response: `200` with one result per event, in request order:
+A new integration has `defaultPolicy: "deny"` and no rules. Until a rule allows `example.com`
+(create one in [section 6](#6-rules-dashboard)), the first event comes back `dropped`, not
+`accepted`. Once that rule exists, the response is `200` with one result per event, in request order:
 
 ```json
 {
@@ -456,6 +484,9 @@ Errors are `application/problem+json` (RFC 9457) with a stable `code`:
 | 429  | `account.rate_limited`     | `DELETE /v1/account`: 5 attempts in 15 minutes for this account. `Retry-After` says when to try again. |
 | 429  | `ingest.rate_limited`      | More than 120 requests a minute with one ingest key (events, config and heartbeat together). `Retry-After` says when to try again. |
 | 403  | `ingest.config_unsupported` | `GET /v1/ingest/config` only: the key belongs to an `http` integration, not a browser extension. |
+| 400  | `pairing.code_invalid`     | `POST /v1/pair`: the code is unknown, expired, already redeemed or malformed.          |
+| 409  | `pairing.integration_not_pairable` | `POST /v1/integrations/<id>/pairing-code`: the integration is not an active browser-extension integration. |
+| 429  | `pairing.rate_limited`     | `POST /v1/pair`: more than 10 attempts a minute from one client address. `Retry-After` says when to try again. |
 | 404  | `integration.not_found`    | The integration id is unknown, belongs to another user, or is malformed (all look the same). |
 | 404  | `rule.not_found`           | The rule id is unknown, belongs to another user, or is malformed (all look the same). |
 | 409  | `rule.limit_reached`       | The user already has 100 rules.                                                        |

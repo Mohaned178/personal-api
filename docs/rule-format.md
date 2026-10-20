@@ -1,10 +1,11 @@
 # Rule format
 
-> **Status:** implemented through M4. The schema is `packages/contracts/src/rules.ts`,
-> `rule-fields.ts` and `rule-glob.ts` (M4-01), validated on save by the rules API (M4-04). The
-> engine is `packages/rules` (M4-02, M4-03), run by the server at ingest (M4-05) and by the
-> extension (M4-06). Items marked ⚑ were chosen in M4-01 and are still open to change; the
-> [Open items](#open-items) section lists what is unresolved.
+> **Status:** the v1 format, implemented through M4 and reviewed for v1.0 in M7-06. The schema is
+> `packages/contracts/src/rules.ts`, `rule-fields.ts` and `rule-glob.ts`, validated on save by the
+> rules API. The engine is `packages/rules`, run by the server at ingest and by the extension.
+> Items marked ⚑ are design choices the owner still has to confirm. The
+> [Open items](#open-items) section lists what is unresolved. One of them, `keep_query`, is
+> accepted but does nothing in v1, which differs from the plan (PLAN §3 and §5).
 
 A rule says which events it applies to (`when`) and what to do with them (`then`). Users edit it
 in the dashboard form or as JSON. The same document is stored, sent to the extension and run by
@@ -135,7 +136,7 @@ fails to match only keeps something out. So the default stays safe either way.
 | `drop`          | none                            | collect   | Terminal: do not collect. Beats `allow` at the same priority.                               |
 | `redact`        | `field`                         | collect   | Remove an **optional** field from `data`.                                                   |
 | `coarsen`       | `segments` (0 to 10)            | collect   | Keep the first N segments of `data.path`. `0` leaves `/` (the path is required).           |
-| `keep_query`    | none                            | collect   | Opt this match in to keeping the query string. ⚑ See [Open items](#open-items).             |
+| `keep_query`    | none                            | collect   | Meant to opt this match in to keeping the query string. **Not implemented in v1:** the query is always stripped. ⚑ See [Open items](#open-items). |
 | `tag`           | `tag`                           | process   | Add a tag. Lowercase, starts with a letter or digit, then letters, digits, `_ . : -`, max 32. |
 | `set_retention` | `days` (1 to 3650)              | process   | Keep the event this many days.                                                              |
 | `forward`       | (reserved)                      | v1.1      | Webhook. The name is reserved: **a rule that uses it is rejected on save**, never ignored.  |
@@ -378,7 +379,7 @@ no rules) is never trusted.
    only `drop` rules. `evaluate` is pinned by a "known limitation" test until then. The M4-03 property tests claim a
    stable *event* on re-evaluation only for rule sets whose conditions read fields no rule rewrites
    (`evaluate.property.spec.ts`); the transforms are idempotent unconditionally.
-2. **`keep_query` has nowhere to put the query (before M4-06).** *M4-05: the server ignores
+2. **`keep_query` is accepted but does nothing in v1 (decision needed).** *M4-05: the server ignores
    `keepQuery` and the query stays stripped.* The action exists and
    takes no parameters, and the engine reports `keepQuery: true`. But every event schema is
    strict and `path` rejects `?` and `#`. Keeping a query needs an event-schema change (for
