@@ -51,7 +51,11 @@ The user is always your session's user. The body cannot name another user.
 
 `status` is one of `queued`, `running`, `completed` or `failed`. `eventCount`, `sizeBytes`,
 `finishedAt` and `expiresAt` are `null` until the job has finished. `GET /v1/exports` lists your
-50 most recent exports.
+exports newest first, in pages of up to 50 (`limit`); pass the `nextCursor` of a page as `cursor`
+for the next one (`null` on the last page).
+
+You can have at most 3 exports queued or running at once, and start at most 10 in any 24 hours.
+Beyond that `POST /v1/exports` answers `429` with the code `export.limit_reached`.
 
 ## The two files
 
@@ -147,6 +151,8 @@ files and the export row, on the hourly cleanup run (see [data lifecycle](data-l
 | 404    | `export.not_found`    | no export with that id belongs to your account                       |
 | 409    | `export.not_ready`    | the export is still `queued` or `running`, or it `failed`, so no file |
 | 410    | `export.expired`      | the download window has closed, or the file is no longer on the server |
+| 429    | `export.limit_reached` | `POST` only: 3 exports are queued or running, or 10 were created in 24 hours |
+| 400    | `export.cursor_invalid` | `GET /v1/exports` only: the `cursor` is not one that was returned     |
 
 Errors are RFC 9457 `application/problem+json` with the `code` above. A failed export can be
 re-created; a new `POST` starts a new export.
