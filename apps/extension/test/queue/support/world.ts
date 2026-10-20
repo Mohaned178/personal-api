@@ -123,13 +123,20 @@ export function pick(
 
 export const tick = (): Promise<void> => new Promise((resolve) => setImmediate(resolve));
 
-/** Lets pending IndexedDB / promise work run, with real (not fake) macrotasks. */
-export async function waitFor(condition: () => boolean, label = "condition"): Promise<void> {
-  for (let i = 0; i < 2000; i++) {
-    if (condition()) return;
+/**
+ * Lets pending IndexedDB / promise work run, with real (not fake) macrotasks. Gives up on
+ * wall-clock time, not a tick count: a loaded CI runner needs more turns for the same work.
+ */
+export async function waitFor(
+  condition: () => boolean,
+  label = "condition",
+  timeoutMs = 5000,
+): Promise<void> {
+  const deadline = performance.now() + timeoutMs;
+  while (!condition()) {
+    if (performance.now() > deadline) throw new Error(`timed out waiting for: ${label}`);
     await tick();
   }
-  throw new Error(`timed out waiting for: ${label}`);
 }
 
 // --------------------------------------------------------------------------------------------
