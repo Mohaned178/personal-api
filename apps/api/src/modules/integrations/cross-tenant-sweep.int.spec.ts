@@ -44,6 +44,7 @@ import {
   requestCode,
 } from "../../../test/pairing-helpers";
 import type { FixtureUser } from "../../../test/two-user-fixture";
+import { DeletionsRunService } from "../deletions/deletions-run.service";
 import { generateApiKey } from "../keys/key-generation";
 
 let h: IngestHarness;
@@ -617,6 +618,28 @@ const ROUTES: Route[] = [
           });
           expectProblem(res, 400, "request.invalid");
           expect(JSON.stringify(res.body)).not.toContain(victim.userId);
+        },
+      },
+      {
+        label: "a filter naming the victim's integration as source, job run to completion",
+        run: async (attacker, victim) => {
+          const victimEvents = () =>
+            h.testDb.pool.query("select 1 from events where user_id = $1", [victim.userId]);
+          const before = (await victimEvents()).rowCount;
+          expect(before).toBeGreaterThan(0);
+
+          const res = await cookieDelete(attacker, { filter: { source: victim.integrationId } });
+          expect(res.status, JSON.stringify(res.body)).toBe(202);
+          const deletionId = res.body.deletion.id as string;
+          await h.app.get(DeletionsRunService).run(attacker.userId, deletionId);
+
+          // The job ran and matched nothing: the filter is scoped to the attacker, not the source.
+          const { rows } = await h.testDb.pool.query(
+            "select status, total, deleted from bulk_deletions where id = $1",
+            [deletionId],
+          );
+          expect(rows[0]).toEqual({ status: "completed", total: 0, deleted: 0 });
+          expect((await victimEvents()).rowCount).toBe(before);
         },
       },
     ],
@@ -1344,7 +1367,11 @@ const ROUTES: Route[] = [
         run: async (attacker, victim) => {
           const started = await cookiePost(victim, "/v1/exports", {});
           expect(started.status).toBe(202);
-          const res = await cookieGet(attacker, `/v1/exports?userId=${victim.userId}`);
+          // The query is strict (like the events list): naming a user is refused, not ignored.
+          const named = await cookieGet(attacker, `/v1/exports?userId=${victim.userId}`);
+          expectProblem(named, 400, "request.invalid");
+          expect(JSON.stringify(named.body)).not.toContain(victim.userId);
+          const res = await cookieGet(attacker, "/v1/exports");
           expect(res.status).toBe(200);
           expect(JSON.stringify(res.body)).not.toContain(started.body.export.id);
         },

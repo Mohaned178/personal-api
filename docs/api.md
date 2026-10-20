@@ -294,8 +294,9 @@ the first of: a `set_retention` rule, the policy for the event's **type**, the p
 Two jobs in the worker (`pnpm worker`) act on that date:
 
 - **Purge**, every hour on the hour (UTC): deletes events whose `expires_at` has passed, in batches
-  of 1 000 (at most 200 000 per run; the next run carries on). Events without an `expires_at` are
-  never purged.
+  of 1 000 (at most 200 000 per run; the next run carries on). Events stored before retention
+  existed had no `expires_at`; a migration gave them `received_at` plus 90 days, so they are purged
+  like the rest.
 - **Recompute**, about a minute after you change or delete a policy: sets `expires_at` to
   `received_at` plus the days the policies now give, for your stored events, so a policy applies to
   past events too. Events a `set_retention` rule governs keep the date the rule gave. Lowering a
@@ -336,7 +337,9 @@ A filter takes the same fields as the list (`source`, `type`, `from` inclusive, 
 make `deleted` pass it). The worker (`pnpm worker`) runs it in batches of 1 000, and a failed job is
 retried. An integration deletion starts about a minute after the request, so an ingest batch that
 was already in flight when the key was revoked is swept up too. The integration stays in your list
-as `revoked`; only its events are deleted.
+as `revoked`; only its events are deleted. Its source retention policy is removed too, since it would
+name a source with no data left. (Revoking alone keeps the policy, and the dashboard lists it as
+revoked so you can still change or remove it.)
 
 ### Export your data
 
@@ -346,8 +349,13 @@ same fields as the event list (`source`, `type`, `from`, `to`, `domain`); no fil
 (`events.ndjson.gz`: one stored event per line, newest first) and `GET /v1/exports/<id>/manifest`
 (`manifest.json`: count, filter, and the size and SHA-256 of the gzip file). A completed export can be
 downloaded for 24 hours, then the hourly cleanup job removes the files and the row.
-`GET /v1/exports` lists your 50 most recent. The worker writes the files to `EXPORT_DIR` (default
-`data/exports`), which the API must see too.
+`GET /v1/exports` lists your exports newest first, up to `limit` (1 to 50, default 50) per page; when
+more remain it returns a `nextCursor` to pass back as `cursor` (`null` on the last page; a `cursor`
+the API did not issue is `400 export.cursor_invalid`). Each user may have at most 3 exports queued or
+running and has 10 exports created in any 24 hours; past either, `POST /v1/exports` answers
+`429 export.limit_reached` and starts nothing. The worker writes the files to `EXPORT_DIR` (default
+`data/exports`), which the API must see too. The directory and files are readable only by the user
+that runs the worker.
 
 ```bash
 curl -s -X POST "$BASE/v1/exports" -b "$JAR" -H "Content-Type: application/json" -d '{"filter":{"domain":"example.com"}}'
@@ -458,6 +466,8 @@ Errors are `application/problem+json` (RFC 9457) with a stable `code`:
 | 404  | `export.not_found`         | An `/v1/exports/<id>` route: the id is unknown, belongs to another user, or is malformed. |
 | 409  | `export.not_ready`         | `/download` or `/manifest` of an export that has not completed.                          |
 | 410  | `export.expired`           | `/download` or `/manifest` after the 24-hour window, or the file is gone.                |
+| 429  | `export.limit_reached`     | `POST /v1/exports`: 3 exports are already queued or running, or 10 were created in the last 24 hours. |
+| 400  | `export.cursor_invalid`    | `GET /v1/exports`: the `cursor` is not one `nextCursor` returned.                      |
 | 404  | `event.not_found`          | The event id is unknown, belongs to another user, or is malformed.                     |
 | 404  | `key.not_found`            | The read key id is unknown or belongs to another user.                                 |
 | 404  | `endpoint.not_found`       | The endpoint id or slug is unknown, belongs to another user, or is malformed. For `/v1/me/<slug>` also: the endpoint is disabled, or the key does not carry its scope. |

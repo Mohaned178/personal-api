@@ -33,7 +33,8 @@ export class ExportStorage {
 
   async prepare(exportId: string): Promise<string> {
     const dir = this.dir(exportId);
-    await mkdir(dir, { recursive: true });
+    // Owner only: the files hold the user's browsing data.
+    await mkdir(dir, { recursive: true, mode: 0o700 });
     return dir;
   }
 

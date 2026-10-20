@@ -94,11 +94,13 @@ export class IntegrationsService {
   /**
    * "Disconnect and delete this integration's data": revokes the integration and its keys (so
    * nothing new arrives), then starts a bulk deletion of every event it stored. The integration
-   * row stays, revoked, so ingestion counters and its name remain. Repeating it is safe: it
-   * starts another deletion that finds nothing.
+   * row stays, revoked, so ingestion counters and its name remain. Its source retention policy
+   * goes too: it would name a source with no data left, and the dashboard lists only active
+   * sources for policies. Repeating it is safe: it starts another deletion that finds nothing.
    */
   async deleteData(userId: string, id: string): Promise<DeleteIntegrationDataResponse> {
     const { integration } = await this.revoke(userId, id);
+    await this.repository.removeSourcePolicy(userId, integration.id);
     const deletion = await this.deletions.start(userId, "integration", { source: integration.id });
     return { integration, deletion };
   }

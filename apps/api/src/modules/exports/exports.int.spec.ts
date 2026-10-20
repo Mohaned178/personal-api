@@ -19,7 +19,11 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { gunzipSync } from "node:zlib";
 import {
   ACCOUNT_DELETE_CONFIRMATION,
+  EXPORT_LIMIT_REACHED_CODE,
+  EXPORT_MAX_ACTIVE,
+  EXPORT_MAX_PER_DAY,
   EXPORT_TTL_HOURS,
+  EXPORTS_CURSOR_INVALID_CODE,
   exportManifestSchema,
   exportResponseSchema,
   listExportsResponseSchema,
@@ -27,7 +31,7 @@ import {
 } from "@personal-api/contracts";
 import type { PgBoss } from "pg-boss";
 import request from "supertest";
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   FIXED_NOW,
   type IngestHarness,
@@ -37,6 +41,7 @@ import {
 import type { FixtureUser } from "../../../test/two-user-fixture";
 import { PG_BOSS } from "../../platform/jobs/jobs.tokens";
 import { EXPORT_CLEANUP_QUEUE, EXPORT_RUN_QUEUE } from "./exports.jobs";
+import { ExportsRepository } from "./exports.repository";
 import { ExportStorage } from "./exports.storage";
 import { ExportsCleanupService } from "./exports-cleanup.service";
 import { ExportsRunService } from "./exports-run.service";
@@ -372,6 +377,189 @@ describe("the cleanup job", () => {
     expect(await cleanup.run()).toBe(1);
     expect(existsSync(storage.dir(orphan))).toBe(false);
     expect(existsSync(storage.dir(id))).toBe(true);
+  });
+});
+
+describe("per-user limits", () => {
+  const HOUR = 3_600_000;
+  const insertExport = (user: FixtureUser, status: string, createdAt: string) =>
+    h.testDb.pool.query(
+      "insert into exports (user_id, status, filter, created_at) values ($1, $2, '{}'::jsonb, $3)",
+      [user.userId, status, createdAt],
+    );
+  const count = async (user: FixtureUser) =>
+    (await h.testDb.pool.query("select 1 from exports where user_id = $1", [user.userId])).rowCount;
+  const jobs = async () =>
+    (await h.testDb.pool.query("select 1 from pgboss.job where name = $1", [EXPORT_RUN_QUEUE]))
+      .rowCount;
+
+  it(`refuses a new export with 429 export.limit_reached while ${EXPORT_MAX_ACTIVE} are queued or running`, async () => {
+    const { a } = h;
+    await insertExport(a, "queued", at(5));
+    await insertExport(a, "running", at(4));
+    expect((await create(a)).status).toBe(202);
+    const jobsBefore = await jobs();
+
+    const refused = await create(a);
+    expect(refused.status).toBe(429);
+    expect(refused.headers["content-type"]).toMatch(PROBLEM_JSON);
+    expect(refused.body.code).toBe(EXPORT_LIMIT_REACHED_CODE);
+    expect(JSON.stringify(refused.body)).not.toContain(a.userId);
+    expect(await count(a)).toBe(EXPORT_MAX_ACTIVE);
+    expect(await jobs()).toBe(jobsBefore);
+  });
+
+  it("frees a slot once an export completes or fails", async () => {
+    const { a } = h;
+    await seed(a);
+    const first = await start(a);
+    await start(a);
+    await start(a);
+    expect((await create(a)).status).toBe(429);
+
+    await runner.run(a.userId, first);
+    expect((await create(a)).status).toBe(202);
+    expect((await create(a)).status).toBe(429);
+
+    await h.testDb.pool.query(
+      "update exports set status = 'failed' where id = (select id from exports where user_id = $1 and status = 'queued' limit 1)",
+      [a.userId],
+    );
+    expect((await create(a)).status).toBe(202);
+  });
+
+  it(`refuses the ${EXPORT_MAX_PER_DAY + 1}th export created within 24 hours, and counts only those`, async () => {
+    const { a } = h;
+    for (let i = 0; i < EXPORT_MAX_PER_DAY - 1; i++) {
+      await insertExport(a, i % 2 === 0 ? "completed" : "failed", at(60 + i));
+    }
+    // Exactly 24 hours ago is outside the window, and so is anything older.
+    await insertExport(a, "completed", new Date(T0 - 24 * HOUR).toISOString());
+    await insertExport(a, "completed", new Date(T0 - 30 * HOUR).toISOString());
+
+    expect((await create(a)).status).toBe(202);
+    const refused = await create(a);
+    expect(refused.status).toBe(429);
+    expect(refused.body.code).toBe(EXPORT_LIMIT_REACHED_CODE);
+
+    // A day later the old ones no longer count.
+    h.clock.set(new Date(T0 + 25 * HOUR).toISOString());
+    await h.testDb.pool.query("update exports set status = 'completed'");
+    expect((await create(a)).status).toBe(202);
+  });
+
+  it("does not count another user's exports", async () => {
+    const { a, b } = h;
+    for (let i = 0; i < EXPORT_MAX_PER_DAY; i++) await insertExport(b, "queued", at(i));
+    expect((await create(b)).status).toBe(429);
+
+    expect((await create(a)).status).toBe(202);
+    expect(await count(a)).toBe(1);
+    expect(await count(b)).toBe(EXPORT_MAX_PER_DAY);
+  });
+});
+
+describe("GET /v1/exports pagination", () => {
+  const insertExport = async (user: FixtureUser, createdAt: string): Promise<string> => {
+    const { rows } = await h.testDb.pool.query<{ id: string }>(
+      "insert into exports (user_id, status, filter, created_at) values ($1, 'completed', '{}'::jsonb, $2) returning id",
+      [user.userId, createdAt],
+    );
+    return (rows[0] as { id: string }).id;
+  };
+  const list = (u: FixtureUser, query = "") =>
+    http().get(`/v1/exports${query}`).set("Cookie", u.cookie);
+
+  it("pages newest first with a keyset cursor, without gaps or repeats", async () => {
+    const { a, b } = h;
+    const ids = [
+      await insertExport(a, at(30)),
+      await insertExport(a, at(20)),
+      await insertExport(a, at(10)),
+    ];
+    const bId = await insertExport(b, at(25));
+
+    const first = await list(a, "?limit=2");
+    expect(first.status).toBe(200);
+    const page1 = listExportsResponseSchema.parse(first.body);
+    expect(page1.exports.map((e) => e.id)).toEqual([ids[2], ids[1]]);
+    expect(page1.nextCursor).toEqual(expect.any(String));
+
+    const second = listExportsResponseSchema.parse(
+      (await list(a, `?limit=2&cursor=${page1.nextCursor}`)).body,
+    );
+    expect(second.exports.map((e) => e.id)).toEqual([ids[0]]);
+    expect(second.nextCursor).toBeNull();
+
+    // Without a limit everything fits on one page.
+    const all = listExportsResponseSchema.parse((await list(a)).body);
+    expect(all.exports.map((e) => e.id)).toEqual([ids[2], ids[1], ids[0]]);
+    expect(all.nextCursor).toBeNull();
+
+    // A cursor taken from A's list shows B only B's own exports.
+    const cross = listExportsResponseSchema.parse(
+      (await list(b, `?cursor=${page1.nextCursor}`)).body,
+    );
+    expect(cross.exports.map((e) => e.id)).toEqual([bId]);
+  });
+
+  it("breaks ties between exports created at the same time by id", async () => {
+    const { a } = h;
+    const ids = [
+      await insertExport(a, at(5)),
+      await insertExport(a, at(5)),
+      await insertExport(a, at(5)),
+    ];
+    const seen: string[] = [];
+    let cursor: string | null = null;
+    for (let i = 0; i < 5; i++) {
+      const page = listExportsResponseSchema.parse(
+        (await list(a, `?limit=1${cursor ? `&cursor=${cursor}` : ""}`)).body,
+      );
+      seen.push(...page.exports.map((e) => e.id));
+      cursor = page.nextCursor;
+      if (cursor === null) break;
+    }
+    expect(seen).toEqual([...ids].sort().reverse());
+  });
+
+  it("answers 400 for a cursor this API did not issue, and for a bad limit", async () => {
+    const forged = Buffer.from(JSON.stringify(["not a date", "not an id"])).toString("base64url");
+    const wrongShape = Buffer.from(JSON.stringify({ a: 1 })).toString("base64url");
+    for (const cursor of ["abc", forged, wrongShape]) {
+      const res = await list(h.a, `?cursor=${cursor}`);
+      expect(res.status, cursor).toBe(400);
+      expect(res.headers["content-type"]).toMatch(PROBLEM_JSON);
+      expect(res.body.code).toBe(EXPORTS_CURSOR_INVALID_CODE);
+    }
+    for (const query of ["?limit=0", "?limit=51", "?limit=x", "?userId=abc"]) {
+      const res = await list(h.a, query);
+      expect(res.status, query).toBe(400);
+      expect(res.body.code).toBe("request.invalid");
+    }
+  });
+});
+
+describe("an export that outlives its row", () => {
+  it("removes the files it wrote when the account is deleted while the job runs", async () => {
+    const { a } = h;
+    await seed(a);
+    const id = await start(a);
+    // The runner holds its own repository instance (the jobs module provides it separately).
+    const repository = (runner as unknown as { repository: ExportsRepository }).repository;
+    const complete = repository.complete.bind(repository);
+    // The account transaction removes the row right before the job records its result.
+    const spy = vi.spyOn(repository, "complete").mockImplementation(async (...args) => {
+      await h.testDb.pool.query("delete from exports where id = $1", [id]);
+      return complete(...args);
+    });
+    try {
+      await runner.run(a.userId, id);
+      expect(spy).toHaveBeenCalledOnce();
+    } finally {
+      spy.mockRestore();
+    }
+    expect(existsSync(storage.dir(id))).toBe(false);
   });
 });
 

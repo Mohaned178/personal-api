@@ -312,6 +312,35 @@ describe("DELETE /v1/integrations/:id/data", () => {
     expect(again.status).toBe(202);
   });
 
+  it("also removes that integration's source retention policy, and nobody else's policies", async () => {
+    const { a, b } = h;
+    const target = await createHttpIntegration(a);
+    const policyFor = (scope: string, target: string, days: number) =>
+      http().put(`/v1/retention/${scope}/${target}`).set("Cookie", a.cookie).send({ days });
+    expect((await policyFor("source", target.id, 30)).status).toBe(200);
+    expect((await policyFor("source", a.integrationId, 45)).status).toBe(200);
+    expect((await policyFor("type", "browser.page_visited", 60)).status).toBe(200);
+    // Another user's row with the same target text (the column has no foreign key): not A's to delete.
+    await h.testDb.pool.query(
+      "insert into retention_policies (user_id, scope, target, days) values ($1, 'source', $2, 20)",
+      [b.userId, target.id],
+    );
+
+    const res = await http().delete(`/v1/integrations/${target.id}/data`).set("Cookie", a.cookie);
+    expect(res.status, JSON.stringify(res.body)).toBe(202);
+
+    const { rows } = await h.testDb.pool.query<{ user_id: string; scope: string; target: string }>(
+      "select user_id, scope, target from retention_policies order by user_id, scope, target",
+    );
+    expect(rows.map((r) => [r.user_id, r.scope, r.target]).sort()).toEqual(
+      [
+        [a.userId, "source", a.integrationId],
+        [a.userId, "type", "browser.page_visited"],
+        [b.userId, "source", target.id],
+      ].sort(),
+    );
+  });
+
   it("answers 404 for another user's integration and starts nothing", async () => {
     const victimEvent = await seed(h.b);
     const res = await http()

@@ -52,6 +52,11 @@ delay, recomputes `expires_at` for your existing events from your current polici
 an ingest batch that read the old policies finish first. Events a `set_retention` rule governs keep
 their own value. Running the job again changes nothing more, so a repeat is harmless.
 
+A change therefore reaches events you already have. Shortening a policy puts older events past
+their date, and the next hourly purge deletes them for good; the dashboard asks you to confirm
+before it saves a shorter value. Events stored before retention existed (they had no `expires_at`)
+were given 90 days from receipt by a migration, so they follow the same rules.
+
 ### Purging
 
 An hourly job, on the hour in UTC, deletes every event whose `expires_at` has passed. It works in
@@ -72,7 +77,7 @@ Deletion is always a hard delete: the row is removed, not hidden.
 
 Revoking an integration (`POST /v1/integrations/:id/revoke`) stops its keys from working at once,
 but it does **not** delete its data. `DELETE /v1/integrations/:id/data` does both: it revokes the
-integration and deletes its events.
+integration and deletes its events, along with its source retention policy.
 
 ### Deleting your account
 
@@ -89,7 +94,12 @@ Repeated attempts are rate limited (`429 account.rate_limited`).
 A completed export is downloadable for **24 hours**. An hourly cleanup job, at minute 30 past
 the hour in UTC, then removes the export's files and its row. The job also removes export folders
 that no row owns, such as the leftovers of an account deleted during an export run. An export that
-failed, or never finished, is removed once it is 24 hours old.
+failed, or never finished, is removed once it is 24 hours old. If the account is deleted while an
+export job is writing, the job removes its own files when it finds the export row gone.
+
+To keep a runaway client from filling the disk, a user can have at most 3 exports queued or running
+and can start at most 10 in any 24 hours (`429 export.limit_reached`). The export directory and its
+files are readable only by the user that runs the worker.
 
 ## Backups
 

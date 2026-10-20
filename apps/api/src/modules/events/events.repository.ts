@@ -1,4 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
+import type { ListEventsQuery } from "@personal-api/contracts";
 import { and, desc, eq, gte, inArray, lt, or, type SQL, sql } from "drizzle-orm";
 import type { Database } from "../../platform/db/db";
 import { DB } from "../../platform/db/db.tokens";
@@ -20,6 +21,19 @@ export interface EventFilters {
   sources?: string[] | undefined;
   /** Event types or `*` globs (see `globToLike`); a row passes if any one matches. */
   types?: string[] | undefined;
+}
+
+/** The filter fields of an export or a bulk deletion (dates are ISO strings) as repository filters. */
+export function toEventFilters(
+  filter: Pick<ListEventsQuery, "source" | "type" | "from" | "to" | "domain">,
+): EventFilters {
+  return {
+    integrationId: filter.source,
+    type: filter.type,
+    from: filter.from ? new Date(filter.from) : undefined,
+    to: filter.to ? new Date(filter.to) : undefined,
+    domain: filter.domain,
+  };
 }
 
 /**

@@ -1,10 +1,11 @@
-import { Injectable } from "@nestjs/common";
+import { Inject, Injectable } from "@nestjs/common";
 import {
   DELETION_NOT_FOUND_CODE,
   type Deletion,
   type DeletionFilter,
   type DeletionResponse,
 } from "@personal-api/contracts";
+import { CLOCK, type Clock } from "../../platform/clock/clock";
 import { assertUserScope } from "../../platform/db/tenant-scope";
 import { isUuid } from "../../platform/db/uuid";
 import { AppException } from "../../platform/errors/problem";
@@ -21,9 +22,14 @@ export class DeletionsService {
   constructor(
     private readonly repository: DeletionsRepository,
     private readonly jobs: JobsService,
+    @Inject(CLOCK) private readonly clock: Clock,
   ) {}
 
-  /** Records the deletion and enqueues its job. The job carries ids only. */
+  /**
+   * Records the deletion and enqueues its job. The job carries ids only. If the job cannot be
+   * enqueued the row is marked `failed` (and the error rethrown), so it is not left `queued` for
+   * a job that will never run.
+   */
   async start(
     userId: string,
     kind: "events" | "integration",
@@ -31,11 +37,18 @@ export class DeletionsService {
   ): Promise<Deletion> {
     assertUserScope(userId);
     const row = await this.repository.create(userId, kind, filter);
-    await this.jobs.enqueue(
-      BULK_DELETE_QUEUE,
-      { userId, deletionId: row.id },
-      kind === "integration" ? { startAfter: INTEGRATION_DELETE_DELAY_SECONDS } : undefined,
-    );
+    try {
+      await this.jobs.enqueue(
+        BULK_DELETE_QUEUE,
+        { userId, deletionId: row.id },
+        kind === "integration" ? { startAfter: INTEGRATION_DELETE_DELAY_SECONDS } : undefined,
+      );
+    } catch (error) {
+      await this.repository
+        .finish(userId, row.id, "failed", this.clock.now())
+        .catch(() => undefined);
+      throw error;
+    }
     return toDeletion(row);
   }
 

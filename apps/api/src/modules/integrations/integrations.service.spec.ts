@@ -32,6 +32,7 @@ function setup() {
     findById: vi.fn(async () => row),
     rename: vi.fn(async () => row),
     revoke: vi.fn(async () => row),
+    removeSourcePolicy: vi.fn(async () => undefined),
   };
   const deletions = { start: vi.fn(async () => ({ id: ID })) };
   const service = new IntegrationsService(
@@ -115,6 +116,25 @@ describe("IntegrationsService", () => {
     expect(result.integration.id).toBe(ID);
   });
 
+  it("deleteData also removes the integration's source retention policy, scoped to the user, before the deletion starts", async () => {
+    const { repository, deletions, service } = setup();
+    const order: string[] = [];
+    repository.removeSourcePolicy.mockImplementation(async () => void order.push("policy"));
+    deletions.start.mockImplementation(async () => {
+      order.push("start");
+      return { id: ID };
+    });
+    await service.deleteData(USER, ID);
+    expect(repository.removeSourcePolicy).toHaveBeenCalledWith(USER, ID);
+    expect(order).toEqual(["policy", "start"]);
+  });
+
+  it("revoking alone keeps the source retention policy", async () => {
+    const { repository, service } = setup();
+    await service.revoke(USER, ID);
+    expect(repository.removeSourcePolicy).not.toHaveBeenCalled();
+  });
+
   it("deleteData starts nothing for an integration that is not the user's", async () => {
     const { repository, deletions, service } = setup();
     repository.revoke.mockResolvedValueOnce(null as never);
@@ -122,6 +142,7 @@ describe("IntegrationsService", () => {
       code: INTEGRATION_NOT_FOUND_CODE,
     });
     expect(deletions.start).not.toHaveBeenCalled();
+    expect(repository.removeSourcePolicy).not.toHaveBeenCalled();
   });
 
   it("refuses a missing user before any repository call", async () => {

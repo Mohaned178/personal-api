@@ -5,7 +5,7 @@ import type { Database } from "../../platform/db/db";
 import { DB } from "../../platform/db/db.tokens";
 import { bulkDeletions, events } from "../../platform/db/schema";
 import { assertUserScope, scopeCondition, tenantScope } from "../../platform/db/tenant-scope";
-import { type EventFilters, eventFilterConditions } from "../events/events.repository";
+import { eventFilterConditions, toEventFilters } from "../events/events.repository";
 
 export type DeletionRow = typeof bulkDeletions.$inferSelect;
 
@@ -102,15 +102,4 @@ export class DeletionsRepository {
       eq(bulkDeletions.id, id),
     );
   }
-}
-
-/** The stored filter as repository filters; dates are ISO strings in the row. */
-export function toEventFilters(filter: DeletionFilter): EventFilters {
-  return {
-    integrationId: filter.source,
-    type: filter.type,
-    from: filter.from ? new Date(filter.from) : undefined,
-    to: filter.to ? new Date(filter.to) : undefined,
-    domain: filter.domain,
-  };
 }

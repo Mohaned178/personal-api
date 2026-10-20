@@ -18,7 +18,7 @@ import {
 import { CLOCK, type Clock } from "../../platform/clock/clock";
 import { assertUserScope } from "../../platform/db/tenant-scope";
 import type { EventsCursor } from "../events/events.cursor";
-import { type EventFilters, EventsRepository } from "../events/events.repository";
+import { EventsRepository, toEventFilters } from "../events/events.repository";
 import { toStoredEvent } from "../events/events.service";
 import { ExportsRepository } from "./exports.repository";
 import { ExportStorage } from "./exports.storage";
@@ -45,7 +45,8 @@ export class ExportsRunService {
    * Both files are written under a temporary name and renamed, so a download never sees half a
    * file. Idempotent: a completed export is left alone, and a retry (after a crash or a failure)
    * starts the files over. A failure removes what was written, marks the export `failed` and
-   * rethrows, so pg-boss retries it. Only counts are logged (invariant 6).
+   * rethrows, so pg-boss retries it. If the export row is gone by the end, the files are removed
+   * and 0 is returned. Only counts are logged (invariant 6).
    * Returns how many events this run wrote.
    */
   async run(
@@ -77,7 +78,7 @@ export class ExportsRunService {
         Readable.from(this.lines(userId, filter, batchSize, counter)),
         createGzip(),
         tap,
-        createWriteStream(tmpEvents),
+        createWriteStream(tmpEvents, { mode: 0o600 }),
       );
       await this.storage.publish(tmpEvents, eventsFile);
 
@@ -92,16 +93,22 @@ export class ExportsRunService {
         file: { name: EXPORT_EVENTS_FILE, sha256: hash.digest("hex"), bytes },
       });
       const tmpManifest = `${manifestFile}.tmp`;
-      await writeFile(tmpManifest, `${JSON.stringify(manifest, null, 2)}\n`);
+      await writeFile(tmpManifest, `${JSON.stringify(manifest, null, 2)}\n`, { mode: 0o600 });
       await this.storage.publish(tmpManifest, manifestFile);
 
-      await this.repository.complete(userId, id, {
+      const updated = await this.repository.complete(userId, id, {
         filePath: `${id}/${EXPORT_EVENTS_FILE}`,
         eventCount: counter.count,
         sizeBytes: bytes,
         finishedAt: now,
         expiresAt: new Date(now.getTime() + EXPORT_TTL_HOURS * 3_600_000),
       });
+      if (updated === 0) {
+        // The row went while the job ran (the account was deleted): nothing will ever point at
+        // these files, so remove them now instead of leaving them for the hourly orphan sweep.
+        await this.storage.remove(id);
+        return 0;
+      }
       this.logger.log(`export wrote ${counter.count} events`);
       return counter.count;
     } catch (error) {
@@ -118,13 +125,7 @@ export class ExportsRunService {
     batchSize: number,
     counter: { count: number },
   ): AsyncGenerator<string> {
-    const base: EventFilters = {
-      integrationId: filter.source,
-      type: filter.type,
-      from: filter.from ? new Date(filter.from) : undefined,
-      to: filter.to ? new Date(filter.to) : undefined,
-      domain: filter.domain,
-    };
+    const base = toEventFilters(filter);
     let after: EventsCursor | undefined;
     for (;;) {
       const rows = await this.eventsRepository.list(userId, { ...base, after }, batchSize);

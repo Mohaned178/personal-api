@@ -19,9 +19,18 @@ export const EXPORT_NOT_READY_CODE = "export.not_ready";
 /** 410: the download window has closed. */
 export const EXPORT_EXPIRED_CODE = "export.expired";
 
+/** 429: the user has too many exports queued or running, or created too many in the last day. */
+export const EXPORT_LIMIT_REACHED_CODE = "export.limit_reached";
+/** 400: the `cursor` of `GET /v1/exports` was not issued by this API. */
+export const EXPORTS_CURSOR_INVALID_CODE = "export.cursor_invalid";
+
+/** Per user: exports queued or running at once, and exports created in any 24 hours. */
+export const EXPORT_MAX_ACTIVE = 3;
+export const EXPORT_MAX_PER_DAY = 10;
+
 /** How long a completed export can be downloaded. */
 export const EXPORT_TTL_HOURS = 24;
-/** The most recent exports `GET /v1/exports` lists. */
+/** The most exports `GET /v1/exports` lists in one page (also its default). */
 export const EXPORTS_LIST_LIMIT = 50;
 
 export const EXPORT_EVENTS_FILE = "events.ndjson.gz";
@@ -57,7 +66,26 @@ export type Export = z.output<typeof exportSchema>;
 export const exportResponseSchema = z.strictObject({ export: exportSchema });
 export type ExportResponse = z.output<typeof exportResponseSchema>;
 
-export const listExportsResponseSchema = z.strictObject({ exports: z.array(exportSchema) });
+/**
+ * `GET /v1/exports`: newest first. `cursor` is the opaque `nextCursor` of the previous page
+ * (keyset on `(created_at, id)`); query-string integers arrive as strings.
+ */
+export const listExportsQuerySchema = z.strictObject({
+  cursor: z.string().min(1).max(256).optional(),
+  limit: z
+    .string()
+    .regex(/^\d{1,3}$/)
+    .transform(Number)
+    .pipe(z.number().int().min(1).max(EXPORTS_LIST_LIMIT))
+    .optional(),
+});
+export type ListExportsQuery = z.output<typeof listExportsQuerySchema>;
+
+export const listExportsResponseSchema = z.strictObject({
+  exports: z.array(exportSchema),
+  /** Null on the last page. */
+  nextCursor: z.string().nullable(),
+});
 export type ListExportsResponse = z.output<typeof listExportsResponseSchema>;
 
 /** The content of `manifest.json`. `file.sha256` is the hex digest of the gzip file's bytes. */
