@@ -14,6 +14,7 @@ import type { Pool } from "pg";
 import request from "supertest";
 import { expect } from "vitest";
 import { ACCOUNT_RATE_LIMITER } from "../src/modules/account/account.constants";
+import { INGEST_RATE_LIMITER } from "../src/modules/ingest/ingest.tokens";
 import { PAIRING_RATE_LIMITER } from "../src/modules/pairing/pairing.tokens";
 import { RuleSetProvider } from "../src/modules/rules/rule-set.provider";
 import type { RateLimiter } from "../src/platform/rate-limit/rate-limiter";
@@ -232,9 +233,10 @@ export async function startIngestHarness(): Promise<IngestHarness> {
       clock.set(FIXED_NOW);
       // The truncate restarts every rule-set version at 0, so cached sets would look current.
       app.get(RuleSetProvider).clear();
-      // Every request in a test run comes from one address, so forget the pairing throttle.
+      // Every request in a test run comes from one address, so forget the pairing, account and ingest throttles.
       app.get<RateLimiter>(PAIRING_RATE_LIMITER).reset();
       app.get<RateLimiter>(ACCOUNT_RATE_LIMITER).reset();
+      app.get<RateLimiter>(INGEST_RATE_LIMITER).reset();
     },
     stop: async () => {
       await app.close();

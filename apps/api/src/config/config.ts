@@ -67,6 +67,12 @@ export const configSchema = z
       protocol: /^https?$/,
       message: "BETTER_AUTH_URL must be an http(s) URL",
     }),
+    /**
+     * How many reverse proxies sit in front of the API (0 = none, the default). Express then takes
+     * the client address from that many `X-Forwarded-For` hops; rate limits key on it. Setting it
+     * higher than the real count lets a client choose its own address.
+     */
+    TRUST_PROXY: z.coerce.number().int().min(0).max(10).default(0),
     /** Directory with the built dashboard. Defaults to apps/web/dist next to the API package. */
     WEB_DIST_DIR: z.string().min(1).optional(),
     /**

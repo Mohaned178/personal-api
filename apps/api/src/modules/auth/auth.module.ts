@@ -1,5 +1,5 @@
 import { Inject, Module, type OnModuleInit } from "@nestjs/common";
-import { HttpAdapterHost } from "@nestjs/core";
+import { APP_GUARD, HttpAdapterHost } from "@nestjs/core";
 import { toNodeHandler } from "better-auth/node";
 import type { Express } from "express";
 import type { AppConfig } from "../../config/config";
@@ -9,6 +9,7 @@ import { DB } from "../../platform/db/db.tokens";
 import { type Auth, createAuth } from "./auth";
 import { AUTH_ROUTE, createAuthRequestHandler } from "./auth.http";
 import { AUTH } from "./auth.tokens";
+import { CsrfGuard } from "./csrf.guard";
 import { MeController } from "./me.controller";
 import { SessionGuard } from "./session.guard";
 import { SetupController } from "./setup.controller";
@@ -35,6 +36,8 @@ import { SignupGate } from "./signup-gate";
         createAuth({ config, db, canCreateUser: () => gate.isOpen() }),
     },
     SessionGuard,
+    // Every route: a state-changing request with a cookie must come from our own origin.
+    { provide: APP_GUARD, useClass: CsrfGuard },
   ],
   exports: [AUTH, SessionGuard],
 })

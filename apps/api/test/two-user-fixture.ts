@@ -20,6 +20,7 @@ import { AuthModule } from "../src/modules/auth/auth.module";
 import { IntegrationsService } from "../src/modules/integrations/integrations.service";
 import { KeysModule } from "../src/modules/keys/keys.module";
 import { CLOCK, type Clock } from "../src/platform/clock/clock";
+import { applyHttpHardening } from "../src/platform/http/security";
 import {
   authTestConfig,
   type Credentials,
@@ -62,6 +63,7 @@ export async function buildFixtureApp(
   if (options.clock) builder = builder.overrideProvider(CLOCK).useValue(options.clock);
   const moduleRef = await builder.compile();
   const app = moduleRef.createNestApplication({ bodyParser: false });
+  applyHttpHardening(app, 0);
   await app.init();
   return app;
 }

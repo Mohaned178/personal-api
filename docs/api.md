@@ -451,8 +451,10 @@ Errors are `application/problem+json` (RFC 9457) with a stable `code`:
 | 401  | `auth.invalid_key`         | The Bearer key (ingest key, or read key on the read routes) is missing, malformed, unknown or revoked. |
 | 401  | `auth.unauthenticated`     | A dashboard route was called without a valid session cookie.                           |
 | 403  | `auth.signup_disabled`     | Sign-up is closed (`ALLOW_SIGNUP=false` and an account already exists).                 |
+| 403  | `auth.csrf_origin_invalid` | A POST/PATCH/PUT/DELETE carrying a session cookie came from another origin (`Origin` is not `BETTER_AUTH_URL`'s). Nothing was done. |
 | 403  | `account.password_invalid` | `DELETE /v1/account`: the password is wrong (or the account has no password to check). Nothing is deleted. |
 | 429  | `account.rate_limited`     | `DELETE /v1/account`: 5 attempts in 15 minutes for this account. `Retry-After` says when to try again. |
+| 429  | `ingest.rate_limited`      | More than 120 requests a minute with one ingest key (events, config and heartbeat together). `Retry-After` says when to try again. |
 | 403  | `ingest.config_unsupported` | `GET /v1/ingest/config` only: the key belongs to an `http` integration, not a browser extension. |
 | 404  | `integration.not_found`    | The integration id is unknown, belongs to another user, or is malformed (all look the same). |
 | 404  | `rule.not_found`           | The rule id is unknown, belongs to another user, or is malformed (all look the same). |

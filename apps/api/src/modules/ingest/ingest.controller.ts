@@ -6,6 +6,7 @@ import { IngestKeyGuard } from "../keys/ingest-key.guard";
 import { ifNoneMatchHits } from "./etag";
 import { HeartbeatDto } from "./heartbeat.dto";
 import { IngestService } from "./ingest.service";
+import { IngestRateLimitGuard } from "./ingest-rate-limit.guard";
 
 /**
  * The exact path of the events route. AppModule gives this path (and only this path) the larger
@@ -18,10 +19,11 @@ export const INGEST_EVENTS_PATH = "/v1/ingest/events";
  * the body, query or headers. The guard runs before the body is validated, so a caller without a
  * valid key gets 401 for any body that parses, never a validation error. Body parsing is
  * middleware (BodyParserModule) and runs before every guard, so an oversized body (413
- * `http.payload_too_large`) or malformed JSON (400) is refused before the key is checked.
+ * `http.payload_too_large`) or malformed JSON (400) is refused before the key is checked. After
+ * the key, each key is rate limited (429 `ingest.rate_limited`).
  */
 @Controller("v1/ingest")
-@UseGuards(IngestKeyGuard)
+@UseGuards(IngestKeyGuard, IngestRateLimitGuard)
 export class IngestController {
   constructor(private readonly ingest: IngestService) {}
 

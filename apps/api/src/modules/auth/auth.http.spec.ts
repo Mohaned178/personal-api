@@ -100,6 +100,19 @@ describe("createAuthRequestHandler", () => {
     expect(handle).not.toHaveBeenCalled();
   });
 
+  it("hands Better Auth the Express client address and drops a client-sent one", async () => {
+    const seen: (string | string[] | undefined)[] = [];
+    const record = vi.fn(async (incoming: IncomingMessage, res: ServerResponse) => {
+      seen.push(incoming.headers["x-pa-client-ip"]);
+      await okHandler(incoming, res);
+    });
+    const { app } = mount(admitAll, record);
+    await request(app).post("/api/auth/sign-in/email").set("X-Pa-Client-Ip", "6.6.6.6").send({});
+    // supertest connects over loopback; the spoofed value must not survive.
+    expect(seen).toHaveLength(1);
+    expect(seen[0]).toMatch(/^(::ffff:)?127.0.0.1$|^::1$/);
+  });
+
   it("turns an unexpected failure into a 500 problem+json without its message", async () => {
     const failing = vi.fn(async () => {
       throw new Error("password authentication failed for hunter2");

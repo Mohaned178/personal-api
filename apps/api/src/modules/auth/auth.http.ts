@@ -8,7 +8,12 @@ import {
   PAYLOAD_TOO_LARGE_CODE,
   PAYLOAD_TOO_LARGE_TITLE,
 } from "../../platform/http/body-parser";
-import { AUTH_BASE_PATH, SIGNUP_DISABLED_CODE, SIGNUP_DISABLED_TITLE } from "./auth";
+import {
+  AUTH_BASE_PATH,
+  CLIENT_IP_HEADER,
+  SIGNUP_DISABLED_CODE,
+  SIGNUP_DISABLED_TITLE,
+} from "./auth";
 
 type NodeHandler = (req: IncomingMessage, res: ServerResponse) => Promise<void>;
 
@@ -78,6 +83,9 @@ function sendProblem(res: Response, exception: unknown): void {
 export function createAuthRequestHandler(handle: NodeHandler, gate: SignupAdmission) {
   return async (req: Request, res: Response): Promise<void> => {
     try {
+      // Better Auth rate-limits by this header; never let a client choose it.
+      if (req.ip) req.headers[CLIENT_IP_HEADER] = req.ip;
+      else delete req.headers[CLIENT_IP_HEADER];
       if (isBodyTooLarge(req)) {
         // The body is never read, so close the connection rather than drain it.
         res.set("Connection", "close");
