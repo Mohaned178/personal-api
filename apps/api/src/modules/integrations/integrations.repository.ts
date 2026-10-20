@@ -1,8 +1,8 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { eq, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import type { Database } from "../../platform/db/db";
 import { DB } from "../../platform/db/db.tokens";
-import { apiKeys, integrations } from "../../platform/db/schema";
+import { apiKeys, integrations, retentionPolicies } from "../../platform/db/schema";
 import { tenantScope } from "../../platform/db/tenant-scope";
 
 export type IntegrationRow = typeof integrations.$inferSelect;
@@ -102,6 +102,17 @@ export class IntegrationsRepository {
       eq(integrations.id, id),
     );
     return row ?? null;
+  }
+
+  /**
+   * Deletes the user's retention policy for this source. A policy names its source by id as text,
+   * with no foreign key, so it does not go away with the integration's data.
+   */
+  async removeSourcePolicy(userId: string, integrationId: string): Promise<void> {
+    await tenantScope(this.db, userId).delete(
+      retentionPolicies,
+      and(eq(retentionPolicies.scope, "source"), eq(retentionPolicies.target, integrationId)),
+    );
   }
 
   /**

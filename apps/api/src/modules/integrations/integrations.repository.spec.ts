@@ -34,6 +34,7 @@ describe("IntegrationsRepository tenant scoping", () => {
       "createHttp",
       "findById",
       "list",
+      "removeSourcePolicy",
       "rename",
       "revoke",
     ]);
