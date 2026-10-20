@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "description": "The pure rule engine, shared by the extension and the API. No Node, DOM or I/O.",
+  "license": "AGPL-3.0-only",
   "type": "module",
   "main": "./dist/cjs/index.js",
   "module": "./dist/esm/index.js",

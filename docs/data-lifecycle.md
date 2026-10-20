@@ -17,8 +17,8 @@ anyone asking "what happens to my data".
 - **Bulk deletion progress.** A delete-by-filter job records its progress (counts and status),
   never the events it deleted.
 
-The extension keeps only the domain and path of a page. Query strings and fragments are removed
-unless a `keep_query` rule matches. Titles, form contents, keystrokes, passwords and incognito
+The extension keeps only the domain and path of a page. Query strings and fragments are always
+removed in v1 (the `keep_query` rule action is reserved for v1.1). Titles, form contents, keystrokes, passwords and incognito
 tabs are never collected.
 
 ## How long events are kept

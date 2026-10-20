@@ -19,7 +19,9 @@ export default defineConfig({
       "**/playwright-report/**",
       "**/test-results/**",
       "**/*.tsbuildinfo",
-      "data/**",
+      // Any depth: apps/api/data/exports leaked into the sources zip when this was root-only.
+      "**/data/**",
+      "**/.env*",
       ".playwright-mcp/**",
     ],
   },

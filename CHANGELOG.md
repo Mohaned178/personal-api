@@ -32,11 +32,12 @@ First v1 release. The tag `v1.0.0` is not created yet; it needs the owner's appr
   deletion that removes every table, key, session and export file, and export as NDJSON.gz with a
   `manifest.json`.
 - **Packaging.** Multi-stage Dockerfile, a production compose file with a one-shot migration service, a
-  Caddy example, extension store zips, and a license check in CI.
+  Caddy example, extension store zips, and a license check in CI. Licensed under AGPL-3.0-only
+  (see `LICENSE`).
 
 ### Security
 
-- Rate limits on login, pairing and ingest (per key).
+- Rate limits on login, pairing, ingest (per key) and reads (per read key).
 - Helmet security headers, and CSRF checks on every session-cookie mutation.
 - Route-table-generated tests check every route for unauthenticated, wrong-key-type and cross-tenant access.
 - Log redaction for payloads, URLs, keys, cookies and emails. Dropped events are kept as counters only.
@@ -44,8 +45,10 @@ First v1 release. The tag `v1.0.0` is not created yet; it needs the owner's appr
 
 ### Known limitations
 
-- `keep_query` rules are accepted but have no effect in v1. Query strings are always stripped. See the
-  open items in [`docs/rule-format.md`](docs/rule-format.md).
+- The `keep_query` rule action is reserved for v1.1: the rules API rejects it on save, and query strings
+  are always stripped. See open item 2 in [`docs/rule-format.md`](docs/rule-format.md).
+- Exporting data and deleting the account are available through the API only (`POST /v1/exports`,
+  `DELETE /v1/account`). The dashboard screens for them come in v1.1.
 - A rule that reads a field it also rewrites can fail to match its own output when the event is evaluated
   again. See open item 1 in [`docs/rule-format.md`](docs/rule-format.md).
 - The Edge build has a smoke test only.

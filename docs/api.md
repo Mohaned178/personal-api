@@ -211,8 +211,9 @@ curl -s -X DELETE "$BASE/v1/rules/<rule-id>" -b "$JAR"   # { "version": 3 }
   `rule_history` snapshot of all the user's rules at that version, so an old event's trace stays
   explainable after a rule changed or was deleted.
 - **Limit.** A user can have 100 rules; the 101st is `409 rule.limit_reached`.
-- **Validation** is the contracts' `ruleDefinitionSchema`, the same one the engine and the extension use.
-  `400 request.invalid` lists `issues` (path and fixed message, never the rule's values).
+- **Validation** is the contracts' `ruleSaveSchema`: `ruleDefinitionSchema`, the one the engine and the
+  extension use, minus the actions reserved for v1.1. `forward` and `keep_query` are refused on create,
+  replace and dry run. `400 request.invalid` lists `issues` (path and fixed message, never the rule's values).
 
 ### Dry run
 

@@ -32,7 +32,7 @@ These rules are enforced by the contracts, not only by the extension:
 - **Domain and path only.** `domain` is a lowercase ASCII hostname (IDNs in punycode). `path`
   starts with `/`.
 - **No query string or fragment.** `path` containing `?` or `#` is rejected. The extension
-  strips both before building an event, unless a `keep_query` rule matches (M4).
+  strips both before building an event, always in v1 (the `keep_query` rule action is reserved for v1.1).
 - **No titles, form contents, keystrokes, passwords or full URLs.** Any such key is an unknown
   key and the event is rejected.
 - **No incognito tabs.** The extension never sends them.

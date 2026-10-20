@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "description": "Personal API dashboard (Vite + React SPA).",
+  "license": "AGPL-3.0-only",
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",

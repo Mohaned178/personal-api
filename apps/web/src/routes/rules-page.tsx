@@ -4,7 +4,11 @@ import type {
   RuleDefinition,
   TestRuleResponse,
 } from "@personal-api/contracts";
-import { INTEGRATION_KINDS, RULE_ACTIONS_BY_STAGE } from "@personal-api/contracts";
+import {
+  INTEGRATION_KINDS,
+  RULE_ACTIONS_BY_STAGE,
+  SAVE_RESERVED_ACTIONS,
+} from "@personal-api/contracts";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { type ReactNode, useState } from "react";
@@ -171,11 +175,18 @@ function ActionRow({
         value={action.action}
         onChange={(e) => onChange({ action: e.target.value as ActionName, param: "" })}
       >
-        {RULE_ACTIONS_BY_STAGE[stage].map((name) => (
-          <option key={name} value={name}>
-            {name}
-          </option>
-        ))}
+        {/* Reserved actions are not offered (the server rejects them), except one already chosen. */}
+        {RULE_ACTIONS_BY_STAGE[stage]
+          .filter(
+            (name) =>
+              name === action.action ||
+              !(SAVE_RESERVED_ACTIONS as readonly string[]).includes(name),
+          )
+          .map((name) => (
+            <option key={name} value={name}>
+              {name}
+            </option>
+          ))}
       </select>
       {action.action === "redact" ? (
         <select

@@ -4,8 +4,8 @@
 > `packages/contracts/src/rules.ts`, `rule-fields.ts` and `rule-glob.ts`, validated on save by the
 > rules API. The engine is `packages/rules`, run by the server at ingest and by the extension.
 > Items marked ⚑ are design choices the owner still has to confirm. The
-> [Open items](#open-items) section lists what is unresolved. One of them, `keep_query`, is
-> accepted but does nothing in v1, which differs from the plan (PLAN §3 and §5).
+> [Open items](#open-items) section lists what is unresolved. `keep_query` is reserved for v1.1:
+> the rules API rejects it on save, and the query string is always stripped in v1.
 
 A rule says which events it applies to (`when`) and what to do with them (`then`). Users edit it
 in the dashboard form or as JSON. The same document is stored, sent to the extension and run by
@@ -136,7 +136,7 @@ fails to match only keeps something out. So the default stays safe either way.
 | `drop`          | none                            | collect   | Terminal: do not collect. Beats `allow` at the same priority.                               |
 | `redact`        | `field`                         | collect   | Remove an **optional** field from `data`.                                                   |
 | `coarsen`       | `segments` (0 to 10)            | collect   | Keep the first N segments of `data.path`. `0` leaves `/` (the path is required).           |
-| `keep_query`    | none                            | collect   | Meant to opt this match in to keeping the query string. **Not implemented in v1:** the query is always stripped. ⚑ See [Open items](#open-items). |
+| `keep_query`    | none                            | collect   | **Reserved for v1.1.** The rules API rejects it on save (`400 request.invalid`, as it does `forward`). A stored rule that already has it still loads and the engine reports `keepQuery`, but the query is always stripped. See [Open items](#open-items). |
 | `tag`           | `tag`                           | process   | Add a tag. Lowercase, starts with a letter or digit, then letters, digits, `_ . : -`, max 32. |
 | `set_retention` | `days` (1 to 3650)              | process   | Keep the event this many days.                                                              |
 | `forward`       | (reserved)                      | v1.1      | Webhook. The name is reserved: **a rule that uses it is rejected on save**, never ignored.  |
@@ -270,7 +270,8 @@ threw, for example a malformed rule set). `evaluate` never throws.
    an unknown op or action, or any exception is `error`. A condition on an op the engine does
    not know throws; it is never read as "false", which could let a `drop` rule fall through.
 
-`keepQuery` is `true` when a `keep_query` rule matched. See [Open items](#open-items).
+`keepQuery` is `true` when a `keep_query` rule matched. Nothing acts on it in v1 (the action is
+reserved for v1.1). See [Open items](#open-items).
 
 ### Trace
 
@@ -358,7 +359,7 @@ no rules) is never trusted.
   redacted and coarsened and stamped with the version that decided them.
 - The popup shows the current tab's verdict by running the same engine on a `page_visited` probe:
   collected or blocked, by which rule or by the default policy. It never shows the URL.
-- `keep_query` is still ignored (open item 2): the extension keeps stripping queries.
+- `keep_query` is reserved for v1.1 (open item 2): the extension keeps stripping queries.
 
 ## Open items
 
@@ -379,12 +380,14 @@ no rules) is never trusted.
    only `drop` rules. `evaluate` is pinned by a "known limitation" test until then. The M4-03 property tests claim a
    stable *event* on re-evaluation only for rule sets whose conditions read fields no rule rewrites
    (`evaluate.property.spec.ts`); the transforms are idempotent unconditionally.
-2. **`keep_query` is accepted but does nothing in v1 (decision needed).** *M4-05: the server ignores
-   `keepQuery` and the query stays stripped.* The action exists and
-   takes no parameters, and the engine reports `keepQuery: true`. But every event schema is
-   strict and `path` rejects `?` and `#`. Keeping a query needs an event-schema change (for
-   example a new optional field, or `typeVersion` 2 for `browser.page_visited`). Until it is
-   decided, the extension keeps stripping queries.
+2. **`keep_query` is reserved for v1.1.** *Decided by the owner at the M7-R review (2026-10-20).*
+   The rules API (`POST` and `PUT /v1/rules`, and the `POST /v1/rules/test` dry run) rejects it on
+   save with `400 request.invalid`, the same way it rejects `forward`, and the dashboard form no
+   longer offers it. The engine still accepts a stored rule that has it (so stored data can never
+   make it fail closed), reports `keepQuery: true`, and nothing acts on it. Every event schema is
+   strict and `path` rejects `?` and `#`, so keeping a query needs an event-schema change (for
+   example a new optional field, or `typeVersion` 2 for `browser.page_visited`). That change is
+   v1.1 work. Until then the query string is always stripped.
 3. ~~Rule-set size cap~~ Done in M4-04: 100 rules per user, enforced by the rules API (`ruleSetSchema` itself has no cap).
 4. ~~**Server wiring (M4-05).**~~ Done in M4-05; the extension wiring is M4-06 (done) (`ingest.rule_error` is in `INGEST_ERROR_CODES`). `policy` and `context.source` must come from the authenticated
    integration row, never from the request body (invariant 4). The `error` decision becomes `rejected(rule_error)`, which also

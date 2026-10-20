@@ -42,8 +42,14 @@ pnpm --filter @personal-api/e2e test:e2e:edge # all Chromium specs (local only)
 pnpm --filter @personal-api/e2e test:e2e:firefox:spike # Spike C on Firefox (not in CI)
 pnpm --filter extension build # builds chrome-mv3 (Edge) and firefox-mv3 into apps/extension/.output
 pnpm --filter extension build:firefox # Firefox only (load .output/firefox-mv3 via about:debugging)
+pnpm --filter extension build:chrome  # Edge/Chromium only (load .output/chrome-mv3 unpacked)
 pnpm --filter extension zip   # store zips for both targets
-pnpm build                    # turbo build for all packages
+pnpm --filter extension zip:firefox   # firefox-mv3 zip plus the sources zip (AMO)
+pnpm --filter extension zip:chrome    # chrome-mv3 zip (Edge Add-ons)
+pnpm build                    # turbo build for all packages (run once after install: the api and extension need contracts and rules built)
+pnpm licenses:check           # fails if a production API dependency has a license outside the allowlist
+pnpm audit:prod               # pnpm audit for production dependencies
+docker compose -f docker-compose.prod.yml --env-file .env.production up -d --build # production stack (see docs/self-hosting.md)
 ```
 
 Env: copy `.env.example` to `.env` (gitignored) before `pnpm db:migrate`, `pnpm worker` or the API.
@@ -61,7 +67,7 @@ Before calling a task done, run `pnpm lint && pnpm typecheck && pnpm test` in th
 
 1. **Deny by default, fail closed.** If rules are missing, invalid or throw, nothing is collected or stored. A bug must never widen collection.
 2. **Dropped events are never stored.** Keep only counters in `ingestion_log`, never payloads.
-3. **URLs:** the extension keeps domain + path only. Query strings and fragments are stripped unless a `keep_query` rule matches. Never collect titles, form contents, keystrokes, passwords or incognito tabs.
+3. **URLs:** the extension keeps domain + path only. Query strings and fragments are always stripped in v1 (`keep_query` is reserved for v1.1 and the rules API rejects it on save). Never collect titles, form contents, keystrokes, passwords or incognito tabs.
 4. **Tenant scoping:** every query on user data goes through the scoped repository helpers with `userId` from `AuthContext`. Never take `userId` or `integrationId` from the request body. Every new route gets a cross-tenant test (use the two-user fixture).
 5. **Keys:** API keys are stored as SHA-256 hashes and shown once. Ingest keys (`pa_ing_`) can only ingest. Read keys (`pa_read_`) can only read within their scopes.
 6. **Logs:** never log payloads, URLs, domains, keys, cookies or emails. Extend the pino redaction list rather than working around it.

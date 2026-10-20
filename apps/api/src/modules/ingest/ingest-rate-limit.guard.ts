@@ -4,6 +4,7 @@ import type { Response } from "express";
 import { AppException } from "../../platform/errors/problem";
 import type { RateLimiter } from "../../platform/rate-limit/rate-limiter";
 import type { AuthenticatedRequest } from "../auth/auth-context";
+import { INVALID_KEY_CODE } from "../keys/ingest-key.guard";
 import { INGEST_RATE_LIMITER } from "./ingest.tokens";
 
 /**
@@ -26,7 +27,7 @@ export class IngestRateLimitGuard implements CanActivate {
     const http = context.switchToHttp();
     const auth = http.getRequest<AuthenticatedRequest>().auth;
     if (auth?.kind !== "ingest") {
-      throw new AppException(401, "auth.invalid_key", "Invalid API key");
+      throw new AppException(401, INVALID_KEY_CODE, "Invalid API key");
     }
     const result = this.limiter.consume(auth.keyId);
     if (result.allowed) return true;

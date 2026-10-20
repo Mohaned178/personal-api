@@ -265,6 +265,10 @@ describe("validation on save", () => {
     ["a missing priority", { ...rule(), priority: undefined }],
     ["a priority out of range", rule({ priority: 1001 })],
     ["the reserved forward action", rule({ then: [{ action: "forward" }] })],
+    [
+      "the keep_query action, reserved for v1.1",
+      rule({ then: [{ action: "allow" }, { action: "keep_query" }] }),
+    ],
     ["an action from the wrong stage", rule({ stage: "process" })],
     [
       "an op that does not suit the field",

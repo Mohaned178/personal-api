@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "description": "Playwright end-to-end tests: load the built extension (and the Spike A prototype) in bundled Chromium; Spike C runs on Firefox through Selenium + geckodriver.",
+  "license": "AGPL-3.0-only",
   "scripts": {
     "typecheck": "tsc --noEmit",
     "e2e:install": "playwright install chromium",
