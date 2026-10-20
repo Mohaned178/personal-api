@@ -6,7 +6,7 @@ import type { AuthenticatedRequest } from "../auth/auth-context";
 import { ApiKeysService } from "./api-keys.service";
 import { bearerToken, INVALID_KEY_CODE } from "./ingest-key.guard";
 
-const READ_SCOPE_METADATA = "pa:read-scope";
+export const READ_SCOPE_METADATA = "pa:read-scope";
 
 /**
  * The scope a route needs from a read key. Every route behind ReadKeyGuard must declare one: the
