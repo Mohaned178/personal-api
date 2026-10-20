@@ -13,10 +13,19 @@ interface AuthFormProps {
   mode: "signin" | "signup";
   submitLabel: string;
   footer?: ReactNode;
+  /** An internal path from `safeRedirect` to go to on success (M8-01); home when absent. */
+  redirectTo?: string | undefined;
 }
 
 /** One form for login, signup and first-run setup. Validates locally, then calls the API. */
-export function AuthForm({ title, description, mode, submitLabel, footer }: AuthFormProps) {
+export function AuthForm({
+  title,
+  description,
+  mode,
+  submitLabel,
+  footer,
+  redirectTo,
+}: AuthFormProps) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [error, setError] = useState<string | null>(null);
@@ -47,7 +56,7 @@ export function AuthForm({ title, description, mode, submitLabel, footer }: Auth
     }
     // A session that expired leaves its cache behind; the account signing in now must not see it.
     queryClient.clear();
-    await navigate({ to: "/" });
+    await (redirectTo === undefined ? navigate({ to: "/" }) : navigate({ href: redirectTo }));
   }
 
   return (

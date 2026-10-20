@@ -8,6 +8,7 @@ import {
   GATE_MIRROR_STORAGE_KEYS,
   GATE_OWNER_STORAGE_KEY,
 } from "../../lib/gate-mirror";
+import { CONNECT_DONE_PATH, ONE_CLICK_STORAGE_KEY } from "../../lib/one-click";
 import { type BackgroundBrowserApi, FLUSH_RETRY_ALARM_NAME, wireBackground } from "../../lib/queue";
 import { keyMarker } from "../../lib/queue/key-marker";
 import {
@@ -27,7 +28,12 @@ import {
 
 type Listener = (...args: never[]) => unknown;
 
-function fakeBrowser(world: World, stored: Record<string, unknown>) {
+function fakeBrowser(
+  world: World,
+  stored: Record<string, unknown>,
+  session: Record<string, unknown> = {},
+  removedTabs: number[] = [],
+) {
   const listeners = new Map<string, Listener[]>();
   const source = (name: string) => ({
     addListener(listener: Listener) {
@@ -41,6 +47,7 @@ function fakeBrowser(world: World, stored: Record<string, unknown>) {
       onActivated: source("tabs.onActivated"),
       onRemoved: source("tabs.onRemoved"),
       query: async () => [],
+      remove: async (tabId: number) => void removedTabs.push(tabId),
     },
     windows: {
       onFocusChanged: source("windows.onFocusChanged"),
@@ -63,7 +70,11 @@ function fakeBrowser(world: World, stored: Record<string, unknown>) {
       onInstalled: source("runtime.onInstalled"),
     },
     storage: {
-      session: { get: async () => ({ id: "x" }), set: async () => undefined },
+      session: {
+        get: async (key: string) => pick(session, key),
+        set: async (items: Record<string, unknown>) => void Object.assign(session, items),
+        remove: async (key: string) => void delete session[key],
+      },
       local: {
         get: async (keys: string | string[]) => pick(stored, keys),
         set: async (items: Record<string, unknown>) => void Object.assign(stored, items),
@@ -83,7 +94,28 @@ function fakeBrowser(world: World, stored: Record<string, unknown>) {
 const serverFetch = (url: string, init: RequestInit): Promise<Response> =>
   url.endsWith("/v1/ingest/config")
     ? Promise.resolve(new Response(null, { status: 404 }))
-    : world.server.fetch(url, init);
+    : url.endsWith("/v1/pair")
+      ? pairFetch(url, init)
+      : world.server.fetch(url, init);
+
+/** `POST /v1/pair` for the one-click test: records the code it was sent, answers a pairing. */
+const pairCalls: { url: string; body: unknown }[] = [];
+async function pairFetch(url: string, init: RequestInit): Promise<Response> {
+  pairCalls.push({ url, body: JSON.parse(String(init.body)) });
+  const body = {
+    integration: {
+      id: INTEGRATION_ID_2,
+      kind: "browser-extension",
+      name: "Firefox",
+      defaultPolicy: "deny",
+      status: "active",
+      lastSeenAt: null,
+      createdAt: "2026-10-15T10:00:00.000Z",
+    },
+    ingestKey: { id: "0192f1c2-7c1e-7a3b-9f00-1c2d3e4f5a6c", key: KEY_2, prefix: "pa_ing_BBBB" },
+  };
+  return new Response(JSON.stringify(body), { headers: { "content-type": "application/json" } });
+}
 
 let world: World;
 beforeEach(() => {
@@ -92,12 +124,19 @@ beforeEach(() => {
 });
 afterEach(() => world.uninstall());
 
-function wire(options: { allow?: boolean | null; connected?: boolean } = {}) {
+function wire(
+  options: {
+    allow?: boolean | null;
+    connected?: boolean;
+    session?: Record<string, unknown>;
+    removedTabs?: number[];
+  } = {},
+) {
   const stored: Record<string, unknown> =
     options.connected === false
       ? {}
       : { [CONNECTION_STORAGE_KEY]: connectionFor(KEY), ...mirrorFor() };
-  const { browser, listeners } = fakeBrowser(world, stored);
+  const { browser, listeners } = fakeBrowser(world, stored, options.session, options.removedTabs);
   const { store } = world.open();
   // Events are queued for the paired owner. Called first, so it also precedes the engine's own
   // start-up events (the store runs writes in call order).
@@ -118,11 +157,12 @@ function wire(options: { allow?: boolean | null; connected?: boolean } = {}) {
 describe("wireBackground", () => {
   it("registers every listener before it returns, including the flush alarm listener", () => {
     const { listeners } = wire();
+    // The capture engine's, plus one-click connect's (M8-01).
+    expect(listeners.get("tabs.onUpdated")).toHaveLength(2);
+    expect(listeners.get("tabs.onRemoved")).toHaveLength(2);
     for (const name of [
       "tabs.onCreated",
-      "tabs.onUpdated",
       "tabs.onActivated",
-      "tabs.onRemoved",
       "windows.onFocusChanged",
       "idle.onStateChanged",
       "runtime.onStartup",
@@ -132,6 +172,32 @@ describe("wireBackground", () => {
     }
     // flush, server heartbeat, rules sync, plus the capture engine's own heartbeat tick.
     expect(listeners.get("alarms.onAlarm")).toHaveLength(4);
+  });
+
+  it("one-click: pairs with the code from the tab it opened, stores the connection, closes the tab", async () => {
+    pairCalls.length = 0;
+    const session: Record<string, unknown> = {
+      [ONE_CLICK_STORAGE_KEY]: { tabId: 9, origin: ORIGIN_2, expiresAt: world.now() + 60_000 },
+    };
+    const removedTabs: number[] = [];
+    const { wired, listeners, stored } = wire({ connected: false, session, removedTabs });
+    await wired.ready;
+    const done = `${ORIGIN_2}${CONNECT_DONE_PATH}#code=ABCD-EFGH-JKLM-NPQR-STUV`;
+    await Promise.all(
+      (listeners.get("tabs.onUpdated") ?? []).map((l) =>
+        (l as (...a: unknown[]) => unknown)(9, { url: done }, { id: 9, url: done }),
+      ),
+    );
+    expect(pairCalls).toEqual([
+      { url: `${ORIGIN_2}/v1/pair`, body: { pairingCode: "ABCD-EFGH-JKLM-NPQR-STUV" } },
+    ]);
+    expect(stored[CONNECTION_STORAGE_KEY]).toMatchObject({
+      serverOrigin: ORIGIN_2,
+      integrationId: INTEGRATION_ID_2,
+    });
+    expect(removedTabs).toEqual([9]);
+    expect(session[ONE_CLICK_STORAGE_KEY]).toBeUndefined();
+    expect(JSON.stringify({ stored, session })).not.toContain("ABCD-EFGH");
   });
 
   it("ready settles", async () => {

@@ -1,6 +1,6 @@
 import type { CaptureGate } from "../capture";
 import { createCaptureEngine, registerCaptureListeners } from "../capture";
-import { CONNECTION_STORAGE_KEY, type Connection, getConnection } from "../connect";
+import { CONNECTION_STORAGE_KEY, type Connection, getConnection, pairWithCode } from "../connect";
 import {
   connectionOwner,
   createGateMirror,
@@ -12,6 +12,7 @@ import {
   sameQueueOwner,
 } from "../gate-mirror";
 import { CLIENT_VERSION, createHeartbeatSender } from "../heartbeat";
+import { createOneClickHandler } from "../one-click";
 import { getPaused, PAUSED_STORAGE_KEY } from "../pause";
 import { RULES_STORAGE_KEY, readActiveRules } from "../rules/active-rules";
 import { createRulesGate } from "../rules/gate";
@@ -172,9 +173,38 @@ export function wireBackground(deps: BackgroundDeps): WiredBackground {
     now: deps.now,
     newId: deps.newId,
     newTabRef: deps.newTabRef,
+    // M8-01: the connected server's own origin (the dashboard, the one-click connect pages) is never
+    // captured, whatever the rules say. Exact origin, so other apps on the same host still count.
+    isExcludedUrl: async (url) => {
+      const connection = await readStoredConnection(browser);
+      return connection !== null && new URL(url).origin === connection.serverOrigin;
+    },
   });
 
   registerCaptureListeners(browser, engine);
+
+  // M8-01 one-click connect: the code is read only from the dashboard tab the popup opened. Pairing
+  // goes through the same steps as the popup's manual connect (queue owner, connection, rules).
+  const oneClick = createOneClickHandler({
+    session: browser.storage.session,
+    tabs: browser.tabs,
+    pair: (origin, pairingCode) =>
+      pairWithCode(origin, pairingCode, {
+        storage: {
+          get: (key) => browser.storage.local.get(key),
+          set: (items) => browser.storage.local.set(items),
+          remove: (key) => browser.storage.local.remove(key),
+        },
+        fetch: deps.fetch,
+        queue: store,
+        syncRules: () => rulesSync.sync(),
+      }),
+    now: deps.now,
+  });
+  browser.tabs.onUpdated.addListener((tabId, changeInfo, tab) =>
+    oneClick.onTabUpdated(tabId, changeInfo, tab),
+  );
+  browser.tabs.onRemoved.addListener((tabId) => oneClick.onTabRemoved(tabId));
   // The capture listeners handle the heartbeat tick for the engine; this one runs the flush for
   // the same tick and for the one-shot retry alarm. The flush never touches the heartbeat alarm.
   // After each flush the gate's mirror is rewritten from IndexedDB, so a stale mirror (a kill or a

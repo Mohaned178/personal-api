@@ -214,14 +214,18 @@ export interface Flusher {
 export type BackgroundBrowserApi = CaptureBrowserApi &
   CaptureListenerApi & {
     alarms: FlushAlarms;
+    /** Only for one-click connect (lib/one-click.ts): close the dashboard tab it opened. */
+    tabs: { remove(tabId: number): Promise<void> };
     storage: {
       local: {
         get(keys: string | string[]): Promise<Record<string, unknown>>;
-        /** Only for the gate mirror (lib/gate-mirror.ts) and the rules sync; the capture gate never writes. */
+        /** Only for the gate mirror (lib/gate-mirror.ts), the rules sync and one-click pairing; the capture gate never writes. */
         set(items: Record<string, unknown>): Promise<void>;
         /** Only for the rules sync, when the server refuses or sends rules that do not validate. */
         remove(keys: string | string[]): Promise<void>;
       };
+      /** `remove` only for one-click connect's pending tab. */
+      session: { remove(key: string): Promise<void> };
     };
   };
 

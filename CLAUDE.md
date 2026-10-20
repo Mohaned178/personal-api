@@ -36,7 +36,7 @@ pnpm typecheck
 pnpm test                     # unit tests (no Docker needed)
 pnpm test:int                 # integration tests (Testcontainers, needs Docker)
 pnpm e2e:install              # once per machine: Playwright's bundled Chromium (Edge smoke only)
-pnpm test:e2e                 # Firefox e2e (Selenium + geckodriver); builds contracts, rules, api and firefox-mv3 first
+pnpm test:e2e                 # Firefox e2e (Selenium + geckodriver); builds contracts, rules, api, web and firefox-mv3 first
 pnpm --filter @personal-api/e2e test:e2e:edge:smoke # Edge smoke (Playwright + Chromium); builds the extension first
 pnpm --filter @personal-api/e2e test:e2e:edge # all Chromium specs (local only)
 pnpm --filter @personal-api/e2e test:e2e:firefox:spike # Spike C on Firefox (not in CI)
