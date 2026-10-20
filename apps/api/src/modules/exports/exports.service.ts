@@ -3,14 +3,19 @@ import { Inject, Injectable, type OnModuleInit } from "@nestjs/common";
 import {
   EXPORT_EVENTS_FILE,
   EXPORT_EXPIRED_CODE,
+  EXPORT_LIMIT_REACHED_CODE,
   EXPORT_MANIFEST_FILE,
+  EXPORT_MAX_ACTIVE,
+  EXPORT_MAX_PER_DAY,
   EXPORT_NOT_FOUND_CODE,
   EXPORT_NOT_READY_CODE,
+  EXPORTS_CURSOR_INVALID_CODE,
   EXPORTS_LIST_LIMIT,
   type Export,
   type ExportFilter,
   type ExportResponse,
   exportFilterSchema,
+  type ListExportsQuery,
   type ListExportsResponse,
 } from "@personal-api/contracts";
 import { CLOCK, type Clock } from "../../platform/clock/clock";
@@ -19,6 +24,7 @@ import { isUuid } from "../../platform/db/uuid";
 import { AppException } from "../../platform/errors/problem";
 import { JobsService } from "../../platform/jobs/jobs.service";
 import { AccountDeletionSteps } from "../account/account.steps";
+import { decodeCursor, encodeCursor } from "../events/events.cursor";
 import { EXPORT_RUN_QUEUE } from "./exports.jobs";
 import { type ExportRow, ExportsRepository } from "./exports.repository";
 import { ExportStorage } from "./exports.storage";
@@ -50,18 +56,52 @@ export class ExportsService implements OnModuleInit {
     });
   }
 
-  /** Records the export and enqueues its job. The job carries ids only. */
+  /**
+   * Records the export and enqueues its job. The job carries ids only. A user at a cap (see
+   * `EXPORT_MAX_ACTIVE`, `EXPORT_MAX_PER_DAY`) gets 429 and nothing is recorded. If the job cannot
+   * be enqueued the row is marked `failed`, so it does not hold a slot as `queued` for a day.
+   */
   async create(userId: string, filter: ExportFilter = {}): Promise<ExportResponse> {
     assertUserScope(userId);
+    const now = this.clock.now();
+    const { active, recent } = await this.repository.countRecent(
+      userId,
+      new Date(now.getTime() - 24 * 3_600_000),
+    );
+    if (active >= EXPORT_MAX_ACTIVE || recent >= EXPORT_MAX_PER_DAY) {
+      throw new AppException(429, EXPORT_LIMIT_REACHED_CODE, "Too many exports");
+    }
     const row = await this.repository.create(userId, filter);
-    await this.jobs.enqueue(EXPORT_RUN_QUEUE, { userId, exportId: row.id });
+    try {
+      await this.jobs.enqueue(EXPORT_RUN_QUEUE, { userId, exportId: row.id });
+    } catch (error) {
+      await this.repository.fail(userId, row.id, now).catch(() => undefined);
+      throw error;
+    }
     return { export: toExport(row) };
   }
 
-  async list(userId: string): Promise<ListExportsResponse> {
+  /** Newest first. The cursor is the events cursor with `created_at` in the place of `occurred_at`. */
+  async list(userId: string, query: ListExportsQuery = {}): Promise<ListExportsResponse> {
     assertUserScope(userId);
-    const rows = await this.repository.list(userId, EXPORTS_LIST_LIMIT);
-    return { exports: rows.map(toExport) };
+    const limit = query.limit ?? EXPORTS_LIST_LIMIT;
+    const after = query.cursor
+      ? decodeCursor(query.cursor, EXPORTS_CURSOR_INVALID_CODE)
+      : undefined;
+    const rows = await this.repository.list(
+      userId,
+      limit + 1,
+      after && { createdAt: after.occurredAt, id: after.id },
+    );
+    const page = rows.slice(0, limit);
+    const last = page.at(-1);
+    return {
+      exports: page.map(toExport),
+      nextCursor:
+        rows.length > limit && last
+          ? encodeCursor({ occurredAt: last.createdAt, id: last.id })
+          : null,
+    };
   }
 
   async get(userId: string, id: string): Promise<ExportResponse> {
