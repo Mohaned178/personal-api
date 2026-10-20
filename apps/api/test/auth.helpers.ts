@@ -21,6 +21,7 @@ import type { Pool } from "pg";
 import request from "supertest";
 import { AppModule } from "../src/app.module";
 import { APP_CONFIG } from "../src/config/config.module";
+import { applyHttpHardening } from "../src/platform/http/security";
 import type { TestDatabase } from "./postgres";
 
 export const TEST_ORIGIN = "http://localhost:3000";
@@ -39,6 +40,7 @@ export function authTestConfig(testDb: TestDatabase, options: AuthAppOptions) {
     ALLOW_SIGNUP: options.allowSignup,
     BETTER_AUTH_SECRET: `test-secret-${randomUUID()}${randomUUID()}`,
     BETTER_AUTH_URL: TEST_ORIGIN,
+    TRUST_PROXY: 0,
     // A directory per app, so export files never leak between tests or into the working tree.
     EXPORT_DIR: join(tmpdir(), `pa-exports-test-${randomUUID()}`),
   };
@@ -54,6 +56,7 @@ export async function buildAuthTestApp(
     .useValue(authTestConfig(testDb, options))
     .compile();
   const app = moduleRef.createNestApplication({ bodyParser: false });
+  applyHttpHardening(app, 0);
   await app.init();
   return app;
 }

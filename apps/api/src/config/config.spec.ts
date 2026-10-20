@@ -15,6 +15,15 @@ describe("loadConfig", () => {
     expect(config.DATABASE_URL).toBe(ok.DATABASE_URL);
   });
 
+  it("trusts no proxy by default and reads TRUST_PROXY as a hop count", () => {
+    expect(loadConfig(ok).TRUST_PROXY).toBe(0);
+    expect(loadConfig({ ...ok, TRUST_PROXY: "1" }).TRUST_PROXY).toBe(1);
+  });
+
+  it.each(["-1", "1.5", "true", "11", "abc"])("rejects TRUST_PROXY=%s", (value) => {
+    expect(() => loadConfig({ ...ok, TRUST_PROXY: value })).toThrow(/TRUST_PROXY/);
+  });
+
   it("coerces PORT from a string", () => {
     expect(loadConfig({ ...ok, PORT: "4010" }).PORT).toBe(4010);
   });

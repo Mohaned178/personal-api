@@ -72,3 +72,6 @@ export const heartbeatRequestSchema = z.strictObject({
     .regex(/^[^\p{Cc}\p{Cs}]*$/u, "must not contain control characters"),
 });
 export type HeartbeatRequest = z.output<typeof heartbeatRequestSchema>;
+
+/** Problem+json code (429, with `Retry-After`) when one ingest key sends too many requests. */
+export const INGEST_RATE_LIMITED_CODE = "ingest.rate_limited";

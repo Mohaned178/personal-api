@@ -9,6 +9,13 @@ import { account, session, user, verification } from "../../platform/db/schema";
 /** Where Better Auth's routes live (sign-up/email, sign-in/email, sign-out, get-session, ...). */
 export const AUTH_BASE_PATH = "/api/auth";
 
+/**
+ * The header Better Auth reads the client address from. The auth route handler overwrites it with
+ * Express's `req.ip` on every request (auth.http.ts), so a client-sent value never counts and the
+ * login rate limit follows the same TRUST_PROXY setting as every other limit.
+ */
+export const CLIENT_IP_HEADER = "x-pa-client-ip";
+
 export const SIGNUP_DISABLED_CODE = "auth.signup_disabled";
 export const SIGNUP_DISABLED_TITLE = "Signups are disabled";
 
@@ -60,11 +67,12 @@ export function createAuth({ config, db, canCreateUser }: CreateAuthOptions) {
       // Better Auth defaults this to true under NODE_ENV=test, which also disables its CSRF
       // check. Pin it off everywhere so foreign-origin requests are refused in every env.
       disableOriginCheck: false,
+      ipAddress: { ipAddressHeaders: [CLIENT_IP_HEADER] },
     },
     // Set explicitly from the validated config rather than left to Better Auth's own
     // process.env.NODE_ENV default, so tests and a misconfigured env can't silently flip it.
-    // TODO(M7-03): configure trusted proxies / the client-IP header (advanced.ipAddress) for
-    // deployments behind a reverse proxy; until then every client may share one rate-limit bucket.
+    // The client address comes from CLIENT_IP_HEADER (see above), so sign-in and sign-up are
+    // limited per address (3 per 10 s, Better Auth's default special rule) in production.
     rateLimit: { enabled: config.NODE_ENV === "production" },
     telemetry: { enabled: false },
     logger: { log: logSafely },

@@ -13,6 +13,7 @@ import {
 import { describe, expect, it } from "vitest";
 import { IngestKeyGuard } from "../keys/ingest-key.guard";
 import { INGEST_EVENTS_PATH, IngestController } from "./ingest.controller";
+import { IngestRateLimitGuard } from "./ingest-rate-limit.guard";
 
 const handler = IngestController.prototype.events;
 
@@ -37,7 +38,10 @@ describe("IngestController routing", () => {
     expect(Reflect.getMetadata(HTTP_CODE_METADATA, handler)).toBe(200);
   });
 
-  it("is guarded by IngestKeyGuard for the whole controller", () => {
-    expect(Reflect.getMetadata(GUARDS_METADATA, IngestController)).toEqual([IngestKeyGuard]);
+  it("is guarded by the key, then the per-key limit, for the whole controller", () => {
+    expect(Reflect.getMetadata(GUARDS_METADATA, IngestController)).toEqual([
+      IngestKeyGuard,
+      IngestRateLimitGuard,
+    ]);
   });
 });
