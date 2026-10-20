@@ -50,20 +50,22 @@ describe("createAuth rate limiting", () => {
   const rateLimitOf = (auth: ReturnType<typeof build>) =>
     (auth.options as { rateLimit?: { enabled?: boolean } }).rateLimit;
 
-  it("sets rateLimit explicitly and enables it in production", () => {
-    const rateLimit = rateLimitOf(build("production"));
-    expect(rateLimit).toBeDefined();
-    expect(rateLimit?.enabled).toBe(true);
-  });
-
-  it.each(["development", "test"] as const)(
-    "sets rateLimit explicitly and disables it when NODE_ENV is %s",
+  // M7-04: NODE_ENV defaults to development, so "production only" left most self-hosted
+  // installs without a login limit.
+  it.each(["production", "development"] as const)(
+    "sets rateLimit explicitly and enables it when NODE_ENV is %s",
     (env) => {
       const rateLimit = rateLimitOf(build(env));
       expect(rateLimit).toBeDefined();
-      expect(rateLimit?.enabled).toBe(false);
+      expect(rateLimit?.enabled).toBe(true);
     },
   );
+
+  it("sets rateLimit explicitly and disables it only when NODE_ENV is test", () => {
+    const rateLimit = rateLimitOf(build("test"));
+    expect(rateLimit).toBeDefined();
+    expect(rateLimit?.enabled).toBe(false);
+  });
 
   it("follows the validated config, not process.env.NODE_ENV", () => {
     const original = process.env.NODE_ENV;

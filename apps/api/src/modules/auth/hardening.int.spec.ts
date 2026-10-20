@@ -5,6 +5,11 @@
  */
 import type { INestApplication } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
+import {
+  createReadKeyResponseSchema,
+  endpointKeyResponseSchema,
+  READ_RATE_LIMITED_CODE,
+} from "@personal-api/contracts";
 import request from "supertest";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { authTestConfig, TEST_ORIGIN } from "../../../test/auth.helpers";
@@ -16,6 +21,8 @@ import { applyHttpHardening } from "../../platform/http/security";
 import type { RateLimiter } from "../../platform/rate-limit/rate-limiter";
 import { INGEST_RATE_LIMITER } from "../ingest/ingest.tokens";
 import { INGEST_REQUESTS_PER_WINDOW } from "../ingest/ingest-rate-limit.guard";
+import { READ_RATE_LIMITER } from "../keys/keys.tokens";
+import { READ_REQUESTS_PER_WINDOW } from "../keys/read-key.guard";
 
 let testDb: TestDatabase;
 let app: INestApplication;
@@ -37,6 +44,7 @@ afterAll(async () => {
 
 beforeEach(() => {
   app.get<RateLimiter>(INGEST_RATE_LIMITER).reset();
+  app.get<RateLimiter>(READ_RATE_LIMITER).reset();
 });
 
 const http = () => request(app.getHttpServer());
@@ -147,13 +155,75 @@ describe("ingest rate limit", () => {
   });
 });
 
+describe("read-key rate limit (M7-04)", () => {
+  const sessionPost = (user: FixtureUser, path: string, body: object) =>
+    http().post(path).set("Cookie", user.cookie).set("Origin", TEST_ORIGIN).send(body);
+
+  async function readKey(user: FixtureUser): Promise<string> {
+    const res = await sessionPost(user, "/v1/keys", { scopes: ["events:read"] });
+    expect(res.status).toBe(201);
+    return createReadKeyResponseSchema.parse(res.body).key;
+  }
+
+  const events = (key: string) => http().get("/v1/events").set("Authorization", `Bearer ${key}`);
+
+  it("limits one read key with 429 read.rate_limited and Retry-After, and nothing else", async () => {
+    const limited = await readKey(a);
+    const other = await readKey(a);
+    for (let i = 0; i < READ_REQUESTS_PER_WINDOW; i++) {
+      expect((await events(limited)).status).toBe(200);
+    }
+    const blocked = await events(limited);
+    expect(blocked.status).toBe(429);
+    expect(blocked.headers["content-type"]).toMatch(/^application\/problem\+json/);
+    expect(blocked.body).toMatchObject({ status: 429, code: READ_RATE_LIMITED_CODE });
+    expect(Number(blocked.headers["retry-after"])).toBeGreaterThan(0);
+
+    // Another key of the same user, user B's key and a session on the same route are untouched.
+    expect((await events(other)).status).toBe(200);
+    expect((await events(await readKey(b))).status).toBe(200);
+    expect((await http().get("/v1/events").set("Cookie", a.cookie)).status).toBe(200);
+  });
+
+  it("limits an endpoint key on GET /v1/me/:slug, the route a shared key reaches", async () => {
+    const created = await sessionPost(a, "/v1/endpoints", {
+      slug: "shared-stats",
+      definition: {
+        when: { type: ["browser.page_visited"] },
+        window: { kind: "last_n_days", days: 7 },
+        aggregate: "count_by_day",
+      },
+    });
+    expect(created.status).toBe(201);
+    const { key } = endpointKeyResponseSchema.parse(created.body);
+    const run = () => http().get("/v1/me/shared-stats").set("Authorization", `Bearer ${key}`);
+    for (let i = 0; i < READ_REQUESTS_PER_WINDOW; i++) {
+      expect((await run()).status).toBe(200);
+    }
+    const blocked = await run();
+    expect(blocked.status).toBe(429);
+    expect(blocked.body.code).toBe(READ_RATE_LIMITED_CODE);
+  });
+
+  it("does not count requests with a bad key against anyone", async () => {
+    const key = await readKey(a);
+    for (let i = 0; i < READ_REQUESTS_PER_WINDOW + 5; i++) {
+      expect((await events("pa_read_not-a-real-key")).status).toBe(401);
+    }
+    expect((await events(key)).status).toBe(200);
+  });
+});
+
 describe("login rate limit follows TRUST_PROXY", () => {
-  async function productionApp(trustProxy: number): Promise<INestApplication> {
+  async function productionApp(
+    trustProxy: number,
+    nodeEnv: "production" | "development" = "production",
+  ): Promise<INestApplication> {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(APP_CONFIG)
       .useValue({
         ...authTestConfig(testDb, { allowSignup: true }),
-        NODE_ENV: "production",
+        NODE_ENV: nodeEnv,
         TRUST_PROXY: trustProxy,
       })
       .compile();
@@ -175,6 +245,18 @@ describe("login rate limit follows TRUST_PROXY", () => {
     const target = await productionApp(0);
     const statuses: number[] = [];
     for (let i = 1; i <= 5; i++) statuses.push((await attempt(target, `203.0.113.${i}`)).status);
+    expect(statuses.slice(0, 3)).not.toContain(429);
+    expect(statuses.slice(3)).toEqual([429, 429]);
+  });
+
+  // M7-04: NODE_ENV defaults to development, and a self-hoster who never sets it must not get
+  // unlimited password guesses.
+  it("is on in development too, not only in production", async () => {
+    // Behind one proxy, so this address has a budget of its own (Better Auth's counters outlive
+    // the app, and the test above spent the loopback address's).
+    const target = await productionApp(1, "development");
+    const statuses: number[] = [];
+    for (let i = 0; i < 5; i++) statuses.push((await attempt(target, "203.0.113.50")).status);
     expect(statuses.slice(0, 3)).not.toContain(429);
     expect(statuses.slice(3)).toEqual([429, 429]);
   });

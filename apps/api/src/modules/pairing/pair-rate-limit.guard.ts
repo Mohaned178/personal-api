@@ -14,10 +14,10 @@ export const PAIR_WINDOW_MS = 60_000;
  * check runs before the code is looked at, so a throttled caller cannot tell a right guess from a
  * wrong one.
  *
- * The address is Express's `req.ip` and nothing else: `X-Forwarded-For` is only honoured if the
- * app is configured to trust a proxy, which it is not yet (TODO M7-03). Until then, behind a
- * reverse proxy every client shares one bucket, which is the safe direction. The address is used
- * as an in-memory key and is never logged.
+ * The address is Express's `req.ip` and nothing else: `X-Forwarded-For` is only honoured for as
+ * many hops as `TRUST_PROXY` says (default 0). With it unset behind a reverse proxy, every client
+ * shares one bucket, which is the safe direction. The address is used as an in-memory key and is
+ * never logged.
  */
 @Injectable()
 export class PairRateLimitGuard implements CanActivate {

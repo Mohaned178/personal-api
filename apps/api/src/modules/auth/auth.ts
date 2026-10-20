@@ -69,11 +69,12 @@ export function createAuth({ config, db, canCreateUser }: CreateAuthOptions) {
       disableOriginCheck: false,
       ipAddress: { ipAddressHeaders: [CLIENT_IP_HEADER] },
     },
-    // Set explicitly from the validated config rather than left to Better Auth's own
-    // process.env.NODE_ENV default, so tests and a misconfigured env can't silently flip it.
-    // The client address comes from CLIENT_IP_HEADER (see above), so sign-in and sign-up are
-    // limited per address (3 per 10 s, Better Auth's default special rule) in production.
-    rateLimit: { enabled: config.NODE_ENV === "production" },
+    // Set explicitly from the validated config rather than left to Better Auth's own default
+    // (production only), so a self-hoster who never sets NODE_ENV (it defaults to development)
+    // still gets it. Only the test suites turn it off. The client address comes from
+    // CLIENT_IP_HEADER (see above), so sign-in and sign-up are limited per address (3 per 10 s,
+    // Better Auth's default special rule).
+    rateLimit: { enabled: config.NODE_ENV !== "test" },
     telemetry: { enabled: false },
     logger: { log: logSafely },
     // Without this, better-call answers an unexpected (non-APIError) failure itself with a bare
