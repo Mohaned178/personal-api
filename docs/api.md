@@ -464,6 +464,7 @@ Errors are `application/problem+json` (RFC 9457) with a stable `code`:
 | 400  | `activity.range_invalid`   | `from` is not before `to`, or the range is more than 90 days.                          |
 | 400  | `events.cursor_invalid`    | The `cursor` is not one `nextCursor` returned.                                         |
 | 403  | `auth.insufficient_scope`  | The read key lacks the scope the route needs (for example an endpoint key on `/v1/events`). |
+| 429  | `read.rate_limited`        | More than 120 requests a minute with one read key (every read route together, `/v1/me/<slug>` included). `Retry-After` says when to try again. |
 | 404  | `deletion.not_found`       | `GET /v1/events/deletions/<id>`: the id is unknown, belongs to another user, or is malformed. |
 | 404  | `export.not_found`         | An `/v1/exports/<id>` route: the id is unknown, belongs to another user, or is malformed. |
 | 409  | `export.not_ready`         | `/download` or `/manifest` of an export that has not completed.                          |

@@ -97,3 +97,6 @@ export const READ_KEY_NOT_FOUND_CODE = "key.not_found";
 
 /** 403 when a valid read key lacks the scope the route needs. */
 export const INSUFFICIENT_SCOPE_CODE = "auth.insufficient_scope";
+
+/** 429 when one read key sent too many requests in the current window (with `Retry-After`). */
+export const READ_RATE_LIMITED_CODE = "read.rate_limited";
