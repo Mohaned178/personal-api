@@ -52,6 +52,11 @@ jobs:
       - name: Unit tests
         run: pnpm test
 
+      # Every production dependency of the API must use a license in scripts/license-check.mjs.
+      # The audit (pnpm audit:prod) is not a gate: new advisories land without any change here.
+      - name: Production license check
+        run: pnpm licenses:check
+
   # Integration tests need Docker (Testcontainers); ubuntu runners provide it.
   integration:
     name: integration (ubuntu-24.04)

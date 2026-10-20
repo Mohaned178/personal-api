@@ -357,7 +357,7 @@ Targets changed on 2026-10-14: Firefox + Edge (free stores only) instead of Chro
 - [x] **M7-02 [S · high] Route-table-generated suite:** every route checked for unauthenticated, wrong-key-type and cross-tenant access.
 - [x] **M7-03 [S · medium] Hardening:** rate limits (login, pairing, ingest per key), helmet security headers, and CSRF checks on mutations (every session-cookie POST/PATCH/DELETE, including `DELETE /v1/events`).
 - [x] **M7-04 [O · xhigh] Security pass:** `/security-review`, fixes, and a short threat model in `docs/`. *(Done: `docs/threat-model.md`; read keys rate limited, login limit on outside tests.)*
-- [ ] **M7-05 [H · medium] Production packaging:** extension zips for AMO (first, with its source-code bundle) and then Edge Add-ons, a multi-stage Dockerfile, a compose prod profile, a Caddy example, and dependency audit and license check.
+- [x] **M7-05 [H · medium] Production packaging:** extension zips for AMO (first, with its source-code bundle) and then Edge Add-ons, a multi-stage Dockerfile, a compose prod profile, a Caddy example, and dependency audit and license check. *(Decided 2026-10-20: migrations run in a one-shot `migrate` service (`dist/migrate.js`, drizzle migrator) that `api` and `worker` wait for. The prod stack is its own file, `docker-compose.prod.yml`, so `pnpm db:up` and the dev Postgres port are unchanged. The license check is `pnpm licenses:check` in CI; `pnpm audit:prod` is advisory.)*
 - [ ] **M7-06 [H · low] Docs:** README quickstart and `self-hosting.md` (TLS, backups, upgrades), with `rule-format.md` and `api.md` finalized.
 - [ ] **M7-07 [H · low] Release prep:** CHANGELOG and version bump. Tagging `v1.0.0` needs the user's approval.
 - [ ] **M7-R [O · xhigh] Final review.**
