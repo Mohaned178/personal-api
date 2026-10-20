@@ -1367,7 +1367,11 @@ const ROUTES: Route[] = [
         run: async (attacker, victim) => {
           const started = await cookiePost(victim, "/v1/exports", {});
           expect(started.status).toBe(202);
-          const res = await cookieGet(attacker, `/v1/exports?userId=${victim.userId}`);
+          // The query is strict (like the events list): naming a user is refused, not ignored.
+          const named = await cookieGet(attacker, `/v1/exports?userId=${victim.userId}`);
+          expectProblem(named, 400, "request.invalid");
+          expect(JSON.stringify(named.body)).not.toContain(victim.userId);
+          const res = await cookieGet(attacker, "/v1/exports");
           expect(res.status).toBe(200);
           expect(JSON.stringify(res.body)).not.toContain(started.body.export.id);
         },
