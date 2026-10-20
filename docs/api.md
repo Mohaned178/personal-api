@@ -294,8 +294,9 @@ the first of: a `set_retention` rule, the policy for the event's **type**, the p
 Two jobs in the worker (`pnpm worker`) act on that date:
 
 - **Purge**, every hour on the hour (UTC): deletes events whose `expires_at` has passed, in batches
-  of 1 000 (at most 200 000 per run; the next run carries on). Events without an `expires_at` are
-  never purged.
+  of 1 000 (at most 200 000 per run; the next run carries on). Events stored before retention
+  existed had no `expires_at`; a migration gave them `received_at` plus 90 days, so they are purged
+  like the rest.
 - **Recompute**, about a minute after you change or delete a policy: sets `expires_at` to
   `received_at` plus the days the policies now give, for your stored events, so a policy applies to
   past events too. Events a `set_retention` rule governs keep the date the rule gave. Lowering a

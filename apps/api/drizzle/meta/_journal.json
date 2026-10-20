@@ -85,6 +85,13 @@
       "when": 1792445929892,
       "tag": "0011_mighty_rafael_vega",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1792496268848,
+      "tag": "0012_backfill_event_expiry",
+      "breakpoints": true
     }
   ]
 }
