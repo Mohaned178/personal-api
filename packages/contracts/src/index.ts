@@ -24,6 +24,7 @@ export * from "./limits.js";
 export * from "./pairing.js";
 export * from "./parse-event.js";
 export * from "./primitives.js";
+export * from "./recommendations.js";
 export * from "./registry.js";
 export * from "./retention.js";
 export * from "./rule-fields.js";

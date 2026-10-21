@@ -65,6 +65,7 @@ declare("session", [
   "GET /v1/activity/site",
   "GET /v1/activity/hours",
   "GET /v1/activity/sessions",
+  "GET /v1/recommendations",
   "GET /v1/me",
   "POST /v1/integrations",
   "GET /v1/integrations",

@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link, useParams } from "@tanstack/react-router";
 import { AppNav } from "@/components/app-nav";
+import { Recommendations } from "@/components/recommendations";
 import { type ActivityDay, formatDuration, getSite, type SiteDetail } from "@/lib/activity";
 import { getSettings } from "@/lib/settings";
 
@@ -114,6 +115,7 @@ export function SitePage() {
         </Link>
       </header>
       <AppNav />
+      <Recommendations domain={domain} />
       <SitePanel domain={domain} />
     </main>
   );

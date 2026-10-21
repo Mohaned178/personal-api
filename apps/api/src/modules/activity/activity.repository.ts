@@ -49,6 +49,14 @@ export interface SiteRows {
   paths: PathRow[];
 }
 
+export interface DomainDayRow {
+  domain: string;
+  date: string;
+  activeMs: number;
+  /** The part of `activeMs` between 23:00 and 07:00 local time. */
+  nightMs: number;
+}
+
 export interface SessionRow {
   id: string;
   domain: string;
@@ -184,6 +192,49 @@ export class ActivityRepository {
         activeMs: Number(r.activeMs),
       }))
       .filter((r) => r.activeMs > 0);
+  }
+
+  /** Active time per (domain, local day) for the given domains, with the part that fell at night. */
+  async domainDays(
+    userId: string,
+    filters: ActivityFilters,
+    timeZone: string,
+    domainNames: string[],
+  ): Promise<DomainDayRow[]> {
+    assertUserScope(userId);
+    if (domainNames.length === 0) return [];
+    const domain = sql<string>`${events.data} ->> 'domain'`;
+    const day = sql<string>`to_char(${events.occurredAt} at time zone ${timeZone}, 'YYYY-MM-DD')`;
+    const hour = sql`extract(hour from ${events.occurredAt} at time zone ${timeZone})`;
+    const nightMs = sql<string>`coalesce(sum(case when ${events.type} = ${FOCUS_SEGMENT} and (${hour} >= 23 or ${hour} < 7) then least(greatest((${events.data} ->> 'durationMs')::bigint, 0), ${FOCUS_SEGMENT_MAX_MS}) else 0 end), 0)`;
+    const rows = await this.db
+      .select({ domain, date: day, activeMs, nightMs })
+      .from(events)
+      .where(
+        scopeCondition(
+          events,
+          userId,
+          and(activityCondition(filters), inArray(domain, domainNames)),
+        ),
+      )
+      .groupBy(sql`1`, sql`2`)
+      .orderBy(sql`1`, sql`2`);
+    return rows.map((r) => ({
+      domain: r.domain,
+      date: r.date,
+      activeMs: Number(r.activeMs),
+      nightMs: Number(r.nightMs),
+    }));
+  }
+
+  /** When the user's first activity in the range happened, or null when there is none. */
+  async firstActivity(userId: string, filters: ActivityFilters): Promise<Date | null> {
+    assertUserScope(userId);
+    const [row] = await this.db
+      .select({ first: sql<string | null>`min(${events.occurredAt})` })
+      .from(events)
+      .where(scopeCondition(events, userId, activityCondition(filters)));
+    return row?.first ? new Date(row.first) : null;
   }
 
   /** Focus segments newest first on `(occurred_at, id)`. The caller asks for one row more than a page. */

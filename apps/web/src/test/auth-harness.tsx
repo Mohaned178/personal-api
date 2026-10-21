@@ -40,6 +40,8 @@ export interface FakeBackend {
   timeZones?: string[];
   /** Answer PATCH /v1/settings with this error status. */
   rejectSettings?: number;
+  /** Suggestions for GET /v1/recommendations. Leave unset and that route answers 404. */
+  recommendations?: unknown[];
   /** Aggregates for /v1/activity. Leave unset and those routes answer 404. */
   activity?: FakeActivity;
   calls: { method: string; path: string; body: unknown; search?: string }[];
@@ -411,6 +413,15 @@ export function installFetch(b: FakeBackend) {
         b.timeZone = next;
         return json(200, { timeZone: next });
       }
+      case "GET /v1/recommendations":
+        return b.recommendations === undefined
+          ? json(404, { code: "not_found" })
+          : json(200, {
+              from: "2026-09-23T00:00:00.000Z",
+              to: "2026-10-21T03:00:00.000Z",
+              timeZone: b.timeZone ?? "UTC",
+              recommendations: b.recommendations,
+            });
       case "GET /v1/diagnostics":
         return b.diagnostics === undefined
           ? json(404, { code: "not_found" })

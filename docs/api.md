@@ -310,6 +310,22 @@ curl -s "$BASE/v1/activity/sessions?limit=50" -b "$JAR"
   `durationMs`). `limit` is 1 to 200 (default 50). Pass `nextCursor` as `cursor`; a cursor this API
   did not issue is `400 activity.cursor_invalid`.
 
+### Recommendations
+
+`GET /v1/recommendations` (session only, no query) suggests changes from your own last 4 weeks,
+with fixed rules and no outside service. It answers with `from`, `to`, `timeZone` and at most 6
+`recommendations`, each with a `kind`:
+
+- `limit_plan`: a heavy site (about 45 minutes or more a day on at least 10 of the days, and no
+  limit on it yet) with `averageMinutes` and `steps` (2 to 4 daily limits, 15 minutes apart, down a
+  third, never under 30). Applying it is `POST /v1/limits` with the first step.
+- `limit_step`: a limit you kept for the last week (5 or more active days, none over it): the
+  `nextMinutes` is 15 less, never under 30. Applying it is `PUT /v1/limits/:id`.
+- `late_night`: most of the time on a site (`sharePercent`) falls between `fromHour` and `toHour`
+  (23:00 to 07:00 in your time zone). A hint only until schedules arrive (M9-06).
+
+With less than 14 days of data the list is empty. Dismissals are kept in the browser, not the API.
+
 ### Time zone
 
 Days are cut in your time zone, which is a setting. Like every route here they take the session
