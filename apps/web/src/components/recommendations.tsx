@@ -6,6 +6,7 @@ import { formatDuration } from "@/lib/activity";
 import {
   applyRecommendation,
   getRecommendations,
+  hourLabel,
   type Recommendation,
   readDismissed,
   recommendationKey,
@@ -13,7 +14,6 @@ import {
 } from "@/lib/recommendations";
 
 const minutes = (m: number) => formatDuration(m * 60_000);
-const hourLabel = (h: number) => `${String(h).padStart(2, "0")}:00`;
 
 function describe(r: Recommendation): { title: string; text: string; apply: string | null } {
   if (r.kind === "limit_plan") {
@@ -33,7 +33,7 @@ function describe(r: Recommendation): { title: string; text: string; apply: stri
   return {
     title: `${r.domain} late at night`,
     text: `${r.sharePercent}% of your time here is between ${hourLabel(r.fromHour)} and ${hourLabel(r.toHour)}. Consider keeping it for the daytime.`,
-    apply: null,
+    apply: `Block ${hourLabel(r.fromHour)} to ${hourLabel(r.toHour)}`,
   };
 }
 
@@ -48,6 +48,7 @@ function Card({ r, onDismiss }: { r: Recommendation; onDismiss: () => void }) {
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["recommendations"] });
       await queryClient.invalidateQueries({ queryKey: ["limits"] });
+      await queryClient.invalidateQueries({ queryKey: ["schedules"] });
     },
   });
   const { title, text, apply: applyLabel } = describe(r);

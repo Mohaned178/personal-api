@@ -92,11 +92,32 @@ describe("Recommendations on Insights", () => {
     expect(within(cards[0] as HTMLElement).getByText(/lower it to 45m/i)).toBeTruthy();
     expect(within(cards[1] as HTMLElement).getByText(/1h 35m a day/)).toBeTruthy();
     expect(within(cards[1] as HTMLElement).getByText(/1h 30m → 1h 15m → 1h 00m/)).toBeTruthy();
-    // The late-night hint is read-only until schedules exist.
     expect(within(cards[2] as HTMLElement).getByText(/70% .* 23:00 and 07:00/)).toBeTruthy();
+    expect(
+      within(cards[2] as HTMLElement).getByRole("button", { name: "Block 23:00 to 07:00" }),
+    ).toBeTruthy();
     expect(
       within(cards[2] as HTMLElement).queryByRole("button", { name: /limit|lower/i }),
     ).toBeNull();
+  });
+
+  it("applies a late-night hint as a schedule for those hours, every day (M9-06)", async () => {
+    backend.recommendations = [night];
+    backend.schedules = [];
+    mount("/");
+    fireEvent.click(await screen.findByRole("button", { name: "Block 23:00 to 07:00" }));
+    await waitFor(() =>
+      expect(
+        backend.calls.find((c) => c.method === "POST" && c.path === "/v1/schedules")?.body,
+      ).toEqual({
+        name: "youtube.com at night",
+        patterns: ["youtube.com"],
+        days: [0, 1, 2, 3, 4, 5, 6],
+        start: "23:00",
+        end: "07:00",
+        enabled: true,
+      }),
+    );
   });
 
   it("applies a plan as a limit on its first step", async () => {

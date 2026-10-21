@@ -22,10 +22,11 @@ import {
   setDefaultPolicy,
   startIngestHarness,
 } from "../../../test/ingest-helpers";
-
+import { FocusService } from "../focus/focus.service";
 import { generateApiKey } from "../keys/key-generation";
 import { LimitsService } from "../limits/limits.service";
 import { RulesService } from "../rules/rules.service";
+import { SchedulesService } from "../schedules/schedules.service";
 
 const CONFIG_PATH = "/v1/ingest/config";
 
@@ -88,6 +89,8 @@ describe("GET /v1/ingest/config", () => {
       defaultPolicy: "deny",
       rules: [],
       limits: [],
+      focus: null,
+      schedules: [],
     });
     expect(res.headers["content-type"]).toMatch(/^application\/json/);
     expect(res.headers["cache-control"]).toBe("private, no-cache");
@@ -231,6 +234,61 @@ describe("limits (M9-02)", () => {
       "limit-of-b.example.com",
     ]);
     expect(JSON.stringify(a.body)).not.toContain("limit-of-b");
+  });
+});
+
+describe("focus session and schedules (M9-06)", () => {
+  const schedule = {
+    name: "Work",
+    patterns: ["reddit.com"],
+    days: [0, 1, 2, 3, 4],
+    start: "09:00",
+    end: "17:00",
+    enabled: true,
+  };
+
+  it("carries the running focus session and only the enabled schedules", async () => {
+    const schedules = h.app.get(SchedulesService);
+    const on = await schedules.create(h.a.userId, schedule);
+    await schedules.create(h.a.userId, { ...schedule, name: "off", enabled: false });
+    const { session } = await h.app
+      .get(FocusService)
+      .start(h.a.userId, { patterns: ["x.com"], minutes: 30 });
+    const config = ingestConfigResponseSchema.parse((await getConfig(h.a.ingestKey)).body);
+    expect(config.focus).toEqual(session);
+    expect(config.schedules).toEqual([on]);
+  });
+
+  it("changes the ETag when a session starts or a schedule is added", async () => {
+    const before = await getConfig(h.a.ingestKey);
+    await h.app.get(FocusService).start(h.a.userId, { patterns: ["x.com"], minutes: 30 });
+    const withFocus = await getConfig(h.a.ingestKey, {
+      "If-None-Match": before.headers.etag as string,
+    });
+    expect(withFocus.status).toBe(200);
+    await h.app.get(SchedulesService).create(h.a.userId, schedule);
+    const withSchedule = await getConfig(h.a.ingestKey, {
+      "If-None-Match": withFocus.headers.etag as string,
+    });
+    expect(withSchedule.status).toBe(200);
+    expect(withSchedule.headers.etag).not.toBe(withFocus.headers.etag);
+  });
+
+  it("does not carry a session that has ended", async () => {
+    await h.app.get(FocusService).start(h.a.userId, { patterns: ["x.com"], minutes: 30 });
+    // The server reads "now" from the fixture clock, not from the database.
+    await h.testDb.pool.query("update focus_sessions set ends_at = $1", [
+      new Date(h.clock.now().getTime() - 1000),
+    ]);
+    expect((await getConfig(h.a.ingestKey)).body.focus).toBeNull();
+  });
+
+  it("gives each key its own user blocks only", async () => {
+    await h.app.get(FocusService).start(h.b.userId, { patterns: ["theirs.example"], minutes: 30 });
+    await h.app.get(SchedulesService).create(h.b.userId, { ...schedule, name: "theirs" });
+    const res = await getConfig(h.a.ingestKey);
+    expect(res.body.focus).toBeNull();
+    expect(res.body.schedules).toEqual([]);
   });
 });
 

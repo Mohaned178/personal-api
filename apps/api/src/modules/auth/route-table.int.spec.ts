@@ -100,6 +100,13 @@ declare("session", [
   "POST /v1/limits",
   "PUT /v1/limits/:id",
   "DELETE /v1/limits/:id",
+  "GET /v1/schedules",
+  "POST /v1/schedules",
+  "PUT /v1/schedules/:id",
+  "DELETE /v1/schedules/:id",
+  "GET /v1/focus",
+  "POST /v1/focus",
+  "DELETE /v1/focus",
 ]);
 
 interface RouteEntry {

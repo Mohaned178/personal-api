@@ -2,7 +2,9 @@ import {
   type Recommendation,
   type RecommendationsResponse,
   recommendationKey,
+  SCHEDULE_NAME_MAX,
 } from "@personal-api/contracts";
+import { createSchedule } from "./blocking";
 import { createLimit, replaceLimit } from "./limits";
 
 /**
@@ -13,13 +15,19 @@ import { createLimit, replaceLimit } from "./limits";
 export type { Recommendation };
 export { recommendationKey };
 
+/** `23:00`, the contract's time of day. */
+export const hourLabel = (hour: number): string => `${String(hour).padStart(2, "0")}:00`;
+
 export async function getRecommendations(): Promise<Recommendation[]> {
   const res = await fetch("/v1/recommendations", { credentials: "same-origin" });
   if (!res.ok) throw new Error(`Request failed (${res.status}).`);
   return ((await res.json()) as RecommendationsResponse).recommendations;
 }
 
-/** Turns a suggestion into limits: the plan's first step, or the next step down of a kept limit. */
+/**
+ * Turns a suggestion into limits (the plan's first step, or the next step down of a kept limit) or,
+ * for a late-night hint, into a schedule that blocks the site in those hours every day (M9-06).
+ */
 export async function applyRecommendation(r: Recommendation): Promise<void> {
   if (r.kind === "limit_plan") {
     await createLimit({ pattern: r.domain, minutes: r.steps[0] as number, strict: false });
@@ -28,6 +36,15 @@ export async function applyRecommendation(r: Recommendation): Promise<void> {
       pattern: r.pattern,
       minutes: r.nextMinutes,
       strict: r.strict,
+    });
+  } else {
+    await createSchedule({
+      name: `${r.domain} at night`.slice(0, SCHEDULE_NAME_MAX),
+      patterns: [r.domain],
+      days: [0, 1, 2, 3, 4, 5, 6],
+      start: hourLabel(r.fromHour),
+      end: hourLabel(r.toHour),
+      enabled: true,
     });
   }
 }

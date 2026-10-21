@@ -1,6 +1,12 @@
 // Fixtures for the M4-06 rules tests: rules, configs, stored rules and a plain storage fake.
 
-import type { IngestConfigResponse, Limit, Rule } from "@personal-api/contracts";
+import type {
+  FocusSession,
+  IngestConfigResponse,
+  Limit,
+  Rule,
+  Schedule,
+} from "@personal-api/contracts";
 import type { Connection } from "../../lib/connect";
 import { activeRules, type StoredRules } from "../../lib/rules/active-rules";
 import { RULES_STORAGE_KEY } from "../../lib/rules/storage-key";
@@ -35,13 +41,21 @@ export function domainRule(
 
 export function configOf(
   rules: Rule[],
-  options: { version?: number; defaultPolicy?: "allow" | "deny"; limits?: Limit[] } = {},
+  options: {
+    version?: number;
+    defaultPolicy?: "allow" | "deny";
+    limits?: Limit[];
+    focus?: FocusSession | null;
+    schedules?: Schedule[];
+  } = {},
 ): IngestConfigResponse {
   return {
     ruleSetVersion: options.version ?? rules.length,
     defaultPolicy: options.defaultPolicy ?? "deny",
     rules,
     limits: options.limits ?? [],
+    focus: options.focus ?? null,
+    schedules: options.schedules ?? [],
   };
 }
 

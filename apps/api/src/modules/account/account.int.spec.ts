@@ -142,6 +142,17 @@ async function seedActivity(user: FixtureUser): Promise<void> {
   // site_limits
   const limit = await post("/v1/limits", { pattern: "youtube.com", minutes: 30 });
   expect(limit.status, JSON.stringify(limit.body)).toBe(201);
+  // site_schedules and focus_sessions
+  const blockSchedule = await post("/v1/schedules", {
+    name: "Work",
+    patterns: ["youtube.com"],
+    days: [0],
+    start: "09:00",
+    end: "17:00",
+  });
+  expect(blockSchedule.status, JSON.stringify(blockSchedule.body)).toBe(201);
+  const focus = await post("/v1/focus", { patterns: ["youtube.com"], minutes: 30 });
+  expect(focus.status, JSON.stringify(focus.body)).toBe(201);
   // bulk_deletions, and a queued job whose payload carries this user's id (no worker runs here)
   const bulk = await http()
     .delete("/v1/events")
