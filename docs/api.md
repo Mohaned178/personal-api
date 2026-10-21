@@ -427,6 +427,36 @@ curl -s -X DELETE "$BASE/v1/schedules/$SCHEDULE_ID" -b "$JAR"   # 204
 
 `name` is 1 to 60 characters, `patterns` 1 to 20 distinct sites. You can have up to 20 schedules.
 
+### Categories, goals and the split
+
+Every site is `productive`, `neutral` or `distracting` (M9-07). A built-in list covers well-known
+sites (a site and its subdomains); everything else is neutral. Your own overrides beat the list.
+The split is worked out when you ask for it, so an edit also changes the past. Nothing is written
+onto events. Session only, like every route here.
+
+```bash
+curl -s "$BASE/v1/categories" -b "$JAR"                          # { "rules": [...], "presets": { "productive": [...], "distracting": [...] } }
+curl -s -X POST "$BASE/v1/categories" -b "$JAR" -H "Content-Type: application/json" \
+  -d '{"pattern":"*.example.com","category":"distracting"}'    # 201 { "id", "pattern", "category" }
+curl -s -X PUT "$BASE/v1/categories/$ID" -b "$JAR" -H "Content-Type: application/json" \
+  -d '{"pattern":"*.example.com","category":"neutral"}'        # replaces the override
+curl -s -X DELETE "$BASE/v1/categories/$ID" -b "$JAR"           # 204
+curl -s "$BASE/v1/activity/categories" -b "$JAR"                # { "days": [{ "date", "productiveMs", "neutralMs", "distractingMs" }] }
+```
+
+- A pattern is `example.com` (that site) or `*.example.com` (its subdomains). An exact pattern beats
+  a wildcard, and a longer wildcard beats a shorter one. One override per pattern
+  (`409 category.pattern_taken`), at most 200 per user (`409 category.limit_reached`). A foreign,
+  unknown or malformed id is `404 category.not_found`.
+- `activity/categories` takes the same `from`/`to` as the other activity routes. Days are cut in your
+  time zone and days without activity are left out. The split covers the 100 busiest sites of the
+  range; time on any other site counts as neutral.
+- A goal is a daily ceiling on `distracting` or `neutral` time, one per category:
+  `GET /v1/goals`, `PUT /v1/goals/:category` with `{"minutes": 60}` (1 to 1440, creates or replaces),
+  `DELETE /v1/goals/:category` (204). Any other category, or a goal that is not set, is
+  `404 goal.not_found`. The streak and the weekly summary are worked out in the dashboard from
+  `activity/categories`, `activity/domains` and `activity/site`.
+
 ### Delete data
 
 Deletion is a hard delete. Database backups keep deleted data until they rotate.

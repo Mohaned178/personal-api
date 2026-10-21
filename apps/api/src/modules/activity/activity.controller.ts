@@ -1,5 +1,6 @@
 import { Controller, Get, Query, UseGuards } from "@nestjs/common";
 import type {
+  ActivityCategoriesResponse,
   ActivityDailyResponse,
   ActivityDomainsResponse,
   ActivityHoursResponse,
@@ -9,6 +10,7 @@ import type {
 import { CurrentAuth, type SessionAuthContext } from "../auth/auth-context";
 import { SessionGuard } from "../auth/session.guard";
 import {
+  ActivityCategoriesQueryDto,
   ActivityDailyQueryDto,
   ActivityDomainsQueryDto,
   ActivityHoursQueryDto,
@@ -37,6 +39,14 @@ export class ActivityController {
     @Query() query: ActivityDomainsQueryDto,
   ): Promise<ActivityDomainsResponse> {
     return this.activity.domains(auth.userId, query);
+  }
+
+  @Get("categories")
+  categories(
+    @CurrentAuth("session") auth: SessionAuthContext,
+    @Query() query: ActivityCategoriesQueryDto,
+  ): Promise<ActivityCategoriesResponse> {
+    return this.activity.categories(auth.userId, query);
   }
 
   @Get("site")

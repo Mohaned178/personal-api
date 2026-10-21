@@ -10,6 +10,8 @@ const NAV = [
   { label: "Patterns", to: "/patterns" },
   { label: "Limits", to: "/limits" },
   { label: "Focus", to: "/focus" },
+  { label: "Categories", to: "/categories" },
+  { label: "Summary", to: "/summary" },
   {
     label: "Sources",
     links: [

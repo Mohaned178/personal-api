@@ -1,4 +1,5 @@
 import {
+  activityCategoriesQuerySchema,
   activityDailyQuerySchema,
   activityDomainsQuerySchema,
   activityHoursQuerySchema,
@@ -13,3 +14,4 @@ export class ActivityDomainsQueryDto extends createZodDto(activityDomainsQuerySc
 export class ActivitySiteQueryDto extends createZodDto(activitySiteQuerySchema) {}
 export class ActivityHoursQueryDto extends createZodDto(activityHoursQuerySchema) {}
 export class ActivitySessionsQueryDto extends createZodDto(activitySessionsQuerySchema) {}
+export class ActivityCategoriesQueryDto extends createZodDto(activityCategoriesQuerySchema) {}

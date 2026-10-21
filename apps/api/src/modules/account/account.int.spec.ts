@@ -153,6 +153,14 @@ async function seedActivity(user: FixtureUser): Promise<void> {
   expect(blockSchedule.status, JSON.stringify(blockSchedule.body)).toBe(201);
   const focus = await post("/v1/focus", { patterns: ["youtube.com"], minutes: 30 });
   expect(focus.status, JSON.stringify(focus.body)).toBe(201);
+  // site_categories and category_goals
+  const category = await post("/v1/categories", { pattern: "youtube.com", category: "neutral" });
+  expect(category.status, JSON.stringify(category.body)).toBe(201);
+  const goal = await http()
+    .put("/v1/goals/distracting")
+    .set("Cookie", user.cookie)
+    .send({ minutes: 60 });
+  expect(goal.status, JSON.stringify(goal.body)).toBe(200);
   // bulk_deletions, and a queued job whose payload carries this user's id (no worker runs here)
   const bulk = await http()
     .delete("/v1/events")

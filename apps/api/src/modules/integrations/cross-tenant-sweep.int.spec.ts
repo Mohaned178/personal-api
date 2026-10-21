@@ -143,6 +143,10 @@ const scheduleBody = {
 const scheduleIds = new Map<string, string>();
 const focusBody = { patterns: ["youtube.com"], minutes: 30 };
 const focusIds = new Map<string, string>();
+/** Each user starts with one category override and one goal. */
+const categoryBody = { pattern: "reddit.com", category: "productive" };
+const categoryIds = new Map<string, string>();
+const goalBody = { minutes: 45 };
 
 /** Each user's extension integration and its pending (unused, unexpired) code, set per test. */
 const pending = new Map<string, { integrationId: string; pairingCode: string }>();
@@ -1613,6 +1617,219 @@ const ROUTES: Route[] = [
       expect((await cookieRemove(owner, "/v1/focus")).status).toBe(204);
     },
   },
+  {
+    route: "GET /v1/activity/categories",
+    attacks: [
+      {
+        label: "reading the split while the victim has activity, naming the victim",
+        run: async (attacker, victim) => {
+          const res = await cookieGet(attacker, "/v1/activity/categories").set(
+            "X-User-Id",
+            victim.userId,
+          );
+          expect(res.status).toBe(200);
+          expect(res.body.days).toEqual([]);
+          const named = await cookieGet(
+            attacker,
+            `/v1/activity/categories?userId=${victim.userId}`,
+          );
+          expectProblem(named, 400, "request.invalid");
+        },
+      },
+    ],
+    control: async (owner) => {
+      const res = await cookieGet(owner, "/v1/activity/categories");
+      expect(res.status).toBe(200);
+      expect(res.body.days).toEqual([]);
+    },
+  },
+  {
+    route: "GET /v1/categories",
+    attacks: [
+      {
+        label: "listing while the victim has an override, naming the victim in query and headers",
+        run: async (attacker, victim) => {
+          const res = await cookieGet(attacker, `/v1/categories?userId=${victim.userId}`).set(
+            "X-User-Id",
+            victim.userId,
+          );
+          expect(res.status).toBe(200);
+          expect(res.body.rules.map((r: { id: string }) => r.id)).toEqual([
+            categoryIds.get(attacker.userId),
+          ]);
+          expect(JSON.stringify(res.body)).not.toContain(categoryIds.get(victim.userId));
+        },
+      },
+    ],
+    control: async (owner) => {
+      const res = await cookieGet(owner, "/v1/categories");
+      expect(res.status).toBe(200);
+      expect(res.body.rules).toHaveLength(1);
+    },
+  },
+  {
+    route: "POST /v1/categories",
+    attacks: [
+      {
+        label: "naming the victim as owner in the body",
+        run: async (attacker, victim) => {
+          const res = await cookiePost(attacker, "/v1/categories", {
+            ...categoryBody,
+            pattern: "other.example.com",
+            userId: victim.userId,
+          });
+          expectProblem(res, 400, "request.invalid");
+        },
+      },
+      {
+        label: "creating an override while naming the victim in query and headers",
+        run: async (attacker, victim) => {
+          const res = await cookiePost(attacker, `/v1/categories?userId=${victim.userId}`, {
+            ...categoryBody,
+            pattern: "other.example.com",
+          }).set("X-User-Id", victim.userId);
+          expect(res.status).toBe(201);
+          const { rows } = await h.testDb.pool.query(
+            "select user_id from site_categories where id = $1",
+            [res.body.id],
+          );
+          expect(rows).toEqual([{ user_id: attacker.userId }]);
+        },
+      },
+    ],
+    control: async (owner) => {
+      const res = await cookiePost(owner, "/v1/categories", {
+        ...categoryBody,
+        pattern: "other.example.com",
+      });
+      expect(res.status).toBe(201);
+    },
+  },
+  {
+    route: "PUT /v1/categories/:id",
+    attacks: [
+      {
+        label: "replacing the victim's override",
+        run: async (attacker, victim) => {
+          const body = { ...categoryBody, category: "distracting" };
+          const res = await cookiePut(
+            attacker,
+            `/v1/categories/${categoryIds.get(victim.userId)}`,
+            body,
+          );
+          expectProblem(res, 404, "category.not_found");
+          await expectSameAsUnknown(
+            res,
+            await cookiePut(attacker, `/v1/categories/${missing}`, body),
+          );
+        },
+      },
+    ],
+    control: async (owner) => {
+      const res = await cookiePut(owner, `/v1/categories/${categoryIds.get(owner.userId)}`, {
+        ...categoryBody,
+        category: "distracting",
+      });
+      expect(res.status).toBe(200);
+    },
+  },
+  {
+    route: "DELETE /v1/categories/:id",
+    attacks: [
+      {
+        label: "deleting the victim's override",
+        run: async (attacker, victim) => {
+          const res = await cookieRemove(
+            attacker,
+            `/v1/categories/${categoryIds.get(victim.userId)}`,
+          );
+          expectProblem(res, 404, "category.not_found");
+          await expectSameAsUnknown(res, await cookieRemove(attacker, `/v1/categories/${missing}`));
+        },
+      },
+      {
+        label: "deleting a malformed id",
+        run: async (attacker) => {
+          const res = await cookieRemove(attacker, "/v1/categories/not-a-uuid");
+          expectProblem(res, 404, "category.not_found");
+          await expectSameAsUnknown(res, await cookieRemove(attacker, `/v1/categories/${missing}`));
+        },
+      },
+    ],
+    control: async (owner) => {
+      const res = await cookieRemove(owner, `/v1/categories/${categoryIds.get(owner.userId)}`);
+      expect(res.status).toBe(204);
+    },
+  },
+  {
+    route: "GET /v1/goals",
+    attacks: [
+      {
+        label: "listing while the victim has a goal, naming the victim in query and headers",
+        run: async (attacker, victim) => {
+          const res = await cookieGet(attacker, `/v1/goals?userId=${victim.userId}`).set(
+            "X-User-Id",
+            victim.userId,
+          );
+          expect(res.status).toBe(200);
+          expect(res.body.goals).toEqual([{ category: "distracting", ...goalBody }]);
+        },
+      },
+    ],
+    control: async (owner) => {
+      const res = await cookieGet(owner, "/v1/goals");
+      expect(res.status).toBe(200);
+      expect(res.body.goals).toHaveLength(1);
+    },
+  },
+  {
+    route: "PUT /v1/goals/:category",
+    attacks: [
+      {
+        label: "naming the victim as owner in the body",
+        run: async (attacker, victim) => {
+          const res = await cookiePut(attacker, "/v1/goals/distracting", {
+            minutes: 5,
+            userId: victim.userId,
+          });
+          expectProblem(res, 400, "request.invalid");
+        },
+      },
+      {
+        label: "setting a goal while naming the victim in query and headers",
+        run: async (attacker, victim) => {
+          const res = await cookiePut(attacker, `/v1/goals/neutral?userId=${victim.userId}`, {
+            minutes: 5,
+          }).set("X-User-Id", victim.userId);
+          expect(res.status).toBe(200);
+          // The victim's goals are untouched: tenantState compares them after the attack.
+        },
+      },
+    ],
+    control: async (owner) => {
+      const res = await cookiePut(owner, "/v1/goals/distracting", { minutes: 10 });
+      expect(res.status).toBe(200);
+    },
+  },
+  {
+    route: "DELETE /v1/goals/:category",
+    attacks: [
+      {
+        label: "deleting a goal while naming the victim in query and headers",
+        run: async (attacker, victim) => {
+          // The attacker has a goal too, so this deletes the attacker's own, never the victim's.
+          const res = await cookieRemove(
+            attacker,
+            `/v1/goals/distracting?userId=${victim.userId}`,
+          ).set("X-User-Id", victim.userId);
+          expect(res.status).toBe(204);
+        },
+      },
+    ],
+    control: async (owner) => {
+      expect((await cookieRemove(owner, "/v1/goals/distracting")).status).toBe(204);
+    },
+  },
 ];
 
 /**
@@ -1646,6 +1863,10 @@ async function seedActivity() {
     const focus = await cookiePost(user, "/v1/focus", focusBody);
     expect(focus.status).toBe(201);
     focusIds.set(user.userId, focus.body.session.id);
+    const category = await cookiePost(user, "/v1/categories", categoryBody);
+    expect(category.status).toBe(201);
+    categoryIds.set(user.userId, category.body.id);
+    expect((await cookiePut(user, "/v1/goals/distracting", goalBody)).status).toBe(200);
     expect(
       (await cookiePut(user, "/v1/retention/type/browser.page_visited", { days: 30 })).status,
     ).toBe(200);

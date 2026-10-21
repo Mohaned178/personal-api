@@ -6,6 +6,7 @@
 
 import { randomUUID } from "node:crypto";
 import {
+  activityCategoriesResponseSchema,
   activityDailyResponseSchema,
   activityDomainsResponseSchema,
   activityHoursResponseSchema,
@@ -376,6 +377,86 @@ describe("GET /v1/activity/sessions (M9-03)", () => {
       400,
       "request.invalid",
     );
+  });
+});
+
+describe("GET /v1/activity/categories (M9-07)", () => {
+  const MIN = 60_000;
+  const categories = (res: { body: unknown }) => activityCategoriesResponseSchema.parse(res.body);
+  const override = (u: FixtureUser, body: object) =>
+    http().post("/v1/categories").set("Cookie", u.cookie).send(body);
+
+  it("splits each day by the built-in list, with the rest as neutral", async () => {
+    await seed(h.a, {
+      occurredAt: "2026-10-13T09:00:00Z",
+      domain: "github.com",
+      durationMs: 30 * MIN,
+    });
+    await seed(h.a, {
+      occurredAt: "2026-10-13T10:00:00Z",
+      domain: "m.youtube.com",
+      durationMs: 20 * MIN,
+    });
+    await seed(h.a, {
+      occurredAt: "2026-10-13T11:00:00Z",
+      domain: "example.org",
+      durationMs: 10 * MIN,
+    });
+    await seed(h.a, {
+      occurredAt: "2026-10-12T11:00:00Z",
+      domain: "reddit.com",
+      durationMs: 5 * MIN,
+    });
+    const res = await get(h.a, "/v1/activity/categories");
+    expect(res.status, JSON.stringify(res.body)).toBe(200);
+    const body = categories(res);
+    expect(body.timeZone).toBe("UTC");
+    expect(body.days).toEqual([
+      { date: "2026-10-12", productiveMs: 0, neutralMs: 0, distractingMs: 5 * MIN },
+      { date: "2026-10-13", productiveMs: 30 * MIN, neutralMs: 10 * MIN, distractingMs: 20 * MIN },
+    ]);
+  });
+
+  it("applies the overrides of the user to the whole range, and only of the user", async () => {
+    await seed(h.a, {
+      occurredAt: "2026-10-13T10:00:00Z",
+      domain: "youtube.com",
+      durationMs: 20 * MIN,
+    });
+    await seed(h.b, {
+      occurredAt: "2026-10-13T10:00:00Z",
+      domain: "youtube.com",
+      durationMs: 7 * MIN,
+    });
+    const created = await override(h.a, { pattern: "youtube.com", category: "productive" });
+    expect(created.status).toBe(201);
+    expect(categories(await get(h.a, "/v1/activity/categories")).days).toEqual([
+      { date: "2026-10-13", productiveMs: 20 * MIN, neutralMs: 0, distractingMs: 0 },
+    ]);
+    expect(categories(await get(h.b, "/v1/activity/categories")).days).toEqual([
+      { date: "2026-10-13", productiveMs: 0, neutralMs: 0, distractingMs: 7 * MIN },
+    ]);
+  });
+
+  it("cuts days in the time zone of the user", async () => {
+    await seed(h.a, { occurredAt: "2026-10-13T23:30:00Z", domain: "github.com", durationMs: MIN });
+    await http().patch("/v1/settings").set("Cookie", h.a.cookie).send({ timeZone: "Asia/Tokyo" });
+    expect(categories(await get(h.a, "/v1/activity/categories")).days).toEqual([
+      { date: "2026-10-14", productiveMs: MIN, neutralMs: 0, distractingMs: 0 },
+    ]);
+  });
+
+  it("answers 400 for a reversed range, and 401 without a session or with an ingest key", async () => {
+    expectProblem(
+      await get(h.a, "/v1/activity/categories?from=2026-10-14T00:00:00Z&to=2026-10-13T00:00:00Z"),
+      400,
+      "activity.range_invalid",
+    );
+    expect((await http().get("/v1/activity/categories")).status).toBe(401);
+    const withKey = await http()
+      .get("/v1/activity/categories")
+      .set("Authorization", `Bearer ${h.a.ingestKey}`);
+    expect(withKey.status).toBe(401);
   });
 });
 

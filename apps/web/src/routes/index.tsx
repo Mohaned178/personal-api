@@ -1,6 +1,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { AppNav } from "@/components/app-nav";
+import { CategorySplit } from "@/components/category-split";
 import { Recommendations } from "@/components/recommendations";
 import { Button } from "@/components/ui/button";
 import { type ActivityDay, formatDuration, getInsights, type Insights } from "@/lib/activity";
@@ -139,6 +140,7 @@ function InsightsPanel() {
         <Stat label="Last 7 days" ms={week} />
       </div>
       <DailyBars days={days} today={window.today} />
+      {timeZone !== undefined && <CategorySplit timeZone={timeZone} />}
       <Recommendations />
       {domains.length > 0 && <TopDomains domains={domains} />}
       <p className="text-xs text-muted-foreground">Days are cut in {timeZone}.</p>

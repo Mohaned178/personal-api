@@ -2,6 +2,7 @@ export * from "./auth";
 export * from "./blocking";
 export * from "./deletions";
 export * from "./exports";
+export * from "./habits";
 export * from "./ingest";
 export * from "./limits";
 export * from "./meta";

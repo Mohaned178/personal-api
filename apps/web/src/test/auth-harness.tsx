@@ -52,6 +52,10 @@ export interface FakeBackend {
   timeZones?: string[];
   /** Answer PATCH /v1/settings with this error status. */
   rejectSettings?: number;
+  /** Category overrides for /v1/categories. Leave unset and those routes answer 404. */
+  categoryRules?: Array<{ id: string; pattern: string; category: string }>;
+  /** Goals for /v1/goals. Leave unset and those routes answer 404. */
+  goals?: Array<{ category: string; minutes: number }>;
   /** Suggestions for GET /v1/recommendations. Leave unset and that route answers 404. */
   recommendations?: unknown[];
   /** Aggregates for /v1/activity. Leave unset and those routes answer 404. */
@@ -63,6 +67,13 @@ export interface FakeActivity {
   days: { date: string; activeMs: number; pageVisits: number }[];
   /** Already sorted like the API (most active first); the route applies `limit`. */
   domains: { domain: string; activeMs: number; pageVisits: number }[];
+  /** Days for /v1/activity/categories (none when unset). */
+  categories?: {
+    date: string;
+    productiveMs: number;
+    neutralMs: number;
+    distractingMs: number;
+  }[];
   /** Cells for /v1/activity/hours. */
   hours?: { weekday: number; hour: number; activeMs: number }[];
   /** Newest first; /v1/activity/sessions pages them by `limit` with the index as the cursor. */
@@ -94,6 +105,9 @@ async function activityRoute(b: FakeBackend, method: string, url: URL): Promise<
     const limit = Number(url.searchParams.get("limit") ?? 20);
     const domains = activity.domainsByFrom?.[from] ?? activity.domains;
     return json(200, { from, to, domains: domains.slice(0, limit) });
+  }
+  if (url.pathname === "/v1/activity/categories") {
+    return json(200, { from, to, timeZone: b.timeZone ?? "UTC", days: activity.categories ?? [] });
   }
   if (url.pathname === "/v1/activity/hours") {
     return json(200, { from, to, timeZone: b.timeZone ?? "UTC", cells: activity.hours ?? [] });
@@ -372,6 +386,70 @@ function limitsRoute(
   return null;
 }
 
+const PRESETS = { productive: ["github.com"], distracting: ["youtube.com"] };
+
+function habitsRoute(
+  b: FakeBackend,
+  method: string,
+  pathname: string,
+  body: unknown,
+): Response | null {
+  const rules = b.categoryRules;
+  if (rules && pathname === "/v1/categories") {
+    if (method === "GET") return json(200, { rules, presets: PRESETS });
+    if (method === "POST") {
+      const save = body as { pattern: string; category: string };
+      if (rules.some((r) => r.pattern === save.pattern)) {
+        return json(409, { code: "category.pattern_taken" });
+      }
+      const created = {
+        id: `0192f1c2-7c1e-7a3b-9f00-${String(rules.length + 1).padStart(12, "0")}`,
+        ...save,
+      };
+      rules.push(created);
+      return json(201, created);
+    }
+    return null;
+  }
+  const rule = rules && /^\/v1\/categories\/([^/]+)$/.exec(pathname);
+  if (rules && rule) {
+    const at = rules.findIndex((r) => r.id === rule[1]);
+    if (at === -1) return json(404, { code: "category.not_found" });
+    if (method === "PUT") {
+      const replaced = {
+        id: rule[1] as string,
+        ...(body as { pattern: string; category: string }),
+      };
+      rules[at] = replaced;
+      return json(200, replaced);
+    }
+    if (method === "DELETE") {
+      rules.splice(at, 1);
+      return new Response(null, { status: 204 });
+    }
+    return null;
+  }
+  const goals = b.goals;
+  if (goals && pathname === "/v1/goals" && method === "GET") return json(200, { goals });
+  const goal = goals && /^\/v1\/goals\/([^/]+)$/.exec(pathname);
+  if (goals && goal) {
+    const category = goal[1] as string;
+    const at = goals.findIndex((g) => g.category === category);
+    if (method === "PUT") {
+      const set = { category, minutes: (body as { minutes: number }).minutes };
+      if (at === -1) goals.push(set);
+      else goals[at] = set;
+      return json(200, set);
+    }
+    if (method === "DELETE") {
+      if (at === -1) return json(404, { code: "goal.not_found" });
+      goals.splice(at, 1);
+      return new Response(null, { status: 204 });
+    }
+  }
+  return null;
+}
+
 export const PAIRING_CODE = "ABCD-EFGH-JKLM-NPQR-STUV";
 export const INGEST_KEY = "pa_ing_secretsecretsecret";
 
@@ -499,6 +577,7 @@ export function installFetch(b: FakeBackend) {
           (await activityRoute(b, method, url)) ??
           retentionRoute(b, method, url.pathname, body) ??
           limitsRoute(b, method, url.pathname, body) ??
+          habitsRoute(b, method, url.pathname, body) ??
           blockingRoute(b, method, url.pathname, body) ??
           rulesRoute(b, method, url.pathname, body) ??
           eventsRoute(b, method, url, body) ??

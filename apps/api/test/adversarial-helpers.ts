@@ -81,6 +81,8 @@ export async function tenantState(pool: Pool, userId: string): Promise<Record<st
     siteLimits: await q("select * from site_limits where user_id = $1 order by pattern"),
     siteSchedules: await q("select * from site_schedules where user_id = $1 order by id"),
     focusSessions: await q("select * from focus_sessions where user_id = $1"),
+    siteCategories: await q("select * from site_categories where user_id = $1 order by pattern"),
+    categoryGoals: await q("select * from category_goals where user_id = $1 order by category"),
   };
 }
 

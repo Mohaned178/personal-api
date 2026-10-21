@@ -8,11 +8,13 @@ import { AccountModule } from "./modules/account/account.module";
 import { ActivityModule } from "./modules/activity/activity.module";
 import { isAuthPath } from "./modules/auth/auth.http";
 import { AuthModule } from "./modules/auth/auth.module";
+import { CategoriesModule } from "./modules/categories/categories.module";
 import { DeletionsModule } from "./modules/deletions/deletions.module";
 import { DiagnosticsModule } from "./modules/diagnostics/diagnostics.module";
 import { EventsModule } from "./modules/events/events.module";
 import { ExportsModule } from "./modules/exports/exports.module";
 import { FocusModule } from "./modules/focus/focus.module";
+import { GoalsModule } from "./modules/goals/goals.module";
 import { INGEST_EVENTS_PATH } from "./modules/ingest/ingest.controller";
 import { IngestModule } from "./modules/ingest/ingest.module";
 import { IntegrationsModule } from "./modules/integrations/integrations.module";
@@ -65,6 +67,8 @@ import { buildPinoHttpOptions } from "./platform/logging/logging";
     RulesModule,
     RetentionModule,
     LimitsModule,
+    CategoriesModule,
+    GoalsModule,
     FocusModule,
     SchedulesModule,
     ExportsModule,

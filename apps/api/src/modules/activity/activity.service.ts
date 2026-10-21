@@ -7,6 +7,8 @@ import {
   ACTIVITY_RANGE_INVALID_CODE,
   ACTIVITY_SESSIONS_DEFAULT_LIMIT,
   ACTIVITY_SITE_PATHS_LIMIT,
+  type ActivityCategoriesQuery,
+  type ActivityCategoriesResponse,
   type ActivityDailyQuery,
   type ActivityDailyResponse,
   type ActivityDomainsQuery,
@@ -21,18 +23,23 @@ import {
 import { CLOCK, type Clock } from "../../platform/clock/clock";
 import { assertUserScope } from "../../platform/db/tenant-scope";
 import { AppException } from "../../platform/errors/problem";
+import { CategoriesService } from "../categories/categories.service";
 import { decodeCursor, encodeCursor } from "../events/events.cursor";
 import { SettingsService } from "../settings/settings.service";
 import { withSavedTimeZone } from "../settings/time-zone.errors";
 import { ActivityRepository } from "./activity.repository";
+import { splitByCategory } from "./categories-split";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+/** The busiest sites of the range are the ones a category split looks at; the rest stays neutral. */
+const CATEGORY_TOP_DOMAINS = 100;
 
 @Injectable()
 export class ActivityService {
   constructor(
     private readonly repository: ActivityRepository,
     private readonly settings: SettingsService,
+    private readonly categoryOverrides: CategoriesService,
     @Inject(CLOCK) private readonly clock: Clock,
   ) {}
 
@@ -55,6 +62,38 @@ export class ActivityService {
       query.limit ?? ACTIVITY_DOMAINS_DEFAULT_LIMIT,
     );
     return { from: from.toISOString(), to: to.toISOString(), domains };
+  }
+
+  /** Active time per local day split into productive, neutral and distracting (M9-07). */
+  async categories(
+    userId: string,
+    query: ActivityCategoriesQuery,
+  ): Promise<ActivityCategoriesResponse> {
+    assertUserScope(userId);
+    const { from, to } = this.resolveRange(query);
+    const filters = { from, to };
+    const { timeZone } = await this.settings.get(userId);
+    const [overrides, top] = await Promise.all([
+      this.categoryOverrides.rules(userId),
+      this.repository.domains(userId, filters, CATEGORY_TOP_DOMAINS),
+    ]);
+    const [days, domainDays] = await withSavedTimeZone(() =>
+      Promise.all([
+        this.repository.daily(userId, filters, timeZone),
+        this.repository.domainDays(
+          userId,
+          filters,
+          timeZone,
+          top.map((d) => d.domain),
+        ),
+      ]),
+    );
+    return {
+      from: from.toISOString(),
+      to: to.toISOString(),
+      timeZone,
+      days: splitByCategory(days, domainDays, overrides),
+    };
   }
 
   async site(userId: string, query: ActivitySiteQuery): Promise<ActivitySiteResponse> {

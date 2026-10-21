@@ -1,5 +1,6 @@
 import { Module } from "@nestjs/common";
 import { AuthModule } from "../auth/auth.module";
+import { CategoriesModule } from "../categories/categories.module";
 import { LimitsModule } from "../limits/limits.module";
 import { SettingsModule } from "../settings/settings.module";
 import { ActivityController } from "./activity.controller";
@@ -13,7 +14,7 @@ import { RecommendationsService } from "./recommendations.service";
  * recommendations (M9-04) built from them.
  */
 @Module({
-  imports: [AuthModule, SettingsModule, LimitsModule],
+  imports: [AuthModule, SettingsModule, LimitsModule, CategoriesModule],
   controllers: [ActivityController, RecommendationsController],
   providers: [ActivityRepository, ActivityService, RecommendationsService],
 })

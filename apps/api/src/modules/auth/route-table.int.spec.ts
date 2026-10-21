@@ -65,6 +65,7 @@ declare("session", [
   "GET /v1/activity/site",
   "GET /v1/activity/hours",
   "GET /v1/activity/sessions",
+  "GET /v1/activity/categories",
   "GET /v1/recommendations",
   "GET /v1/me",
   "POST /v1/integrations",
@@ -107,6 +108,13 @@ declare("session", [
   "GET /v1/focus",
   "POST /v1/focus",
   "DELETE /v1/focus",
+  "GET /v1/categories",
+  "POST /v1/categories",
+  "PUT /v1/categories/:id",
+  "DELETE /v1/categories/:id",
+  "GET /v1/goals",
+  "PUT /v1/goals/:category",
+  "DELETE /v1/goals/:category",
 ]);
 
 interface RouteEntry {
