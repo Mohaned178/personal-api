@@ -79,10 +79,12 @@ describe("focus session", () => {
     expect(focusResponseSchema.parse((await as(a).get()).body)).toEqual({ session: null });
   });
 
-  it("ends with 204, and ending nothing is 204 too", async () => {
+  it("ends with 204, and ending nothing is 404 focus.not_found", async () => {
     await as(a).post({ patterns: ["reddit.com"], minutes: 30 });
     expect((await as(a).delete()).status).toBe(204);
-    expect((await as(a).delete()).status).toBe(204);
+    const again = await as(a).delete();
+    expect(again.status).toBe(404);
+    expect(again.body.code).toBe("focus.not_found");
     expect(focusResponseSchema.parse((await as(a).get()).body).session).toBeNull();
   });
 
@@ -118,7 +120,7 @@ describe("tenancy", () => {
   it("never shows or ends another user's session", async () => {
     await as(b).post({ patterns: ["theirs.example"], minutes: 30 });
     expect(focusResponseSchema.parse((await as(a).get()).body).session).toBeNull();
-    expect((await as(a).delete()).status).toBe(204);
+    expect((await as(a).delete()).status).toBe(404);
     expect(focusResponseSchema.parse((await as(b).get()).body).session?.patterns).toEqual([
       "theirs.example",
     ]);

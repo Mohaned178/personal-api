@@ -22,6 +22,8 @@ export const FOCUS_MIN_MINUTES = 1;
 /** Eight hours. A longer block is a schedule. */
 export const FOCUS_MAX_MINUTES = 8 * 60;
 
+/** `DELETE /v1/focus` with no session to end. */
+export const FOCUS_NOT_FOUND_CODE = "focus.not_found";
 export const SCHEDULE_NOT_FOUND_CODE = "schedule.not_found";
 export const SCHEDULE_LIMIT_REACHED_CODE = "schedule.limit_reached";
 

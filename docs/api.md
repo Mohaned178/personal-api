@@ -407,7 +407,7 @@ it. The end time is the server's clock plus `minutes`; a body with `endsAt`, `id
 ```bash
 curl -s "$BASE/v1/focus" -b "$JAR"                          # { "session": { "id", "patterns", "endsAt" } | null }
 curl -s -X POST "$BASE/v1/focus" -b "$JAR" -H "Content-Type: application/json"   -d '{"patterns":["youtube.com","*.reddit.com"],"minutes":45}'   # 201, the session
-curl -s -X DELETE "$BASE/v1/focus" -b "$JAR"                # 204, also when none is running
+curl -s -X DELETE "$BASE/v1/focus" -b "$JAR"                # 204, or 404 focus.not_found when none is running
 ```
 
 `patterns` is 1 to 20 distinct sites and `minutes` a whole number from 1 to 480.
@@ -545,6 +545,7 @@ Errors are `application/problem+json` (RFC 9457) with a stable `code`:
 | 404  | `limit.not_found`          | The limit id is unknown, belongs to another user, or is malformed (all look the same). |
 | 409  | `limit.pattern_taken`      | `POST`/`PUT /v1/limits`: another limit of yours already has this pattern.              |
 | 409  | `limit.limit_reached`      | `POST /v1/limits`: the user already has 50 limits.                                     |
+| 404  | `focus.not_found`          | `DELETE /v1/focus`: there is no focus session to end.                                  |
 | 404  | `schedule.not_found`       | The schedule id is unknown, belongs to another user, or is malformed (all look the same). |
 | 409  | `schedule.limit_reached`   | `POST /v1/schedules`: the user already has 20 schedules.                               |
 | 409  | `ingest.rule_error`        | `GET /v1/ingest/config` only: a stored rule is invalid, so no rules are sent.          |

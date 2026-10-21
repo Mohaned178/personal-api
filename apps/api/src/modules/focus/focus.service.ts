@@ -1,7 +1,13 @@
 import { Inject, Injectable } from "@nestjs/common";
-import type { FocusResponse, FocusSession, FocusStart } from "@personal-api/contracts";
+import {
+  FOCUS_NOT_FOUND_CODE,
+  type FocusResponse,
+  type FocusSession,
+  type FocusStart,
+} from "@personal-api/contracts";
 import { CLOCK, type Clock } from "../../platform/clock/clock";
 import { assertUserScope } from "../../platform/db/tenant-scope";
+import { AppException } from "../../platform/errors/problem";
 import { FocusRepository } from "./focus.repository";
 
 const MINUTE_MS = 60_000;
@@ -35,8 +41,11 @@ export class FocusService {
     return { session: await this.repository.start(userId, start.patterns, endsAt, now) };
   }
 
+  /** Ends the session. With none to end it is a 404, like any change to something that is not there. */
   async end(userId: string): Promise<void> {
     assertUserScope(userId);
-    await this.repository.end(userId);
+    if (!(await this.repository.end(userId))) {
+      throw new AppException(404, FOCUS_NOT_FOUND_CODE, "No focus session to end");
+    }
   }
 }

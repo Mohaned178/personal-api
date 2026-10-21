@@ -39,8 +39,10 @@ export class FocusRepository {
     });
   }
 
-  async end(userId: string): Promise<void> {
-    await tenantScope(this.db, userId).delete(focusSessions);
+  /** True when the user had a session (running or not) to remove. */
+  async end(userId: string): Promise<boolean> {
+    const rows = await tenantScope(this.db, userId).delete(focusSessions);
+    return rows.length > 0;
   }
 }
 

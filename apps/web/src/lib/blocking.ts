@@ -45,8 +45,13 @@ export async function startFocus(start: FocusStart): Promise<void> {
   await send("POST", "/v1/focus", start);
 }
 
+/** Ending a session that is already gone (it ran out, or ended elsewhere) is done, not a failure. */
 export async function endFocus(): Promise<void> {
-  await send("DELETE", "/v1/focus");
+  try {
+    await send("DELETE", "/v1/focus");
+  } catch (error) {
+    if (!(error instanceof BlockingError && error.code === "focus.not_found")) throw error;
+  }
 }
 
 export async function listSchedules(): Promise<Schedule[]> {

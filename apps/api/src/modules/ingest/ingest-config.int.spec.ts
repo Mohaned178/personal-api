@@ -276,7 +276,10 @@ describe("focus session and schedules (M9-06)", () => {
 
   it("does not carry a session that has ended", async () => {
     await h.app.get(FocusService).start(h.a.userId, { patterns: ["x.com"], minutes: 30 });
-    await h.testDb.pool.query("update focus_sessions set ends_at = now() - interval '1 second'");
+    // The server reads "now" from the fixture clock, not from the database.
+    await h.testDb.pool.query("update focus_sessions set ends_at = $1", [
+      new Date(h.clock.now().getTime() - 1000),
+    ]);
     expect((await getConfig(h.a.ingestKey)).body.focus).toBeNull();
   });
 

@@ -1,6 +1,8 @@
+import { FOCUS_NOT_FOUND_CODE } from "@personal-api/contracts";
 import { describe, expect, it, vi } from "vitest";
 import { FakeClock } from "../../../test/fake-clock";
 import { MissingUserScopeError } from "../../platform/db/tenant-scope";
+import { AppException } from "../../platform/errors/problem";
 import type { FocusRepository } from "./focus.repository";
 import { FocusService } from "./focus.service";
 
@@ -16,7 +18,7 @@ function setup() {
       patterns,
       endsAt: endsAt.toISOString(),
     })),
-    end: vi.fn(async () => undefined),
+    end: vi.fn(async () => true),
   };
   const service = new FocusService(repository as unknown as FocusRepository, new FakeClock(NOW));
   return { repository, service };
@@ -39,6 +41,16 @@ describe("FocusService", () => {
     const { repository, service } = setup();
     await service.running(USER);
     expect(repository.current).toHaveBeenCalledWith(USER, NOW);
+  });
+
+  it("ends a session, and with none to end answers 404 focus.not_found", async () => {
+    const { repository, service } = setup();
+    await expect(service.end(USER)).resolves.toBeUndefined();
+    repository.end.mockResolvedValueOnce(false);
+    const error = await service.end(USER).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(AppException);
+    expect((error as AppException).getStatus()).toBe(404);
+    expect((error as AppException).code).toBe(FOCUS_NOT_FOUND_CODE);
   });
 
   it("refuses a missing user before the repository is used", async () => {

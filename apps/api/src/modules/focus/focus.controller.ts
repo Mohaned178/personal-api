@@ -29,7 +29,7 @@ export class FocusController {
     return this.focus.start(auth.userId, body);
   }
 
-  /** Ends the running session. Always 204: ending nothing is not an error. */
+  /** Ends the running session. 404 `focus.not_found` when there is none. */
   @Delete()
   @HttpCode(204)
   end(@CurrentAuth("session") auth: SessionAuthContext): Promise<void> {
