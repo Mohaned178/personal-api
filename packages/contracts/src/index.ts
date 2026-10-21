@@ -6,6 +6,7 @@ export * from "./account.js";
 export * from "./activity.js";
 export * from "./blocking.js";
 export * from "./browser-events.js";
+export * from "./categories.js";
 export * from "./deletions.js";
 export * from "./diagnostics.js";
 export * from "./envelope.js";
