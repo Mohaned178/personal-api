@@ -1,6 +1,6 @@
 import { Inject, Injectable } from "@nestjs/common";
 import type { ListEventsQuery } from "@personal-api/contracts";
-import { and, desc, eq, gte, inArray, lt, or, type SQL, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, lt, type SQL, sql } from "drizzle-orm";
 import type { Database } from "../../platform/db/db";
 import { DB } from "../../platform/db/db.tokens";
 import { events } from "../../platform/db/schema";
@@ -17,10 +17,6 @@ export interface EventFilters {
   to?: Date | undefined;
   domain?: string | undefined;
   after?: EventsCursor | undefined;
-  /** A read key's restriction: ANDed with the filters above, so it can only narrow a result. */
-  sources?: string[] | undefined;
-  /** Event types or `*` globs (see `globToLike`); a row passes if any one matches. */
-  types?: string[] | undefined;
 }
 
 /** The filter fields of an export or a bulk deletion (dates are ISO strings) as repository filters. */
@@ -36,33 +32,6 @@ export function toEventFilters(
   };
 }
 
-/**
- * A type glob as a LIKE pattern. The contract limits patterns to `[a-z0-9_.*]`, so `_` (a LIKE
- * wildcard) is the only character to escape; `*` becomes `%`. The result is a bound parameter.
- * Anything outside that alphabet is refused rather than escaped, so a bad pattern never widens.
- */
-export function globToLike(pattern: string): string {
-  if (!/^[a-z0-9_.*]+$/.test(pattern)) throw new Error("Unsupported type pattern");
-  return pattern.replaceAll("_", "\\_").replaceAll("*", "%");
-}
-
-/** A read key's restriction as conditions to AND on; empty when the key has none. */
-export function restrictionConditions(
-  sources: string[] | undefined,
-  types: string[] | undefined,
-): SQL[] {
-  const conditions: SQL[] = [];
-  if (sources) conditions.push(inArray(events.integrationId, sources));
-  if (types) {
-    const matches = types.map((t) =>
-      t.includes("*") ? sql`${events.type} LIKE ${globToLike(t)}` : eq(events.type, t),
-    );
-    // `or()` of nothing is undefined, which would drop the restriction; an empty list matches nothing.
-    conditions.push(matches.length === 0 ? sql`false` : (or(...matches) as SQL));
-  }
-  return conditions;
-}
-
 /** The filter fields as conditions to AND on (not the cursor). Values are bound parameters. */
 export function eventFilterConditions(filters: EventFilters): SQL[] {
   const conditions: SQL[] = [];
@@ -70,7 +39,6 @@ export function eventFilterConditions(filters: EventFilters): SQL[] {
   if (filters.type) conditions.push(eq(events.type, filters.type));
   if (filters.from) conditions.push(gte(events.occurredAt, filters.from));
   if (filters.to) conditions.push(lt(events.occurredAt, filters.to));
-  conditions.push(...restrictionConditions(filters.sources, filters.types));
   if (filters.domain) conditions.push(sql`${events.data} ->> 'domain' = ${filters.domain}`);
   return conditions;
 }

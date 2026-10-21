@@ -17,7 +17,7 @@ const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
  * - with neither header the caller is not a browser, which is the only thing that attaches
  *   someone else's session cookie on its own, so the request passes.
  *
- * Requests without a cookie are not checked: ingest and read keys travel in `Authorization`,
+ * Requests without a cookie are not checked: ingest keys travel in `Authorization`,
  * which a cross-site page cannot set.
  */
 @Injectable()

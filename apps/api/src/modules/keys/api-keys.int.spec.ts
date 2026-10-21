@@ -12,6 +12,7 @@ import type { INestApplication } from "@nestjs/common";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { FakeClock } from "../../../test/fake-clock";
+import { FORMER_READ_KEY } from "../../../test/former-read-key";
 import { startTestDatabase, type TestDatabase } from "../../../test/postgres";
 import { buildFixtureApp, type FixtureUser, seedTwoUsers } from "../../../test/two-user-fixture";
 import { apiKeys, integrations } from "../../platform/db/schema";
@@ -75,7 +76,6 @@ describe("createIngestKey", () => {
       lastUsedAt: null,
       revokedAt: null,
     });
-    expect(row?.scopes).toEqual([]);
   });
 
   it("never stores the plaintext (or its secret part) in any column", async () => {
@@ -140,7 +140,7 @@ describe("authenticateIngestKey", () => {
   });
 
   it("returns null (never throws) for missing, malformed and unknown keys", async () => {
-    const unknownButWellFormed = generateApiKey("ingest").plaintext;
+    const unknownButWellFormed = generateApiKey().plaintext;
     const real = a.ingestKey;
     const flipped = `${real.slice(0, -1)}${real.endsWith("A") ? "B" : "A"}`;
     const inputs: unknown[] = [
@@ -175,15 +175,8 @@ describe("authenticateIngestKey", () => {
     }
   });
 
-  it("returns null for a pa_read_ key, even a valid stored one", async () => {
-    const read = generateApiKey("read");
-    await testDb.db.insert(apiKeys).values({
-      userId: a.userId,
-      kind: "read",
-      prefix: read.prefix,
-      hash: read.hash,
-    });
-    expect(await service.authenticateIngestKey(read.plaintext)).toBeNull();
+  it("returns null for a pa_read_ key (read keys no longer exist)", async () => {
+    expect(await service.authenticateIngestKey(FORMER_READ_KEY)).toBeNull();
   });
 
   it("returns null for a stored ingest-kind row presented without the pa_ing_ marker", async () => {
@@ -195,7 +188,7 @@ describe("authenticateIngestKey", () => {
 
   it("looks the key up by its hash: moving the hash moves the key", async () => {
     const created = await service.createIngestKey(a.userId, a.integrationId);
-    const replacement = generateApiKey("ingest");
+    const replacement = generateApiKey();
     await testDb.db
       .update(apiKeys)
       .set({ hash: replacement.hash })

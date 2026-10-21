@@ -8,7 +8,6 @@ import {
   type ActivityDailyResponse,
   type ActivityDomainsQuery,
   type ActivityDomainsResponse,
-  type ReadKeyRestriction,
 } from "@personal-api/contracts";
 import { CLOCK, type Clock } from "../../platform/clock/clock";
 import { assertUserScope } from "../../platform/db/tenant-scope";
@@ -19,11 +18,6 @@ import { ActivityRepository } from "./activity.repository";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-/** How a caller got in: a read key's restriction narrows what is counted. */
-export interface ActivityAccess {
-  restriction: ReadKeyRestriction | null;
-}
-
 @Injectable()
 export class ActivityService {
   constructor(
@@ -32,30 +26,22 @@ export class ActivityService {
     @Inject(CLOCK) private readonly clock: Clock,
   ) {}
 
-  async daily(
-    userId: string,
-    query: ActivityDailyQuery,
-    access: ActivityAccess,
-  ): Promise<ActivityDailyResponse> {
+  async daily(userId: string, query: ActivityDailyQuery): Promise<ActivityDailyResponse> {
     assertUserScope(userId);
     const { from, to } = this.resolveRange(query);
     const { timeZone } = await this.settings.get(userId);
     const days = await withSavedTimeZone(() =>
-      this.repository.daily(userId, filters(from, to, access), timeZone),
+      this.repository.daily(userId, { from, to }, timeZone),
     );
     return { from: from.toISOString(), to: to.toISOString(), timeZone, days };
   }
 
-  async domains(
-    userId: string,
-    query: ActivityDomainsQuery,
-    access: ActivityAccess,
-  ): Promise<ActivityDomainsResponse> {
+  async domains(userId: string, query: ActivityDomainsQuery): Promise<ActivityDomainsResponse> {
     assertUserScope(userId);
     const { from, to } = this.resolveRange(query);
     const domains = await this.repository.domains(
       userId,
-      filters(from, to, access),
+      { from, to },
       query.limit ?? ACTIVITY_DOMAINS_DEFAULT_LIMIT,
     );
     return { from: from.toISOString(), to: to.toISOString(), domains };
@@ -78,8 +64,4 @@ export class ActivityService {
     }
     return { from, to };
   }
-}
-
-function filters(from: Date, to: Date, access: ActivityAccess) {
-  return { from, to, sources: access.restriction?.sources, types: access.restriction?.types };
 }

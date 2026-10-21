@@ -12,7 +12,6 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 import { user } from "./auth";
-import { endpoints } from "./endpoints";
 
 const id = () => uuid("id").primaryKey().default(sql`uuidv7()`);
 const userId = () =>
@@ -44,9 +43,8 @@ export const integrations = pgTable(
 );
 
 /**
- * Only the SHA-256 hash is stored; the plaintext key is shown once. `name` and `restriction`
- * belong to read keys (M5-01): the label, and `{sources?, types?}` narrowing what the key reads.
- * `endpoint_id` marks the read keys minted for one endpoint (M5-05); they die with it.
+ * Ingest keys only (`pa_ing_`, one per integration); read keys were removed in M9-01. Only the
+ * SHA-256 hash is stored; the plaintext key is shown once.
  */
 export const apiKeys = pgTable(
   "api_keys",
@@ -57,12 +55,8 @@ export const apiKeys = pgTable(
     integrationId: uuid("integration_id").references(() => integrations.id, {
       onDelete: "cascade",
     }),
-    endpointId: uuid("endpoint_id").references(() => endpoints.id, { onDelete: "cascade" }),
     prefix: text("prefix").notNull(),
     hash: text("hash").notNull(),
-    scopes: jsonb("scopes").notNull().default(sql`'[]'::jsonb`),
-    name: text("name"),
-    restriction: jsonb("restriction"),
     createdAt: createdAt(),
     lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
     revokedAt: timestamp("revoked_at", { withTimezone: true }),
@@ -70,16 +64,8 @@ export const apiKeys = pgTable(
   (table) => [
     uniqueIndex("api_keys_hash_idx").on(table.hash),
     index("api_keys_user_id_idx").on(table.userId),
-    check("api_keys_kind_check", sql`${table.kind} IN ('ingest', 'read')`),
-    check(
-      "api_keys_ingest_integration_check",
-      sql`${table.kind} <> 'ingest' OR ${table.integrationId} IS NOT NULL`,
-    ),
-    check(
-      "api_keys_endpoint_read_check",
-      sql`${table.endpointId} IS NULL OR ${table.kind} = 'read'`,
-    ),
-    index("api_keys_endpoint_id_idx").on(table.endpointId),
+    check("api_keys_kind_check", sql`${table.kind} = 'ingest'`),
+    check("api_keys_ingest_integration_check", sql`${table.integrationId} IS NOT NULL`),
   ],
 );
 

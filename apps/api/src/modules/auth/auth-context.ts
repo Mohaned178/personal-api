@@ -1,5 +1,4 @@
 import { createParamDecorator, type ExecutionContext } from "@nestjs/common";
-import type { ReadKeyRestriction } from "@personal-api/contracts";
 import type { Request } from "express";
 
 /**
@@ -21,26 +20,10 @@ export interface IngestAuthContext {
   keyId: string;
 }
 
-/**
- * Set by ReadKeyGuard. Scopes and restriction come from the stored key, parsed and validated; a
- * read key belongs to the user, not to an integration.
- */
-export interface ReadAuthContext {
-  kind: "read";
-  userId: string;
-  keyId: string;
-  scopes: readonly string[];
-  /** Narrows which sources and types the key reads; `null` means no narrowing. */
-  restriction: ReadKeyRestriction | null;
-}
-
-export type AuthContext = SessionAuthContext | IngestAuthContext | ReadAuthContext;
+export type AuthContext = SessionAuthContext | IngestAuthContext;
 export type AuthKind = AuthContext["kind"];
 
 export type AuthenticatedRequest = Request & { auth?: AuthContext };
-
-/** What a route behind SessionOrReadKeyGuard receives. */
-export type ReaderAuthContext = SessionAuthContext | ReadAuthContext;
 
 /** A route asked for an AuthContext its guard did not provide. A bug, so it is a 500. */
 export class AuthContextMismatchError extends Error {
@@ -63,17 +46,4 @@ const currentAuth = createParamDecorator((kind: unknown, ctx: ExecutionContext) 
  */
 export function CurrentAuth(kind: AuthKind): ParameterDecorator {
   return currentAuth(kind);
-}
-
-const currentReader = createParamDecorator((_data: unknown, ctx: ExecutionContext) => {
-  const auth = ctx.switchToHttp().getRequest<AuthenticatedRequest>().auth;
-  if (auth === undefined || (auth.kind !== "session" && auth.kind !== "read")) {
-    throw new AuthContextMismatchError();
-  }
-  return auth;
-});
-
-/** Injects the AuthContext set by SessionOrReadKeyGuard: a session or a read key, nothing else. */
-export function CurrentReader(): ParameterDecorator {
-  return currentReader();
 }

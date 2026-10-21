@@ -236,7 +236,7 @@ function valueFits(spec: RuleFieldSpec, cond: RuleCondition): boolean {
 /**
  * Checks a `when` against the event types it selects: every `type` pattern must match a type, and
  * every condition must name a field, op and value that fit. Issue paths start at `base`. Returns
- * the selected types. Saved queries (M5-04) use it too, so the condition language cannot drift.
+ * the selected types.
  */
 export function validateRuleWhen(
   when: RuleWhen,

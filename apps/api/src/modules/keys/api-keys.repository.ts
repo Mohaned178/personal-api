@@ -1,35 +1,19 @@
 import { Inject, Injectable } from "@nestjs/common";
-import type { ReadKeyRestriction } from "@personal-api/contracts";
-import { and, eq, inArray, isNull, lte, or, sql } from "drizzle-orm";
+import { and, eq, isNull, lte, or, sql } from "drizzle-orm";
 import type { Database } from "../../platform/db/db";
 import { DB } from "../../platform/db/db.tokens";
 import { apiKeys, integrations } from "../../platform/db/schema";
 import { scopeCondition, tenantScope } from "../../platform/db/tenant-scope";
-import type { ApiKeyKind } from "./key-generation";
 
 /** What the pre-auth lookup returns: enough for the guard to decide, joined with the integration's status. */
 export interface ApiKeyLookupRow {
   id: string;
   userId: string;
-  kind: ApiKeyKind;
+  kind: string;
   integrationId: string | null;
   revokedAt: Date | null;
   lastUsedAt: Date | null;
   integrationStatus: string | null;
-  /** Raw stored JSON: the caller parses it and refuses the key if it does not parse. */
-  scopes: unknown;
-  restriction: unknown;
-}
-
-export type ReadKeyRow = typeof apiKeys.$inferSelect;
-
-export interface NewReadKey {
-  name: string | null;
-  prefix: string;
-  /** SHA-256 of the plaintext key. The plaintext never reaches this layer. */
-  hash: string;
-  scopes: string[];
-  restriction: ReadKeyRestriction | null;
 }
 
 export interface NewIngestKey {
@@ -65,8 +49,6 @@ export class ApiKeysRepository {
         revokedAt: apiKeys.revokedAt,
         lastUsedAt: apiKeys.lastUsedAt,
         integrationStatus: integrations.status,
-        scopes: apiKeys.scopes,
-        restriction: apiKeys.restriction,
       })
       .from(apiKeys)
       .leftJoin(
@@ -75,7 +57,7 @@ export class ApiKeysRepository {
       )
       .where(eq(apiKeys.hash, hash))
       .limit(1);
-    return row ? { ...row, kind: row.kind as ApiKeyKind } : null;
+    return row ?? null;
   }
 
   /**
@@ -113,52 +95,6 @@ export class ApiKeysRepository {
       });
       return row ? { id: row.id } : null;
     });
-  }
-
-  /**
-   * Stores a read key. Returns null (and stores nothing) when the restriction names a source that
-   * is not one of the user's integrations; an unknown id and someone else's look the same.
-   */
-  async insertReadKey(userId: string, values: NewReadKey): Promise<ReadKeyRow | null> {
-    // Built first, so a missing userId rejects before the database is touched.
-    tenantScope(this.db, userId);
-    return this.db.transaction(async (tx) => {
-      const sources = values.restriction?.sources;
-      if (sources && sources.length > 0) {
-        const owned = await tx
-          .select({ id: integrations.id })
-          .from(integrations)
-          .where(scopeCondition(integrations, userId, inArray(integrations.id, sources)));
-        if (owned.length !== new Set(sources).size) return null;
-      }
-      const [row] = await tenantScope(tx, userId).insert(apiKeys, {
-        kind: "read",
-        name: values.name,
-        prefix: values.prefix,
-        hash: values.hash,
-        scopes: values.scopes,
-        restriction: values.restriction,
-      });
-      return row ?? null;
-    });
-  }
-
-  /** The user's read keys (revoked ones included). Ingest keys belong to integrations and are not listed. */
-  async listReadKeys(userId: string): Promise<ReadKeyRow[]> {
-    return tenantScope(this.db, userId).select(apiKeys, eq(apiKeys.kind, "read"));
-  }
-
-  /**
-   * Sets revoked_at on one of the user's read keys, keeping the first revocation time. Returns the
-   * key, or null when it is unknown, not the user's, or not a read key.
-   */
-  async revokeReadKey(userId: string, keyId: string, at: Date): Promise<ReadKeyRow | null> {
-    const [row] = await tenantScope(this.db, userId).update(
-      apiKeys,
-      { revokedAt: sql`coalesce(${apiKeys.revokedAt}, ${sql.param(at, apiKeys.revokedAt)})` },
-      and(eq(apiKeys.id, keyId), eq(apiKeys.kind, "read")),
-    );
-    return row ?? null;
   }
 
   /**

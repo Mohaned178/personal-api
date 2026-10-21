@@ -6,7 +6,7 @@
  *     allowlist, and each route's guard class equals the one written down in CLASS_OF, so a
  *     dropped or swapped guard fails here by name.
  *  2. For every route, every kind of credential (none, a session, a signed-out session, ingest,
- *     read and endpoint keys, revoked keys, bearers that are not keys at all) gets exactly the
+ *     a former read key, revoked keys, bearers that are not keys at all) gets exactly the
  *     answer its guard class promises. The keys are real and stored, so "wrong kind" is tested
  *     for real keys, not for keys that merely do not exist.
  *  3. Cross-tenant access stays in cross-tenant-sweep.int.spec.ts (it needs a seeded resource per
@@ -24,28 +24,24 @@ import { join } from "node:path";
 import { RequestMethod, type Type } from "@nestjs/common";
 import { GUARDS_METADATA, METHOD_METADATA, PATH_METADATA } from "@nestjs/common/constants";
 import { ModulesContainer } from "@nestjs/core";
-import { createReadKeyResponseSchema } from "@personal-api/contracts";
 import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createViaRoute, revokeViaRoute, tenantState } from "../../../test/adversarial-helpers";
 import { getMe, sessionCookie, signIn, signOut } from "../../../test/auth.helpers";
 import { AuthProbeController } from "../../../test/auth-probe.controller";
+import { FORMER_READ_KEY } from "../../../test/former-read-key";
 import { type IngestHarness, PROBLEM_JSON, startIngestHarness } from "../../../test/ingest-helpers";
 import { createExtension, issueCode } from "../../../test/pairing-helpers";
 import type { RateLimiter } from "../../platform/rate-limit/rate-limiter";
 import { ACCOUNT_RATE_LIMITER } from "../account/account.constants";
 import { IngestKeyGuard } from "../keys/ingest-key.guard";
-import { READ_SCOPE_METADATA, ReadKeyGuard } from "../keys/read-key.guard";
-import { SessionOrReadKeyGuard } from "../keys/session-or-read-key.guard";
 import { PAIRING_RATE_LIMITER } from "../pairing/pairing.tokens";
 import { SessionGuard } from "./session.guard";
 
-type AuthClass = "public" | "session" | "session-or-read" | "read" | "ingest";
+type AuthClass = "public" | "session" | "ingest";
 
 const AUTH_GUARDS = new Map<unknown, AuthClass>([
   [SessionGuard, "session"],
-  [SessionOrReadKeyGuard, "session-or-read"],
-  [ReadKeyGuard, "read"],
   [IngestKeyGuard, "ingest"],
 ]);
 
@@ -62,13 +58,10 @@ declare("public", [
   "POST /v1/pair",
 ]);
 declare("ingest", ["POST /v1/ingest/events", "POST /v1/ingest/heartbeat", "GET /v1/ingest/config"]);
-declare("session-or-read", [
+declare("session", [
   "GET /v1/events",
   "GET /v1/activity/daily",
   "GET /v1/activity/domains",
-]);
-declare("read", ["GET /v1/me/:slug"]);
-declare("session", [
   "GET /v1/me",
   "POST /v1/integrations",
   "GET /v1/integrations",
@@ -87,16 +80,6 @@ declare("session", [
   "GET /v1/rules/:id",
   "PUT /v1/rules/:id",
   "DELETE /v1/rules/:id",
-  "POST /v1/keys",
-  "GET /v1/keys",
-  "POST /v1/keys/:id/revoke",
-  "GET /v1/endpoints",
-  "POST /v1/endpoints",
-  "POST /v1/endpoints/preview",
-  "GET /v1/endpoints/:id",
-  "PUT /v1/endpoints/:id",
-  "DELETE /v1/endpoints/:id",
-  "POST /v1/endpoints/:id/rotate-key",
   "GET /v1/settings",
   "GET /v1/settings/time-zones",
   "PATCH /v1/settings",
@@ -116,8 +99,6 @@ interface RouteEntry {
   method: string;
   path: string;
   authClass: AuthClass;
-  /** `events:read`, `activity:read` or `endpoint`, for the routes behind a read-key guard. */
-  readScope: string | undefined;
 }
 
 /** Every controller route Nest registered, with its auth class taken from guard metadata. */
@@ -149,14 +130,11 @@ function routeTable(h: IngestHarness): RouteEntry[] {
         if (found.size > 1) {
           throw new Error(`${method} ${path} stacks several auth guards: ${[...found].join(", ")}`);
         }
-        const readScope = (Reflect.getMetadata(READ_SCOPE_METADATA, handler) ??
-          Reflect.getMetadata(READ_SCOPE_METADATA, controller)) as string | undefined;
         entries.push({
           route: `${method} ${path}`,
           method,
           path,
           authClass: [...found][0] ?? "public",
-          readScope,
         });
       }
     }
@@ -170,11 +148,7 @@ type Kind =
   | "signed-out-session"
   | "ingest"
   | "revoked-ingest"
-  | "read-all"
-  | "read-events-only"
-  | "read-activity-only"
-  | "endpoint"
-  | "revoked-read"
+  | "former-read"
   | "garbage-bearer"
   | "session-token-bearer"
   | "pairing-code-bearer";
@@ -203,7 +177,6 @@ function applyCredential(req: Req, credential: Credential): Req {
 const MISSING_ID = "0192f1c2-7c1e-7a3b-9f00-000000000000";
 const PARAMS: Record<string, string> = {
   ":id": MISSING_ID,
-  ":slug": "stats",
   ":scope": "type",
   ":target": "browser.page_visited",
 };
@@ -232,7 +205,6 @@ function send(entry: RouteEntry, credential: Credential) {
 
 const UNAUTHENTICATED = { status: 401, code: "auth.unauthenticated" };
 const INVALID_KEY = { status: 401, code: "auth.invalid_key" };
-const INSUFFICIENT = { status: 403, code: "auth.insufficient_scope" };
 
 type Expectation = "passes-guard" | { status: number; code: string };
 
@@ -245,25 +217,6 @@ function expectedFor(entry: RouteEntry, credential: Credential): Expectation {
       return kind === "session" ? "passes-guard" : UNAUTHENTICATED;
     case "ingest":
       return kind === "ingest" ? "passes-guard" : INVALID_KEY;
-    case "read": {
-      // Any valid read key is let in by the guard; whether it holds this endpoint's scope is the
-      // service's call and answers 404.
-      const readKinds: Kind[] = ["read-all", "read-events-only", "read-activity-only", "endpoint"];
-      return readKinds.includes(kind) ? "passes-guard" : INVALID_KEY;
-    }
-    case "session-or-read": {
-      if (kind === "session") return "passes-guard";
-      if (kind === "none" || kind === "signed-out-session") return UNAUTHENTICATED;
-      const scopes: Partial<Record<Kind, string[]>> = {
-        "read-all": ["events:read", "activity:read"],
-        "read-events-only": ["events:read"],
-        "read-activity-only": ["activity:read"],
-        endpoint: ["endpoint"],
-      };
-      const held = scopes[kind];
-      if (!held) return INVALID_KEY;
-      return entry.readScope && held.includes(entry.readScope) ? "passes-guard" : INSUFFICIENT;
-    }
   }
 }
 
@@ -287,32 +240,8 @@ afterAll(async () => {
   await h?.stop();
 });
 
-async function mintReadKey(scopes: string[]): Promise<{ id: string; key: string }> {
-  const res = await http().post("/v1/keys").set("Cookie", h.a.cookie).send({ scopes });
-  expect(res.status, JSON.stringify(res.body)).toBe(201);
-  const parsed = createReadKeyResponseSchema.parse(res.body);
-  return { id: parsed.readKey.id, key: parsed.key };
-}
-
 /** One real credential of every kind, all belonging to user A. */
 async function buildCredentials(): Promise<Credential[]> {
-  const all = await mintReadKey(["events:read", "activity:read"]);
-  const eventsOnly = await mintReadKey(["events:read"]);
-  const activityOnly = await mintReadKey(["activity:read"]);
-  const revokedRead = await mintReadKey(["events:read", "activity:read"]);
-  expect(
-    (await http().post(`/v1/keys/${revokedRead.id}/revoke`).set("Cookie", h.a.cookie)).status,
-  ).toBe(200);
-
-  const endpoint = await http()
-    .post("/v1/endpoints")
-    .set("Cookie", h.a.cookie)
-    .send({
-      slug: "stats",
-      definition: { when: {}, window: { kind: "last_n_days", days: 7 }, aggregate: "count_by_day" },
-    });
-  expect(endpoint.status, JSON.stringify(endpoint.body)).toBe(201);
-
   const revokedIngest = await createViaRoute(h.app, h.a, "to be revoked");
   expect((await revokeViaRoute(h.app, h.a, revokedIngest.integrationId)).status).toBe(200);
 
@@ -333,11 +262,8 @@ async function buildCredentials(): Promise<Credential[]> {
     { kind: "signed-out-session", cookie: second?.pair },
     { kind: "ingest", bearer: h.a.ingestKey },
     { kind: "revoked-ingest", bearer: revokedIngest.key },
-    { kind: "read-all", bearer: all.key },
-    { kind: "read-events-only", bearer: eventsOnly.key },
-    { kind: "read-activity-only", bearer: activityOnly.key },
-    { kind: "endpoint", bearer: endpoint.body.key },
-    { kind: "revoked-read", bearer: revokedRead.key },
+    // Read keys were removed in M9-01: a key of that shape is just an unknown bearer.
+    { kind: "former-read", bearer: FORMER_READ_KEY },
     { kind: "garbage-bearer", bearer: randomUUID() },
     { kind: "session-token-bearer", bearer: sessionToken },
     { kind: "pairing-code-bearer", bearer: pairingCode },
@@ -357,17 +283,11 @@ describe("the route table is deny by default", () => {
     const actual = Object.fromEntries(table.map((r) => [r.route, r.authClass]));
     expect(actual).toEqual(CLASS_OF);
   });
-
-  it("gives every read-key route a scope to check", () => {
-    for (const entry of table.filter((r) => ["read", "session-or-read"].includes(r.authClass))) {
-      expect(entry.readScope, entry.route).toBeDefined();
-    }
-  });
 });
 
 describe("every route answers every credential as its guard class promises", () => {
   it("has a table to test", () => {
-    expect(table.length).toBeGreaterThan(40);
+    expect(table.length).toBeGreaterThan(30);
   });
 
   it.each(Object.keys(CLASS_OF).sort())("%s", async (route) => {
@@ -410,9 +330,7 @@ describe("every route answers every credential as its guard class promises", () 
     // Which wrong credential was sent is never visible: all the bearers a class refuses get the
     // same body, and a valid key of the wrong kind looks like a key that does not exist.
     const bodies = new Set(refused.filter((r) => r.kind !== "none").map((r) => bodyOf(r.res)));
-    expect(bodies.size, `${route} answers differently by credential kind`).toBeLessThanOrEqual(
-      target.authClass === "session-or-read" ? 3 : 1,
-    );
+    expect(bodies.size, `${route} answers differently by credential kind`).toBeLessThanOrEqual(1);
 
     if (target.authClass === "public") {
       // No credential changes what a public route says.

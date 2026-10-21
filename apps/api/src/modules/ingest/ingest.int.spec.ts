@@ -6,10 +6,12 @@
  * Whole-request failures and body limits live in ingest-request.int.spec.ts; the ingestion_log,
  * atomicity and log-hygiene checks live in ingest-log.int.spec.ts.
  */
+
 import { randomUUID } from "node:crypto";
 import { ingestBatchResponseSchema } from "@personal-api/contracts";
 import request from "supertest";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { FORMER_READ_KEY } from "../../../test/former-read-key";
 import {
   DAY_MS,
   eventRows,
@@ -31,9 +33,10 @@ import {
   statuses,
   tally,
 } from "../../../test/ingest-helpers";
+
 import { IntegrationsService } from "../integrations/integrations.service";
 import { ApiKeysService } from "../keys/api-keys.service";
-import { generateApiKey, hashApiKey } from "../keys/key-generation";
+import { generateApiKey } from "../keys/key-generation";
 
 let h: IngestHarness;
 
@@ -72,7 +75,7 @@ describe("authentication (the guard runs before anything is stored)", () => {
   });
 
   it("rejects a well-formed but unknown ingest key with 401 auth.invalid_key", async () => {
-    await expectRefused(await post(h.app, generateApiKey("ingest").plaintext, body()));
+    await expectRefused(await post(h.app, generateApiKey().plaintext, body()));
   });
 
   it("rejects a session cookie without an ingest key with 401 auth.invalid_key", async () => {
@@ -83,14 +86,8 @@ describe("authentication (the guard runs before anything is stored)", () => {
     await expectRefused(res);
   });
 
-  it("rejects a real pa_read_ key with 401 auth.invalid_key (read keys cannot ingest)", async () => {
-    const read = generateApiKey("read");
-    await h.testDb.pool.query(
-      "insert into api_keys (user_id, kind, prefix, hash) values ($1, 'read', $2, $3)",
-      [h.a.userId, read.prefix, read.hash],
-    );
-    expect(hashApiKey(read.plaintext)).toBe(read.hash);
-    await expectRefused(await post(h.app, read.plaintext, body()));
+  it("rejects a pa_read_ key with 401 auth.invalid_key (read keys no longer exist)", async () => {
+    await expectRefused(await post(h.app, FORMER_READ_KEY, body()));
   });
 
   it("rejects a revoked ingest key on the very next request and stores nothing", async () => {

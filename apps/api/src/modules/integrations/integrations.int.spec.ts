@@ -220,7 +220,7 @@ describe("create", () => {
 
   it("is atomic: a failing key insert leaves no integration behind", async () => {
     const repository = app.get(IntegrationsRepository);
-    const key = generateApiKey("ingest");
+    const key = generateApiKey();
     const first = await repository.createHttp(
       a.userId,
       { name: "atomic-1" },
@@ -445,7 +445,7 @@ describe("revoke and key creation are ordered by a row lock", () => {
 
   it("a revoke waits for an in-flight key insert, then revokes that new key too", async () => {
     const created = await createVia(a, "race: key first");
-    const raceKey = generateApiKey("ingest");
+    const raceKey = generateApiKey();
     const client = await testDb.pool.connect();
     try {
       await client.query("begin");

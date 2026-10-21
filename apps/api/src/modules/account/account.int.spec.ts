@@ -13,6 +13,7 @@
  * credentials all dying, a failing cleanup step leaving everything in place, the per-account
  * throttle, and nothing secret reaching the logs.
  */
+
 import { randomUUID } from "node:crypto";
 import { ConsoleLogger, type INestApplication } from "@nestjs/common";
 import { ACCOUNT_DELETE_CONFIRMATION } from "@personal-api/contracts";
@@ -21,12 +22,12 @@ import request from "supertest";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { captureOutput, getMe, setCookieHeaders, signIn, signUp } from "../../../test/auth.helpers";
 import { FakeClock } from "../../../test/fake-clock";
+import { FORMER_READ_KEY } from "../../../test/former-read-key";
 import { createExtension, issueCode } from "../../../test/pairing-helpers";
 import { startTestDatabase, type TestDatabase } from "../../../test/postgres";
 import { buildFixtureApp, type FixtureUser, seedTwoUsers } from "../../../test/two-user-fixture";
 import type { RateLimiter } from "../../platform/rate-limit/rate-limiter";
 import { DeletionsRunService } from "../deletions/deletions-run.service";
-import { generateApiKey } from "../keys/key-generation";
 import {
   ACCOUNT_DELETE_ATTEMPTS_PER_WINDOW,
   ACCOUNT_DELETE_WINDOW_MS,
@@ -88,9 +89,6 @@ function expectProblem(
 
 // --- seeding: a row in every table, for one user, through the real routes -------------------------
 
-const readKeys = new Map<string, { id: string; key: string }>();
-const endpointKeys = new Map<string, string>();
-
 async function seedActivity(user: FixtureUser): Promise<void> {
   const post = (path: string, payload: unknown) =>
     http()
@@ -141,16 +139,6 @@ async function seedActivity(user: FixtureUser): Promise<void> {
     .set("Cookie", user.cookie)
     .send({ days: 30 });
   expect(policy.status, JSON.stringify(policy.body)).toBe(200);
-  // api_keys (read) and endpoints (+ their read key)
-  const readKey = await post("/v1/keys", { scopes: ["events:read"] });
-  expect(readKey.status, JSON.stringify(readKey.body)).toBe(201);
-  readKeys.set(user.userId, { id: readKey.body.readKey.id, key: readKey.body.key });
-  const endpoint = await post("/v1/endpoints", {
-    slug: "stats",
-    definition: { when: {}, window: { kind: "last_n_days", days: 7 }, aggregate: "count_by_day" },
-  });
-  expect(endpoint.status, JSON.stringify(endpoint.body)).toBe(201);
-  endpointKeys.set(user.userId, endpoint.body.key);
   // bulk_deletions, and a queued job whose payload carries this user's id (no worker runs here)
   const bulk = await http()
     .delete("/v1/events")
@@ -324,27 +312,14 @@ describe("DELETE /v1/account", () => {
   });
 
   it("kills every credential of the account and lets the email be used again", async () => {
-    const read = readKeys.get(a.userId) as { id: string; key: string };
-    const endpointKey = endpointKeys.get(a.userId) as string;
-    const before = await Promise.all([
-      http().get("/v1/events").set("Authorization", `Bearer ${read.key}`),
-      http().get("/v1/me/stats").set("Authorization", `Bearer ${endpointKey}`),
-    ]);
-    expect(before.map((r) => r.status)).toEqual([200, 200]);
+    const heartbeat = () =>
+      http().post("/v1/ingest/heartbeat").set("Authorization", `Bearer ${a.ingestKey}`).send({});
+    expect((await heartbeat()).status).not.toBe(401);
 
     expect((await deleteAccount(a)).status).toBe(204);
 
     expectProblem(await getMe(app, a.cookie), 401, "auth.unauthenticated");
-    expectProblem(
-      await http().get("/v1/events").set("Authorization", `Bearer ${read.key}`),
-      401,
-      "auth.invalid_key",
-    );
-    expectProblem(
-      await http().get("/v1/me/stats").set("Authorization", `Bearer ${endpointKey}`),
-      401,
-      "auth.invalid_key",
-    );
+    expectProblem(await heartbeat(), 401, "auth.invalid_key");
     const ingest = await http()
       .post("/v1/ingest/events")
       .set("Authorization", `Bearer ${a.ingestKey}`)
@@ -419,8 +394,7 @@ describe("DELETE /v1/account", () => {
   describe("who may call it", () => {
     it("answers 401 to anything but a session, even with an invalid body, and deletes nothing", async () => {
       const before = await userState(testDb.pool, a);
-      const read = readKeys.get(a.userId) as { id: string; key: string };
-      const bearers = [undefined, a.ingestKey, read.key, generateApiKey("read").plaintext];
+      const bearers = [undefined, a.ingestKey, FORMER_READ_KEY];
       for (const bearer of bearers) {
         for (const payload of [body(a), { nonsense: true }]) {
           let req = http().delete(PATH);

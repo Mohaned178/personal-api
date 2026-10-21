@@ -54,17 +54,21 @@ describe("ingest schema (Testcontainers)", () => {
     expect(rows[0]?.expiresAt).toBeNull();
   });
 
-  it("rejects an ingest key without an integration, accepts a read key without one", async () => {
-    await seedUser("u-keys");
-    const base = { userId: "u-keys", prefix: "pa_ing_abcd", scopes: [] };
+  it("rejects an ingest key without an integration, and a read key altogether (M9-01)", async () => {
+    const integration = await seedUser("u-keys");
+    const base = { userId: "u-keys", prefix: "pa_ing_abcd" };
     await expect(
       testDb.db.insert(apiKeys).values({ ...base, kind: "ingest", hash: "h-ingest-null" }),
     ).rejects.toThrow();
     await expect(
-      testDb.db
-        .insert(apiKeys)
-        .values({ ...base, kind: "read", prefix: "pa_read_abcd", hash: "h-read-null" }),
-    ).resolves.toBeDefined();
+      testDb.db.insert(apiKeys).values({
+        ...base,
+        kind: "read",
+        integrationId: integration.id,
+        prefix: "pa_read_abcd",
+        hash: "h-read",
+      }),
+    ).rejects.toMatchObject({ cause: { constraint: "api_keys_kind_check" } });
   });
 
   it("enforces unique api key hashes", async () => {

@@ -7,7 +7,6 @@ export * from "./activity.js";
 export * from "./browser-events.js";
 export * from "./deletions.js";
 export * from "./diagnostics.js";
-export * from "./endpoints.js";
 export * from "./envelope.js";
 export {
   type ContractIssue,
@@ -24,7 +23,6 @@ export * from "./integrations.js";
 export * from "./pairing.js";
 export * from "./parse-event.js";
 export * from "./primitives.js";
-export * from "./read-keys.js";
 export * from "./registry.js";
 export * from "./retention.js";
 export * from "./rule-fields.js";
@@ -33,7 +31,6 @@ export * from "./rule-presets.js";
 export * from "./rule-trace.js";
 export * from "./rules.js";
 export * from "./rules-api.js";
-export * from "./saved-query.js";
 export * from "./security.js";
 export * from "./settings.js";
 export * from "./setup.js";

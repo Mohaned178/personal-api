@@ -20,7 +20,6 @@ import { AuthProbeController } from "../../../test/auth-probe.controller";
 import { ProblemFilter } from "../../platform/errors/problem.filter";
 import { ApiKeysService } from "../keys/api-keys.service";
 import { IngestKeyGuard } from "../keys/ingest-key.guard";
-import { READ_RATE_LIMITER } from "../keys/keys.tokens";
 import { AUTH } from "./auth.tokens";
 import type { IngestAuthContext } from "./auth-context";
 import { SessionGuard } from "./session.guard";
@@ -52,8 +51,6 @@ async function start() {
       IngestKeyGuard,
       { provide: AUTH, useValue: { api: { getSession } } },
       { provide: ApiKeysService, useValue: { authenticateIngestKey } },
-      // The probe controller also has read-key routes; this file never calls them.
-      { provide: READ_RATE_LIMITER, useValue: {} },
       { provide: APP_FILTER, useClass: ProblemFilter },
     ],
   }).compile();
