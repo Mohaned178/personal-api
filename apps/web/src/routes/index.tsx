@@ -1,10 +1,12 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { AppNav } from "@/components/app-nav";
+import { CategorySplit } from "@/components/category-split";
 import { Recommendations } from "@/components/recommendations";
 import { Button } from "@/components/ui/button";
 import { type ActivityDay, formatDuration, getInsights, type Insights } from "@/lib/activity";
 import { signOut } from "@/lib/auth";
+import { clearHabits } from "@/lib/habits";
 import { clearDismissed } from "@/lib/recommendations";
 import { getSettings } from "@/lib/settings";
 import { resetWelcome } from "@/lib/welcome";
@@ -139,6 +141,7 @@ function InsightsPanel() {
         <Stat label="Last 7 days" ms={week} />
       </div>
       <DailyBars days={days} today={window.today} />
+      <CategorySplit timeZone={timeZone as string} />
       <Recommendations />
       {domains.length > 0 && <TopDomains domains={domains} />}
       <p className="text-xs text-muted-foreground">Days are cut in {timeZone}.</p>
@@ -155,6 +158,7 @@ export function IndexPage() {
     // Drop every cached query so the next user on this browser never sees the last one's data.
     queryClient.clear();
     clearDismissed();
+    clearHabits();
     await navigate({ to: "/login" });
   }
 

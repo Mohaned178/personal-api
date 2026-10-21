@@ -5,6 +5,7 @@ import { safeRedirect } from "@/lib/safe-redirect";
 import { isWelcomeDone, needsWelcome } from "@/lib/welcome";
 import { RootLayout } from "@/routes/__root";
 import { LoginPage, SetupPage, SignupPage } from "@/routes/auth-pages";
+import { CategoriesPage } from "@/routes/categories-page";
 import { ConnectExtensionDonePage, ConnectExtensionPage } from "@/routes/connect-extension-page";
 import { EventsPage } from "@/routes/events-page";
 import { FocusPage } from "@/routes/focus-page";
@@ -17,6 +18,7 @@ import { RetentionPage } from "@/routes/retention-page";
 import { RulesPage } from "@/routes/rules-page";
 import { SettingsPage } from "@/routes/settings-page";
 import { SitePage } from "@/routes/site-page";
+import { SummaryPage } from "@/routes/summary-page";
 import { WelcomePage } from "@/routes/welcome-page";
 
 /**
@@ -106,6 +108,20 @@ const limitsRoute = createRoute({
   path: "/limits",
   beforeLoad: requireAuth,
   component: LimitsPage,
+});
+
+const categoriesRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/categories",
+  beforeLoad: requireAuth,
+  component: CategoriesPage,
+});
+
+const summaryRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/summary",
+  beforeLoad: requireAuth,
+  component: SummaryPage,
 });
 
 const patternsRoute = createRoute({
@@ -218,6 +234,8 @@ export const routeTree = rootRoute.addChildren([
   patternsRoute,
   siteRoute,
   limitsRoute,
+  categoriesRoute,
+  summaryRoute,
   focusRoute,
   rulesRoute,
   settingsRoute,

@@ -1,13 +1,14 @@
-import type {
-  ActivityDailyResponse,
-  ActivityDay,
-  ActivityDomain,
-  ActivityDomainsResponse,
-  ActivityHourCell,
-  ActivityHoursResponse,
-  ActivitySession,
-  ActivitySessionsResponse,
-  ActivitySiteResponse,
+import {
+  ACTIVITY_DOMAINS_MAX_LIMIT,
+  type ActivityDailyResponse,
+  type ActivityDay,
+  type ActivityDomain,
+  type ActivityDomainsResponse,
+  type ActivityHourCell,
+  type ActivityHoursResponse,
+  type ActivitySession,
+  type ActivitySessionsResponse,
+  type ActivitySiteResponse,
 } from "@personal-api/contracts";
 
 /**
@@ -246,4 +247,17 @@ export async function getTodaySessions(
     if (!cursor) break;
   }
   return sessions.reverse();
+}
+
+/** Every site (up to the API's maximum) with active time between two instants. */
+export async function getDomainTotals(range: {
+  from: string;
+  to: string;
+}): Promise<ActivityDomain[]> {
+  const res = await get<ActivityDomainsResponse>("/v1/activity/domains", {
+    from: range.from,
+    to: range.to,
+    limit: String(ACTIVITY_DOMAINS_MAX_LIMIT),
+  });
+  return res.domains;
 }
