@@ -335,13 +335,15 @@ no rules) is never trusted.
 (`ingestConfigResponseSchema` in `packages/contracts/src/ingest-config.ts`):
 
 ```json
-{ "ruleSetVersion": 7, "defaultPolicy": "deny", "rules": [ { "id": "…", "name": "…", … } ] }
+{ "ruleSetVersion": 7, "defaultPolicy": "deny", "rules": [ { "id": "…", "name": "…", … } ], "limits": [] }
 ```
 
 - `rules` are the user's **enabled `collect`-stage** rules in evaluation order. Process rules and
   disabled rules stay on the server. `ruleSetVersion` is the version of the whole set (what the
   extension stamps as `meta.ruleSetVersion`); `0` means no rules yet. `defaultPolicy` is the key's
-  own integration's policy.
+  own integration's policy. `limits` (M9-02) are the user's daily site limits (`{id, pattern, minutes,
+  strict}`, see [api.md](api.md#daily-site-limits)); they do not move `ruleSetVersion`, and an
+  older stored config without them is still valid (none).
 - **ETag:** a strong tag over the whole body, so a rule change or a policy change gives a new tag.
   `If-None-Match` (a tag, a weak form, a list or `*`) that matches gives `304` with no body.
   `Cache-Control: private, no-cache`.

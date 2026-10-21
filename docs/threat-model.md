@@ -35,7 +35,8 @@ everything), and a compromised browser or OS on the user's machine.
   a site. Missing, invalid or failing rules mean no capture (invariant 1). The URL sanitizer keeps
   only domain and path (query and fragment are always stripped in v1). Incognito tabs, titles,
   form contents and keystrokes are never read. There are no content scripts and no
-  `<all_urls>`: the permissions are `tabs`, `idle`, `storage`, `alarms` and one runtime-granted
+  `<all_urls>`: the permissions are `tabs`, `idle`, `storage`, `alarms`, `notifications` (daily-limit
+  notifications, which show only the domain pattern the user set the limit on) and one runtime-granted
   server origin.
 - **Leaking the key to the wrong place.** The server URL must be https (plain http only for
   loopback). Every request uses `credentials: "omit"` and `redirect: "error"`, so a redirect
