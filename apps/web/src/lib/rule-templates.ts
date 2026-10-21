@@ -1,4 +1,4 @@
-import type { RuleDefinition } from "@personal-api/contracts";
+import { domainSchema, type RuleDefinition } from "@personal-api/contracts";
 
 /**
  * Starter rules for the Rules page. A template only fills the form: nothing is saved until the
@@ -13,8 +13,43 @@ export interface RuleTemplate {
 }
 
 const SITE = { field: "data.domain", op: "domain_matches", value: "example.com" } as const;
-/** `*.example.com` does not match `example.com` itself, so a block needs both (rule-format.md). */
-const SUBDOMAINS = { ...SITE, value: "*.example.com" } as const;
+
+/**
+ * Drops a site and its subdomains, ahead of every allow (priority 0). `*.x.com` does not match
+ * `x.com` itself, so a block needs both (rule-format.md).
+ */
+export function neverCollectRule(domain: string): RuleDefinition {
+  return {
+    name: `Never collect ${domain}`,
+    enabled: true,
+    priority: 0,
+    stage: "collect",
+    when: {
+      any: [
+        { field: "data.domain", op: "domain_matches", value: domain },
+        { field: "data.domain", op: "domain_matches", value: `*.${domain}` },
+      ],
+    },
+    then: [{ action: "drop" }],
+  };
+}
+
+/**
+ * M8-04: the extension popup's "Stop tracking this site" opens `/rules#drop=<domain>`. The domain
+ * travels in the fragment, so the server never sees it. Returns the "never collect" template for a
+ * valid domain, or null.
+ */
+export function dropTemplateFromHash(hash: string): RuleTemplate | null {
+  const params = new URLSearchParams(hash.startsWith("#") ? hash.slice(1) : hash);
+  const parsed = domainSchema.safeParse(params.get("drop"));
+  if (!parsed.success) return null;
+  return {
+    id: `drop-${parsed.data}`,
+    title: `Never collect ${parsed.data}`,
+    description: "Prefilled from the extension.",
+    rule: neverCollectRule(parsed.data),
+  };
+}
 
 export const RULE_TEMPLATES: readonly RuleTemplate[] = [
   {
@@ -69,13 +104,6 @@ export const RULE_TEMPLATES: readonly RuleTemplate[] = [
     title: "Never collect a site",
     description:
       "Drop everything from a site and its subdomains, even if another rule would allow it.",
-    rule: {
-      name: "Never collect example.com",
-      enabled: true,
-      priority: 0,
-      stage: "collect",
-      when: { any: [SITE, SUBDOMAINS] },
-      then: [{ action: "drop" }],
-    },
+    rule: neverCollectRule("example.com"),
   },
 ];

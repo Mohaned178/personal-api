@@ -542,4 +542,12 @@ describe("connect: rules (M4-06)", () => {
     expect(store.rulesConfig).toBeUndefined();
     expect(store[CONNECTION_STORAGE_KEY]).toBeUndefined();
   });
+
+  it("disconnect removes the popup's Today totals (M8-04)", async () => {
+    const { deps, store } = makeDeps();
+    await connect(input, deps);
+    store.todayTotals = { date: "2026-10-21", ms: { "a.test": 1000 } };
+    await disconnect(deps);
+    expect(store.todayTotals).toBeUndefined();
+  });
 });

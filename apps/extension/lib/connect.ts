@@ -8,6 +8,7 @@ import {
 } from "@personal-api/contracts";
 import { GATE_OWNER_STORAGE_KEY, pairedMirror } from "./gate-mirror";
 import { RULES_STORAGE_KEY } from "./rules/storage-key";
+import { TODAY_STORAGE_KEY } from "./today";
 
 export const CONNECTION_STORAGE_KEY = "connection";
 
@@ -272,6 +273,12 @@ export async function disconnect(deps: ConnectDeps): Promise<void> {
     await deps.storage.remove(RULES_STORAGE_KEY);
   } catch {
     // Best effort: rules of an owner without a connection never apply.
+  }
+  // The popup's "Today" belongs to this connection too.
+  try {
+    await deps.storage.remove(TODAY_STORAGE_KEY);
+  } catch {
+    // Best effort: nothing is counted without a connection.
   }
 
   if (originPattern !== null) {

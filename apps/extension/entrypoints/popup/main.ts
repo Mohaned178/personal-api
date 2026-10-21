@@ -22,6 +22,13 @@ import { createFlusher, createIdbCaptureStore } from "../../lib/queue";
 import { readActiveRules } from "../../lib/rules/active-rules";
 import { createRulesSync } from "../../lib/rules/sync";
 import { currentTabVerdict, describeVerdict } from "../../lib/rules/verdict";
+import {
+  formatDuration,
+  readToday,
+  stopTrackingUrl,
+  TODAY_STORAGE_KEY,
+  topSites,
+} from "../../lib/today";
 
 // The popup reads the same IndexedDB database the background writes: a store for the counters and
 // a flusher used for `getSyncStatus` and the "Clear local queue" action. Never the ingest key
@@ -115,7 +122,8 @@ function renderState(next: PopupState): void {
 function refreshState(): Promise<void> {
   return loadPopupState(stateDeps)
     .then(renderState)
-    .then(() => refreshTabVerdict());
+    .then(() => Promise.all([refreshTabVerdict(), refreshToday()]))
+    .then(() => undefined);
 }
 
 pauseToggle.addEventListener("click", () => {
@@ -143,7 +151,13 @@ clearQueueButton.addEventListener("click", () => {
 const tabVerdictView = byId<HTMLElement>("tab-verdict-view");
 const tabVerdict = byId<HTMLElement>("tab-verdict");
 
+const stopTracking = byId<HTMLButtonElement>("stop-tracking");
+/** The Rules page link for the current tab, or null when none is offered. */
+let stopTrackingLink: string | null = null;
+
 async function refreshTabVerdict(): Promise<void> {
+  stopTrackingLink = null;
+  stopTracking.hidden = true;
   if (inTab || state === null) {
     tabVerdictView.hidden = true;
     return;
@@ -151,13 +165,62 @@ async function refreshTabVerdict(): Promise<void> {
   try {
     const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
     const active = await readActiveRules(browser.storage.local);
-    tabVerdict.textContent = describeVerdict(
-      currentTabVerdict(tab, active),
-      state.status === "collecting",
-    );
+    const verdict = currentTabVerdict(tab, active);
+    const capturing = state.status === "collecting";
+    tabVerdict.textContent = describeVerdict(verdict, capturing);
     tabVerdictView.hidden = false;
+    // M8-04: a collected page links to the Rules page with a drop rule for its domain prefilled.
+    // The domain is in the fragment, so it never reaches the server.
+    stopTrackingLink =
+      capturing && verdict.kind === "collected" && state.serverOrigin !== null
+        ? stopTrackingUrl(state.serverOrigin, tab)
+        : null;
+    stopTracking.hidden = stopTrackingLink === null;
   } catch {
     tabVerdictView.hidden = true;
+  }
+}
+
+stopTracking.addEventListener("click", () => {
+  if (stopTrackingLink === null) return;
+  void browser.tabs.create({ url: stopTrackingLink }).then(
+    () => window.close(),
+    () => setStatus("Could not open the dashboard. Try again.", true),
+  );
+});
+
+// -----------------------------------------------------------------------------------------------
+// M8-04 "Today": the top 5 sites by time, counted on this device (lib/today.ts). No server read.
+
+const todayView = byId<HTMLElement>("today-view");
+const todayList = byId<HTMLOListElement>("today-list");
+const todayEmpty = byId<HTMLElement>("today-empty");
+
+async function refreshToday(): Promise<void> {
+  if (inTab || state === null || state.connection === "not_connected") {
+    todayView.hidden = true;
+    return;
+  }
+  try {
+    const raw = await browser.storage.local.get(TODAY_STORAGE_KEY);
+    const sites = topSites(readToday(raw[TODAY_STORAGE_KEY], Date.now()));
+    todayList.replaceChildren(
+      ...sites.map(({ domain, ms }) => {
+        const item = document.createElement("li");
+        const name = document.createElement("span");
+        name.className = "domain";
+        name.textContent = domain;
+        name.title = domain;
+        const time = document.createElement("span");
+        time.textContent = formatDuration(ms);
+        item.append(name, time);
+        return item;
+      }),
+    );
+    todayEmpty.hidden = sites.length > 0;
+    todayView.hidden = false;
+  } catch {
+    todayView.hidden = true;
   }
 }
 
@@ -277,6 +340,7 @@ browser.storage.onChanged.addListener((changes, area) => {
       void refreshState();
     });
   }
+  if (area === "local" && TODAY_STORAGE_KEY in changes) void refreshToday();
   if (area === "session" && ONE_CLICK_ERROR_STORAGE_KEY in changes) {
     const message = changes[ONE_CLICK_ERROR_STORAGE_KEY]?.newValue;
     if (typeof message === "string") setStatus(message, true);

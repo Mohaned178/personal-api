@@ -8,6 +8,7 @@ import { PAUSED_STORAGE_KEY } from "../../lib/pause";
 import { type BackgroundBrowserApi, wireBackground } from "../../lib/queue";
 import { EVENT_CLIENT } from "../../lib/rules/active-rules";
 import { RULES_SYNC_ALARM_NAME } from "../../lib/rules/sync";
+import { localDate, TODAY_STORAGE_KEY } from "../../lib/today";
 import {
   INTEGRATION_ID_2,
   KEY,
@@ -365,5 +366,27 @@ describe("the server's own origin (M8-01)", () => {
     expect(visits.map((e) => e.data)).toContainEqual(
       expect.objectContaining({ domain: host, path: "/app" }),
     );
+  });
+});
+
+describe("the popup's Today (M8-04)", () => {
+  const DAY = 24 * 60 * 60 * 1000;
+
+  it("deletes yesterday's entry at background start", async () => {
+    const yesterday = { date: localDate(world.now() - DAY), ms: { "github.com": 1000 } };
+    const { wired, stored } = wire({ stored: { [TODAY_STORAGE_KEY]: yesterday } });
+    await wired.ready;
+    expect(stored).not.toHaveProperty(TODAY_STORAGE_KEY);
+  });
+
+  it("keeps today's entry at start, and deletes it on the first alarm after midnight", async () => {
+    const today = { date: localDate(world.now()), ms: { "github.com": 1000 } };
+    const { wired, stored, fire } = wire({ stored: { [TODAY_STORAGE_KEY]: today } });
+    await wired.ready;
+    expect(stored[TODAY_STORAGE_KEY]).toEqual(today);
+    world.clock += DAY;
+    await fire(HEARTBEAT_ALARM_NAME);
+    await tick();
+    expect(stored).not.toHaveProperty(TODAY_STORAGE_KEY);
   });
 });

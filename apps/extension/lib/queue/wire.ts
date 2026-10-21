@@ -18,6 +18,7 @@ import { RULES_STORAGE_KEY, readActiveRules } from "../rules/active-rules";
 import { createRulesGate } from "../rules/gate";
 import { createRuleStore } from "../rules/rule-store";
 import { createRulesSync } from "../rules/sync";
+import { createTodayCounter, createTodayStore } from "../today";
 import { createFlusher } from "./flush";
 import { connectionState } from "./sync-state";
 import type { BackgroundBrowserApi, BackgroundDeps, WiredBackground } from "./types";
@@ -160,11 +161,19 @@ export function wireBackground(deps: BackgroundDeps): WiredBackground {
     }
   }
 
+  // M8-04 the popup's "Today" counts what a commit queued, so it sits below the rule store and sees
+  // only the focus segments the rules kept.
+  const today = createTodayCounter({ storage: browser.storage.local, now: deps.now });
+  const countedStore = createTodayStore({ store, counter: today });
+
   // Layer two. With an explicit `collectGate` (tests) the events are not run through the rules.
   const captureStore =
     deps.collectGate === undefined
-      ? createRuleStore({ store, loadRules: () => readActiveRules(browser.storage.local) })
-      : store;
+      ? createRuleStore({
+          store: countedStore,
+          loadRules: () => readActiveRules(browser.storage.local),
+        })
+      : countedStore;
 
   const engine = createCaptureEngine({
     browser,
@@ -217,6 +226,8 @@ export function wireBackground(deps: BackgroundDeps): WiredBackground {
   browser.alarms.onAlarm.addListener((alarm) => heartbeat.onAlarm(alarm));
   // The rules have their own periodic alarm too (GET /v1/ingest/config with an ETag).
   browser.alarms.onAlarm.addListener((alarm) => rulesSync.onAlarm(alarm));
+  // Yesterday's "Today" entry is deleted on every alarm, even when nothing is browsed after midnight.
+  browser.alarms.onAlarm.addListener(() => today.prune());
 
   const settled = (work: () => Promise<void>): Promise<void> => {
     try {
@@ -237,6 +248,7 @@ export function wireBackground(deps: BackgroundDeps): WiredBackground {
         settled(() => flusher.start()),
         settled(() => heartbeat.start()),
         settled(() => rulesSync.start()),
+        settled(() => today.prune()),
       ]),
     )
     .then(() => undefined);
