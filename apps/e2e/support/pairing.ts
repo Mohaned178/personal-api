@@ -114,7 +114,15 @@ export async function connectOneClickFirefox(
     )
     .toBe(true);
   const tab = dashboard as FirefoxTab;
-  const pathOf = async () => new URL(await firefox.tabUrl(tab)).pathname;
+  // A tab the extension has only just opened can report "" before its first navigation starts, and
+  // expect.poll does not retry a callback that throws, so a non-URL counts as "no path yet".
+  const pathOf = async () => {
+    try {
+      return new URL(await firefox.tabUrl(tab)).pathname;
+    } catch {
+      return "";
+    }
+  };
 
   await expect.poll(pathOf, { timeout: 15_000 }).toBe("/login");
   await firefox.typeInto(tab, "#email", account.email);
