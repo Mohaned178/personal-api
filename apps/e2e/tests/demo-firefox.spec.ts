@@ -2,11 +2,10 @@ import { readdir } from "node:fs/promises";
 import { gunzipSync } from "node:zlib";
 import { FIREFOX_EXTENSION_PATH, launchFirefoxExtension } from "../support/firefox";
 import { expect, test } from "../support/fixtures";
-import { startFlakyProxy } from "../support/flaky-proxy";
 import {
   CONNECTION_KEY,
+  connectOneClickFirefox,
   pageVisits,
-  pairThroughPopupFirefox,
   type StoredConnection,
   syncRulesFirefox,
   triggerFlushFirefox,
@@ -20,7 +19,7 @@ import { allowDomainsRule, type RuleDocument } from "../support/stack";
 // in headless Firefox, against the real API, the real worker and a real Postgres.
 //
 //   1. sign up and log in
-//   2. pair the extension with a pairing code
+//   2. connect the extension with one click (popup, dashboard, "Connect this browser")
 //   3. a rule allows a site: before it nothing is collected (deny by default), after it the visit is
 //   4. the events show up through the API, with the query string and fragment stripped
 //   5. create a read key and a saved-query endpoint
@@ -51,7 +50,6 @@ interface ApiEvent {
 
 test("the full 8-step demo on Firefox", async ({ stack, site }) => {
   test.setTimeout(480_000);
-  const proxy = await startFlakyProxy(stack.apiOrigin);
   const build = await patchBuildWithHostPermissions(FIREFOX_EXTENSION_PATH, [
     LOOPBACK_HOST_PERMISSION,
   ]);
@@ -61,14 +59,12 @@ test("the full 8-step demo on Firefox", async ({ stack, site }) => {
     const url = (domain: string, path: string) => `http://${domain}:${port}${path}`;
     const tab = await firefox.openTab(`${site.origin}/`);
 
-    const flushUntilArrived = async (
-      account: { integrationId: string },
-      domain: string,
-      path: string,
-    ) => {
+    // The one-click connect creates its own integration, so the id is known after step 2.
+    let integrationId = "";
+    const flushUntilArrived = async (domain: string, path: string) => {
       await triggerFlushFirefox(firefox);
       await expect
-        .poll(async () => visitedPaths(await stack.eventsOf(account.integrationId), domain), {
+        .poll(async () => visitedPaths(await stack.eventsOf(integrationId), domain), {
           timeout: ARRIVAL_TIMEOUT_MS,
           intervals: [500],
         })
@@ -79,7 +75,7 @@ test("the full 8-step demo on Firefox", async ({ stack, site }) => {
     // No rule yet: the user has not allowed anything.
     const account = await stack.createPairableAccount("demo", []);
     const paths = async (domain: string) =>
-      visitedPaths(await stack.eventsOf(account.integrationId), domain);
+      visitedPaths(await stack.eventsOf(integrationId), domain);
     await test.step("1. sign up and log in", async () => {
       const me = await account.request("GET", "/v1/me");
       expect(me.status).toBe(200);
@@ -90,15 +86,18 @@ test("the full 8-step demo on Firefox", async ({ stack, site }) => {
 
     // ---- 2. pair the extension -------------------------------------------------------------
     let ingestKey = "";
-    await test.step("2. pair the extension with a pairing code", async () => {
-      await pairThroughPopupFirefox(firefox, proxy.origin, account.pairingCode);
+    await test.step("2. connect the extension with one click", async () => {
+      await connectOneClickFirefox(firefox, stack.apiOrigin, account);
       const stored = (await firefox.storageGet(CONNECTION_KEY))[CONNECTION_KEY] as
         | StoredConnection
         | undefined;
-      expect(stored?.integrationId).toBe(account.integrationId);
+      expect(stored?.serverOrigin).toBe(stack.apiOrigin);
       expect(stored?.ingestKey).toMatch(/^pa_ing_.{10,}/);
       ingestKey = stored?.ingestKey ?? "";
-      expect(await stack.pairingCodeUsed(account.integrationId)).toBe(true);
+      integrationId = stored?.integrationId ?? "";
+      // A new integration made by the dashboard, not the one the fixture created.
+      expect(integrationId).not.toBe(account.integrationId);
+      expect(await stack.pairingCodeUsed(integrationId)).toBe(true);
     });
 
     // ---- 3. a rule allows a site -----------------------------------------------------------
@@ -117,7 +116,7 @@ test("the full 8-step demo on Firefox", async ({ stack, site }) => {
       // The visit with a query string and a fragment: only domain and path may be kept.
       await visitFirefox(firefox, tab, url(IP_DOMAIN, "/p/2"));
       await visitFirefox(firefox, tab, url(IP_DOMAIN, "/b?q=secret#frag"));
-      await flushUntilArrived(account, IP_DOMAIN, "/b");
+      await flushUntilArrived(IP_DOMAIN, "/b");
       // The visit made before the rule never arrived, and never will.
       expect(await paths(IP_DOMAIN)).toEqual(["/p/2", "/b"]);
     });
@@ -133,9 +132,7 @@ test("the full 8-step demo on Firefox", async ({ stack, site }) => {
       expect(visits.every((event) => event.trace?.ruleSetVersion === 1)).toBe(true);
       eventIds = events.map((event) => event.id);
       // Nothing of the query string or the fragment is anywhere in what was stored.
-      const stored = JSON.stringify(
-        (await stack.eventsOf(account.integrationId)).map((e) => e.data),
-      );
+      const stored = JSON.stringify((await stack.eventsOf(integrationId)).map((e) => e.data));
       expect(stored).not.toContain("q=secret");
       expect(stored).not.toContain("#");
       expect(stored).not.toContain("?");
@@ -208,7 +205,7 @@ test("the full 8-step demo on Firefox", async ({ stack, site }) => {
 
       await visitFirefox(firefox, tab, url(IP_DOMAIN, "/p/3"));
       await visitFirefox(firefox, tab, url(NAME_DOMAIN, "/p/4"));
-      await flushUntilArrived(account, NAME_DOMAIN, "/p/4");
+      await flushUntilArrived(NAME_DOMAIN, "/p/4");
       expect(await paths(IP_DOMAIN)).toEqual(["/p/2", "/b"]);
       expect(await paths(NAME_DOMAIN)).toEqual(["/p/4"]);
 
@@ -218,7 +215,7 @@ test("the full 8-step demo on Firefox", async ({ stack, site }) => {
         { domain: IP_DOMAIN, count: 2 },
         { domain: NAME_DOMAIN, count: 1 },
       ]);
-      const events = await stack.eventsOf(account.integrationId);
+      const events = await stack.eventsOf(integrationId);
       expect(pageVisits(events).map((event) => event.trace?.ruleSetVersion)).toEqual([1, 1, 2]);
       eventIds = events.map((event) => event.id);
     });
@@ -297,6 +294,5 @@ test("the full 8-step demo on Firefox", async ({ stack, site }) => {
   } finally {
     await firefox.close().catch(() => {});
     await build.cleanup();
-    await proxy.close();
   }
 });

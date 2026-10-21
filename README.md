@@ -24,6 +24,26 @@ define. Every account is separate, and nothing is collected until you allow a si
   In v1 these are API-only (`POST /v1/exports`, `DELETE /v1/account`, see [docs/api.md](docs/api.md));
   the dashboard screens come in v1.1.
 
+## For users
+
+You need a running Personal API server (see below) and Firefox or Edge. The extension is not in the
+stores yet, so you install it from source (see [Install the browser extension from source](#install-the-browser-extension-from-source)).
+
+1. **Install.** Load the extension in your browser as described below.
+2. **Connect.** Open the extension popup, enter your server URL and press **Connect**. The browser asks
+   for permission to reach that server only. A dashboard tab opens: sign in if needed, then press
+   **Connect this browser**. The tab closes and the popup says "Connected."
+3. **Choose what to track.** On first login the setup wizard (`/welcome`) offers three presets:
+   **Everything except sensitive sites** (banking, health, email and adult sites are dropped),
+   **Only work sites**, or **Choose sites** where you type the domains. Nothing is collected until
+   you pick one. You can change the rules any time on the **Rules** page.
+4. **Read Insights.** The dashboard home shows today's and this week's time, a 7-day chart and your
+   top sites. The popup's **Today** list shows your top 5 sites for today, computed on your device.
+   **Stop tracking this site** opens the Rules page with a drop rule for that site ready to save.
+
+Only the domain and path of a page are kept. Query strings, fragments, titles, form contents and
+private windows are never collected.
+
 ## Self-host with Docker (production)
 
 You need Docker with Compose v2, a domain name that points at your server, and ports 80 and 443
@@ -94,10 +114,12 @@ Chrome, Brave and Opera are not tested yet. The Edge build may load there, but n
 
 ### Connect the extension
 
-1. In the dashboard, open **Integrations** and add a browser extension. It shows a pairing code,
-   valid for 10 minutes.
-2. In the extension popup, enter your server URL and the code. The popup asks your browser for
-   permission to reach that server only.
+Enter your server URL in the extension popup and press **Connect**. The popup asks your browser for
+permission to reach that server only, then opens the dashboard so you can confirm with **Connect this
+browser** (see [ADR 0003](docs/adr/0003-one-click-connect.md)).
+
+To connect by hand instead, open **Integrations** in the dashboard, add a browser extension, and
+type the pairing code (valid for 10 minutes) with the server URL into the popup.
 
 ## Documentation
 

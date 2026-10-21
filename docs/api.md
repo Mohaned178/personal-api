@@ -75,7 +75,12 @@ export KEY=pa_ing_<paste-the-key-from-the-previous-response>
 
 ### Browser-extension integrations
 
-An extension integration is created and then paired. Pairing hands it its ingest key once:
+The extension normally connects with one click: the popup opens the dashboard's
+`/connect-extension` page, and the **Connect this browser** button runs steps 1 and 2 below with the
+user's session, then hands the code to the extension in the URL fragment of
+`/connect-extension/done` (the fragment never reaches the server). The extension redeems it with
+step 3. No new API route is involved; see [ADR 0003](adr/0003-one-click-connect.md). An integration
+can also be created and paired by hand. Pairing hands it its ingest key once:
 
 ```bash
 # 1. Create the integration (no key yet)

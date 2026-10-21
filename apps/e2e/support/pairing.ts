@@ -86,6 +86,55 @@ export async function pairThroughPopupFirefox(
   await firefox.closeTab(popup);
 }
 
+/**
+ * One-click connect (M8-01, ADR 0003) through the real popup and the real dashboard: the popup gets
+ * only the server URL, the extension opens `/connect-extension`, the user signs in and presses
+ * **Connect this browser**, and the background pairs and closes that tab. The account must exist
+ * but need not be signed in in this browser. The permission for `serverOrigin` must already be in
+ * the build (see `patchBuildWithHostPermissions`).
+ */
+export async function connectOneClickFirefox(
+  firefox: LaunchedFirefoxExtension,
+  serverOrigin: string,
+  account: { email: string; password: string },
+): Promise<void> {
+  const popup = await firefox.openTab(`moz-extension://${firefox.extensionUuid}/popup.html?tab=1`);
+  await firefox.typeInto(popup, "#server-url", serverOrigin);
+  const before = new Set((await firefox.tabs()).map((tab) => tab.handle));
+  await firefox.click(popup, "#connect");
+
+  let dashboard: FirefoxTab | undefined;
+  await expect
+    .poll(
+      async () => {
+        dashboard = (await firefox.tabs()).find((tab) => !before.has(tab.handle));
+        return dashboard !== undefined;
+      },
+      { timeout: 15_000, intervals: [250] },
+    )
+    .toBe(true);
+  const tab = dashboard as FirefoxTab;
+  const pathOf = async () => new URL(await firefox.tabUrl(tab)).pathname;
+
+  await expect.poll(pathOf, { timeout: 15_000 }).toBe("/login");
+  await firefox.typeInto(tab, "#email", account.email);
+  await firefox.typeInto(tab, "#password", account.password);
+  await firefox.click(tab, "button[type=submit]");
+  await expect.poll(pathOf, { timeout: 15_000 }).toBe("/connect-extension");
+  await firefox.click(tab, "#connect-browser");
+
+  await expect
+    .poll(async () => (await firefox.tabs()).some((t) => t.handle === tab.handle), {
+      timeout: 30_000,
+      intervals: [250],
+    })
+    .toBe(false);
+  await expect
+    .poll(() => firefox.textOf(popup, "#status"), { timeout: 15_000, intervals: [250] })
+    .toBe("Connected.");
+  await firefox.closeTab(popup);
+}
+
 export async function triggerFlushFirefox(firefox: LaunchedFirefoxExtension): Promise<void> {
   await firefox.evaluateInBackground(
     `return browser.alarms.create(${JSON.stringify(FLUSH_RETRY_ALARM)}, { when: Date.now() + 500 })`,
