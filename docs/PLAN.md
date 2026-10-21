@@ -1,6 +1,6 @@
 # Personal API — v1 Plan
 
-> **Your Data. Your Endpoints. Your Rules.**
+> **Your Data. Your Rules.**
 > Status: approved direction, pre-code. Written 2026-10-13 from the brain dump plus the planning interview.
 
 ---
@@ -32,7 +32,7 @@ The whole project uses TypeScript in strict mode. Coming from JavaScript, this i
 | Concern | Choice | Why |
 | --- | --- | --- |
 | Runtime | **Node 24 LTS**, **pnpm** workspaces + **Turborepo** | Standard monorepo. One install, cached builds. |
-| Backend | **NestJS 11** on the default **Express 5** platform, with `nestjs-zod` + `@nestjs/swagger` and `nestjs-pino`, with `helmet` for headers and an in-process rate limiter of our own (`platform/rate-limit`, plus Better Auth's limiter for login) instead of `@nestjs/throttler`, see ADR 0001 | Modules and dependency injection keep about 8 domain areas organized. Guards cover the three auth types (session, ingest key, read key) and per-user scoping. The worker reuses the same services through a standalone app context. Express is used over the Fastify adapter because Better Auth, nestjs-zod and Swagger support it best, and raw speed isn't a constraint at this volume. |
+| Backend | **NestJS 11** on the default **Express 5** platform, with `nestjs-zod` + `@nestjs/swagger` and `nestjs-pino`, with `helmet` for headers and an in-process rate limiter of our own (`platform/rate-limit`, plus Better Auth's limiter for login) instead of `@nestjs/throttler`, see ADR 0001 | Modules and dependency injection keep about 8 domain areas organized. Guards cover the two auth types (session, ingest key) and per-user scoping. The worker reuses the same services through a standalone app context. Express is used over the Fastify adapter because Better Auth, nestjs-zod and Swagger support it best, and raw speed isn't a constraint at this volume. |
 | Database | **PostgreSQL 18** | JSONB for payloads with GIN indexes when needed. Unique constraints give real dedupe and transactions give safe ingest. Native `uuidv7()`. It also hosts the job queue, so there's no Redis. SQLite is too weak for multi-account use plus a queue plus a concurrent worker. |
 | Data access | **Drizzle ORM** + drizzle-kit migrations | TS-first and close to SQL. Dynamic JSONB filters are built with its query builder, never with string SQL. One tool instead of Prisma + Kysely. |
 | Jobs | **pg-boss** | A Postgres-backed queue with retries, cron and a dead-letter queue. Used for retention purges, bulk deletes, exports and (later) webhook delivery. |
@@ -168,7 +168,7 @@ Page titles, full URLs, form contents, keystrokes and incognito activity are **n
 
 Errors use RFC 9457 `application/problem+json`. Lists use keyset cursors on `(occurred_at, id)`. OpenAPI is served at `/docs`, and `/docs` is public: it describes request shapes only and holds no data (ADR 0001, deviation 6).
 
-**`source` means two things** (it was three before saved queries were removed in M9-01). On `GET /v1/events?source=` it is an **integration id** (a uuid). In a rule's `when.source` it is an **integration kind** (`browser-extension`, `http`).
+**`source` means two things.** On `GET /v1/events?source=` it is an **integration id** (a uuid). In a rule's `when.source` it is an **integration kind** (`browser-extension`, `http`).
 
 **Known exception:** the routes Better Auth serves itself under `/api/auth/*` return Better Auth's own JSON error body, not problem+json. The responses we add in front of it (refused signup `auth.signup_disabled`, oversized body `http.payload_too_large`, unexpected 500) are still problem+json. See `docs/self-hosting.md`.
 
@@ -224,10 +224,10 @@ personal-api/
   apps/web/            React dashboard (the API serves WEB_DIST_DIR, default apps/web/dist; release path settled in M7-05)
   apps/extension/      WXT MV3 extension (firefox-mv3 + chrome-mv3 builds for Edge)
   apps/e2e/            Firefox e2e (web-ext + Selenium, primary) + Edge smoke (Playwright, unpacked Chromium build) + local fixture site
-  packages/contracts/  Zod: envelope, event types, API DTOs, rule + saved-query schemas
-  packages/rules/      Pure rule engine (no Node/DOM deps). The saved-query schema and validator live in contracts (M5-04).
+  packages/contracts/  Zod: envelope, event types, API DTOs, rule schemas
+  packages/rules/      Pure rule engine (no Node/DOM deps).
   packages/tsconfig/   Shared TS config
-  docs/                PLAN.md, self-hosting.md, event-types.md, rule-format.md, saved-queries.md, api.md,
+  docs/                PLAN.md, self-hosting.md, event-types.md, rule-format.md, api.md,
                        export-format.md, data-lifecycle.md, threat-model.md, extension-build.md, adr/
   deploy/Caddyfile     TLS reverse proxy example for the production stack
   scripts/             license-check.mjs (fails CI on a production dependency outside the allowlist)

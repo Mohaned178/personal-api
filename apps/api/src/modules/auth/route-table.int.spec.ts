@@ -287,7 +287,7 @@ describe("the route table is deny by default", () => {
 
 describe("every route answers every credential as its guard class promises", () => {
   it("has a table to test", () => {
-    expect(table.length).toBeGreaterThan(30);
+    expect(table.length).toBe(Object.keys(CLASS_OF).length);
   });
 
   it.each(Object.keys(CLASS_OF).sort())("%s", async (route) => {
