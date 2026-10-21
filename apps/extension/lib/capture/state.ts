@@ -105,19 +105,20 @@ export function openPage(prev: CaptureState | null): SanitizedUrl | null {
  * gap rule: when more than `GAP_MS` passed since the last focus step (machine sleep, missed alarms),
  * the segment counts up to that step, not up to `now`. A segment of an earlier browser session is
  * not counted. Only the part since `dayStart` (local midnight) counts. The segment exists only for a
- * page the rules allowed, so a dropped or private page never has one.
+ * page the gate admitted, so a dropped or private page never has one; but the gate admits a page for
+ * any kind of event, so the caller still asks whether a focus segment for it would be kept.
  */
 export function openUse(
   prev: CaptureState | null,
   now: number,
   dayStart: number,
-): { domain: string; ms: number } | null {
+): { domain: string; path: string; ms: number } | null {
   const state = load(prev);
   const open = state.open;
   if (!open || !state.alive || state.alive.session !== open.session) return null;
   const end = now - state.alive.at > GAP_MS ? state.alive.at : now;
   const ms = end - Math.max(open.startedAt, dayStart);
-  return ms > 0 ? { domain: open.domain, ms } : null;
+  return ms > 0 ? { domain: open.domain, path: open.path, ms } : null;
 }
 
 /** The unchanged state (a read). */

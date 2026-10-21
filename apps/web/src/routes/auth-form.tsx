@@ -4,6 +4,8 @@ import { type FormEvent, type ReactNode, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { type AuthResult, signIn, signUp } from "@/lib/auth";
+import { clearHabits } from "@/lib/habits";
+import { clearDismissed } from "@/lib/recommendations";
 
 const MIN_PASSWORD = 8;
 
@@ -55,7 +57,10 @@ export function AuthForm({
       return;
     }
     // A session that expired leaves its cache behind; the account signing in now must not see it.
+    // The same goes for what the browser keeps for the last account: its categories, goals and dismissals.
     queryClient.clear();
+    clearDismissed();
+    clearHabits();
     await (redirectTo === undefined ? navigate({ to: "/" }) : navigate({ href: redirectTo }));
   }
 

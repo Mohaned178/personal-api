@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@personal-api/contracts": "workspace:*",
+    "@personal-api/rules": "workspace:*",
     "@radix-ui/react-slot": "1.3.3",
     "@tanstack/react-query": "5.104.1",
     "@tanstack/react-router": "1.170.41",

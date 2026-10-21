@@ -66,7 +66,10 @@ const TIME_UP = (id: string) => `moz-extension://abc/time-up.html?l=${id}`;
 /** One device: storage, a clock, the open segment, a tab list and spies for everything shown. */
 function device(limits: Limit[], options: { start?: number; tabs?: LimitTab[] } = {}) {
   let clock = options.start ?? at(15, 12);
-  const config = configOf([domainRule("Allow", "a.test", "allow")], { limits });
+  const config = configOf([domainRule("Allow", "a.test", "allow")], {
+    limits,
+    defaultPolicy: "allow",
+  });
   const storage = memoryStorage({
     [CONNECTION_STORAGE_KEY]: connectionFor(),
     [RULES_STORAGE_KEY]: storedRules(config),
@@ -77,7 +80,7 @@ function device(limits: Limit[], options: { start?: number; tabs?: LimitTab[] } 
       clock = value;
     },
     storage,
-    open: null as { domain: string; ms: number } | null,
+    open: null as { domain: string; path: string; ms: number } | null,
     tabs: options.tabs ?? ([] as LimitTab[]),
     notices: [] as { id: string; title: string; message: string }[],
     badge: { text: "", color: "" },
@@ -143,7 +146,7 @@ describe("limit status", () => {
         "old.reddit.com": 3 * MIN,
         "x.test": 99 * MIN,
       },
-      { domain: "old.reddit.com", ms: MIN },
+      { domain: "old.reddit.com", path: "/", ms: MIN },
       {},
     );
     // `youtube.com` is exact: the www subdomain is a different site. `*.reddit.com` has no apex.
@@ -241,7 +244,7 @@ describe("the limits service", () => {
   it("counts the segment still open, not only the closed ones", async () => {
     const d = device([limit("youtube.com", 30)]);
     d.addTime("youtube.com", 10 * MIN);
-    d.open = { domain: "youtube.com", ms: 20 * MIN };
+    d.open = { domain: "youtube.com", path: "/watch", ms: 20 * MIN };
     await d.service().tick();
     expect(d.notices.map((n) => n.message)).toContain("Time's up for youtube.com");
   });
@@ -640,6 +643,38 @@ describe("what counts toward a limit", () => {
     expect(statuses[0]?.usedMs).toBe(0);
     expect(statuses[1]?.usedMs).toBeGreaterThanOrEqual(55_000);
     expect(statuses[1]?.usedMs).toBeLessThanOrEqual(61_000);
+  });
+
+  it("does not count the open segment of a page whose focus segments the rules would drop", async () => {
+    const storage = memoryStorage();
+    // A visit is allowed, so the page is admitted and a segment opens; but no rule keeps a focus
+    // segment for it, so Today never counts it and neither may a limit (PLAN 7).
+    const visitsOnly = domainRule("Visits only", "c.test", "allow", {
+      when: { type: ["browser.page_visited"] },
+    });
+    const lc = limit("c.test", 30);
+    const config = configOf([allowed, visitsOnly], { limits: [lc] });
+    const sim = newSim({
+      wrapStore: (store) =>
+        createRuleStore({
+          store: createTodayStore({
+            store,
+            counter: createTodayCounter({ storage, now: Date.now }),
+          }),
+          loadRules: async () => active(config),
+        }),
+    });
+    storage.stored[CONNECTION_STORAGE_KEY] = connectionFor();
+    storage.stored[RULES_STORAGE_KEY] = storedRules(config);
+    await sim.start();
+    await sim.navigate(sim.tabId, "https://c.test/home");
+    advance(40 * SECOND);
+    const [status] = await readLimitStatuses({
+      storage,
+      now: Date.now,
+      readOpen: () => readOpenUse(sim.store, Date.now()),
+    });
+    expect(status?.usedMs).toBe(0);
   });
 
   it("stops counting an open segment that was last seen alive long ago", async () => {

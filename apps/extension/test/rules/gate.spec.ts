@@ -4,7 +4,12 @@ import type { KnownEvent } from "@personal-api/contracts";
 import { describe, expect, it } from "vitest";
 import type { CaptureState, CaptureStore, CaptureTransition } from "../../lib/capture";
 import { CONNECTION_STORAGE_KEY } from "../../lib/connect";
-import { createRulesGate, mayCollect, probeEvents } from "../../lib/rules/gate";
+import {
+  createRulesGate,
+  mayCollect,
+  mayCollectFocusSegment,
+  probeEvents,
+} from "../../lib/rules/gate";
 import { createRuleStore } from "../../lib/rules/rule-store";
 import { INTEGRATION_ID_2, pageEvent } from "../queue/support/world";
 import {
@@ -69,6 +74,26 @@ describe("mayCollect", () => {
       },
     });
     expect(mayCollect(active(configOf([longOnly])), page("docs.example"))).toBe(true);
+  });
+
+  it("mayCollectFocusSegment: only a rule that keeps focus segments counts, not one for visits", () => {
+    const visits = domainRule("visits", "v.example", "allow", {
+      when: {
+        type: ["browser.page_visited"],
+        all: [{ field: "data.domain", op: "eq", value: "v.example" }],
+      },
+    });
+    const segments = domainRule("segments", "s.example", "allow", {
+      when: {
+        type: ["browser.focus_segment"],
+        all: [{ field: "data.domain", op: "eq", value: "s.example" }],
+      },
+    });
+    const rules = active(configOf([visits, segments]));
+    expect(mayCollect(rules, page("v.example"))).toBe(true);
+    expect(mayCollectFocusSegment(rules, page("v.example"))).toBe(false);
+    expect(mayCollectFocusSegment(rules, page("s.example"))).toBe(true);
+    expect(mayCollectFocusSegment(rules, page("other.example"))).toBe(false);
   });
 
   it("allows page-less events when a rule allows only session events", () => {

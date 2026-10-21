@@ -28,6 +28,7 @@ beforeEach(() => {
 });
 afterEach(() => {
   cleanup();
+  window.localStorage.clear();
   vi.unstubAllGlobals();
   for (const s of logSpies.splice(0)) s.mockRestore();
 });
@@ -210,6 +211,19 @@ describe("logout", () => {
     await fillAndSubmit({ email: USER.email, password: PASSWORD }, SIGN_IN);
     await settle(router, "/");
     expect(qc.getQueryData(["events"])).toBeUndefined();
+  });
+
+  it("forgets the previous account's local categories, goals and dismissals on sign-in", async () => {
+    const keys = [
+      "personal-api.categories",
+      "personal-api.goals",
+      "personal-api.dismissed-recommendations",
+    ];
+    for (const key of keys) window.localStorage.setItem(key, "{}");
+    const { router } = mount("/login");
+    await fillAndSubmit({ email: USER.email, password: PASSWORD }, SIGN_IN);
+    await settle(router, "/");
+    for (const key of keys) expect(window.localStorage.getItem(key)).toBeNull();
   });
 });
 

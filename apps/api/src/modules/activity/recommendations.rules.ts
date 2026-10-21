@@ -1,9 +1,5 @@
-import {
-  globMatches,
-  type Limit,
-  RECOMMENDATIONS_MAX,
-  type Recommendation,
-} from "@personal-api/contracts";
+import { type Limit, RECOMMENDATIONS_MAX, type Recommendation } from "@personal-api/contracts";
+import { domainMatches } from "@personal-api/rules";
 
 /** Active time on one domain on one local day, and the part of it that fell at night (23:00-07:00). */
 export interface DomainDay {
@@ -73,7 +69,7 @@ function plans({ days, limits }: RecommendationInput): Recommendation[] {
   const found: { domain: string; average: number; steps: number[] }[] = [];
   for (const [domain, t] of totalsByDomain(days)) {
     if (t.activeDays < PLAN_MIN_ACTIVE_DAYS) continue;
-    if (limits.some((l) => globMatches(l.pattern, domain))) continue;
+    if (limits.some((l) => domainMatches(l.pattern, domain))) continue;
     const average = t.activeMs / t.activeDays / MINUTE_MS;
     if (average < PLAN_MIN_AVERAGE_MINUTES) continue;
     const start = Math.floor(average / STEP_MINUTES) * STEP_MINUTES;
@@ -103,7 +99,8 @@ function stepDowns({ days, limits, recentFrom }: RecommendationInput): Recommend
     if (nextMinutes < FLOOR_MINUTES) continue;
     const perDay = new Map<string, number>();
     for (const d of days) {
-      if (d.date < recentFrom || d.activeMs <= 0 || !globMatches(limit.pattern, d.domain)) continue;
+      if (d.date < recentFrom || d.activeMs <= 0 || !domainMatches(limit.pattern, d.domain))
+        continue;
       perDay.set(d.date, (perDay.get(d.date) ?? 0) + d.activeMs);
     }
     if (perDay.size < STEP_MIN_ACTIVE_DAYS) continue;

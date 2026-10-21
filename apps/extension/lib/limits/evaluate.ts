@@ -14,9 +14,11 @@ export const WARNING_LEFT_MS = 10 * MINUTE_MS;
 /** What "5 more minutes" adds to a limit for the rest of the day. */
 export const SNOOZE_MS = 5 * MINUTE_MS;
 
-/** The time the open focus segment has run today, and the domain it is on. */
+/** The time the open focus segment has run today, and the page it is on. */
 export interface OpenUse {
   domain: string;
+  /** Only to ask the rules whether a focus segment for the page would be kept; never shown. */
+  path: string;
   ms: number;
 }
 

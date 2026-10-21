@@ -6,10 +6,10 @@ import {
   categoryOf,
   DEFAULT_CATEGORIES,
   type Goals,
-  globMatches,
   goalsSchema,
   type Limit,
 } from "@personal-api/contracts";
+import { domainMatches } from "@personal-api/rules";
 import { daysWindow, getDomainTotals } from "./activity";
 
 /**
@@ -194,7 +194,7 @@ export function weeklySummary(
   for (const day of thisDays) {
     if (sum(day.domains) <= 0) continue;
     for (const limit of limits) {
-      const used = sum(day.domains.filter((d) => globMatches(limit.pattern, d.domain)));
+      const used = sum(day.domains.filter((d) => domainMatches(limit.pattern, d.domain)));
       checked++;
       if (used <= limit.minutes * MIN) kept++;
     }

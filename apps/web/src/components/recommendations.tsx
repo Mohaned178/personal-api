@@ -1,4 +1,4 @@
-import { globMatches } from "@personal-api/contracts";
+import { domainMatches } from "@personal-api/rules";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -38,7 +38,7 @@ function describe(r: Recommendation): { title: string; text: string; apply: stri
 }
 
 function matches(r: Recommendation, domain: string): boolean {
-  return r.kind === "limit_step" ? globMatches(r.pattern, domain) : r.domain === domain;
+  return r.kind === "limit_step" ? domainMatches(r.pattern, domain) : r.domain === domain;
 }
 
 function Card({ r, onDismiss }: { r: Recommendation; onDismiss: () => void }) {

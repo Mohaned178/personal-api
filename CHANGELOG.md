@@ -28,6 +28,20 @@ All notable changes to Personal API are listed here. The format follows
 ### Changed
 
 - The extension asks for the `notifications` permission, for limit notifications. It is the only new permission.
+- `GET /v1/events` and `GET /v1/activity/*` take the dashboard session only.
+- **Upgrade: update the extension together with the server.** `GET /v1/ingest/config` now always carries
+  `limits`, `focus` and `schedules`, and the extension reads the config strictly on purpose: a config with a
+  field it does not know is refused, and nothing is collected until the extension is updated (the rules fail
+  closed). An extension older than 1.2 therefore collects nothing against a 1.2 server. Update both in the same step; a 1.2
+  extension works with an older server.
+
+### Removed
+
+- **Saved-query endpoints and read keys.** `/v1/endpoints`, `GET /v1/me/:slug`, `/v1/keys`, the Read keys
+  and Endpoints pages, `pa_read_` keys and their rate limit are gone, with `docs/saved-queries.md`. The
+  routes answer 404, and a `pa_read_` key is an unknown bearer (401). Migration `0013` deletes the
+  endpoints and read keys that existed and drops the `endpoints` table and the read-key columns of
+  `api_keys`. Ingest keys (`pa_ing_`) and pairing are unchanged. The demo e2e is now six steps.
 
 ## [1.1.0] - Unreleased
 
@@ -46,16 +60,7 @@ All notable changes to Personal API are listed here. The format follows
 ### Changed
 
 - The extension never captures the connected server's own origin, even under an allow-all rule.
-- `GET /v1/events` and `GET /v1/activity/*` take the dashboard session only. The home tagline is
-  now "Your Data. Your Rules."
-
-### Removed
-
-- **Saved-query endpoints and read keys.** `/v1/endpoints`, `GET /v1/me/:slug`, `/v1/keys`, the Read keys
-  and Endpoints pages, `pa_read_` keys and their rate limit are gone, with `docs/saved-queries.md`. The
-  routes answer 404, and a `pa_read_` key is an unknown bearer (401). Migration `0013` deletes the
-  endpoints and read keys that existed and drops the `endpoints` table and the read-key columns of
-  `api_keys`. Ingest keys (`pa_ing_`) and pairing are unchanged. The demo e2e is now six steps.
+- The home tagline is now "Your Data. Your Rules."
 
 ## [1.0.0] - Unreleased
 

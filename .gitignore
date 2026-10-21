@@ -33,3 +33,6 @@ data/
 !.vscode/extensions.json
 .DS_Store
 Thumbs.db
+
+# Playwright MCP scratch output
+.playwright-mcp/

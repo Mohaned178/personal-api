@@ -262,7 +262,7 @@ the dashboard shows only the rules it knows.
 
 Read routes take the dashboard session cookie (`-b "$JAR"`, from the sign-in step) and nothing else:
 no API key reads data. The only API key is the ingest key, which can only ingest. Read keys
-(`pa_read_`) and saved-query endpoints (`/v1/endpoints`, `/v1/me/<slug>`) were removed in v1.1; those
+(`pa_read_`) and saved-query endpoints (`/v1/endpoints`, `/v1/me/<slug>`) were removed in v1.2; those
 paths answer `404`, and a `pa_read_` key in an `Authorization` header is ignored.
 
 ### Events
