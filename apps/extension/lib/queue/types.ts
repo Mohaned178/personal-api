@@ -225,7 +225,7 @@ export type BackgroundBrowserApi = CaptureBrowserApi &
     notifications: LimitsDeps["notifications"];
     /** M9-02 the toolbar badge, red while a limit is used up. */
     action: LimitsDeps["action"];
-    /** `getURL` only for the "Time's up" page and the notification icon. */
+    /** `getURL` only for the "Time's up" and pause pages and the notification icon. */
     runtime: { getURL(path: string): string };
     storage: {
       local: {
@@ -235,8 +235,14 @@ export type BackgroundBrowserApi = CaptureBrowserApi &
         /** Only for the rules sync, when the server refuses or sends rules that do not validate. */
         remove(keys: string | string[]): Promise<void>;
       };
-      /** `remove` only for one-click connect's pending tab. */
-      session: { remove(key: string): Promise<void> };
+      /**
+       * `remove` for one-click connect's pending tab; `get` and `remove` for the pause before
+       * opening's per-tab allowance (lib/before-open).
+       */
+      session: {
+        get(keys: string | string[]): Promise<Record<string, unknown>>;
+        remove(keys: string | string[]): Promise<void>;
+      };
     };
   };
 

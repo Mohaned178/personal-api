@@ -1,3 +1,4 @@
+import { createBeforeOpenService } from "../before-open/service";
 import type { CaptureGate } from "../capture";
 import { createCaptureEngine, registerCaptureListeners } from "../capture";
 import { CONNECTION_STORAGE_KEY, type Connection, getConnection, pairWithCode } from "../connect";
@@ -253,6 +254,20 @@ export function wireBackground(deps: BackgroundDeps): WiredBackground {
     changeInfo.url === undefined ? undefined : limits.tick(),
   );
   browser.tabs.onActivated.addListener(() => limits.tick());
+
+  // M9-05 pause before opening: a tab that goes to a site the user picked moves to the pause page
+  // first. It reads only the picked sites and a per-tab marker, and stores no address.
+  const beforeOpen = createBeforeOpenService({
+    local: browser.storage.local,
+    session: browser.storage.session,
+    tabs: browser.tabs,
+    pageUrl: (pickId) =>
+      browser.runtime.getURL(`/before-open.html?p=${encodeURIComponent(pickId)}`),
+  });
+  browser.tabs.onUpdated.addListener((tabId, changeInfo, tab) =>
+    beforeOpen.onTabUpdated(tabId, changeInfo, tab),
+  );
+  browser.tabs.onRemoved.addListener((tabId) => beforeOpen.onTabRemoved(tabId));
 
   const settled = (work: () => Promise<void>): Promise<void> => {
     try {
