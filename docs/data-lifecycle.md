@@ -84,7 +84,7 @@ integration and deletes its events, along with its source retention policy.
 `DELETE /v1/account` needs your current password and the body field `confirm` set to
 `delete my account`. It answers `204` and clears your session cookies. Every row you own is
 removed in one transaction, including events, integrations, keys, sessions, rules, retention
-policies, saved-query endpoints, deletion jobs and exports. A completeness test checks that no
+policies, deletion jobs and exports. A completeness test checks that no
 table is missed. Export files on disk are removed first, before that transaction. A
 missing file is fine, so the step can be re-run. Wrong passwords get `403 account.password_invalid`.
 Repeated attempts are rate limited (`429 account.rate_limited`).

@@ -1,11 +1,10 @@
 # Personal API
 
-**Your data. Your endpoints. Your rules.**
+**Your data. Your rules.**
 
 Personal API is a self-hosted personal data platform. A browser extension (Firefox first, then
 Edge) sends events you choose to share, and your own rules decide what is kept. You read the data
-through the dashboard, through built-in API routes, or through saved-query endpoints that you
-define. Every account is separate, and nothing is collected until you allow a site.
+through the dashboard. Every account is separate, and nothing is collected until you allow a site.
 
 > **Status:** v1 is in development and not tagged yet. The extension is not on Firefox Add-ons or
 > Edge Add-ons yet, so you install it from source (below).
@@ -18,8 +17,6 @@ define. Every account is separate, and nothing is collected until you allow a si
 - **Rules you can read.** Each rule is a small JSON document, edited in the dashboard form or as
   JSON. The same engine runs in the extension and on the server, and every stored event records
   which rule kept it.
-- **Your own endpoints.** A saved query becomes `GET /v1/me/<slug>`, with a read key that can only
-  read that endpoint.
 - **Export and delete.** Export your data as gzipped NDJSON, or delete the account and all of its data.
   In v1 these are API-only (`POST /v1/exports`, `DELETE /v1/account`, see [docs/api.md](docs/api.md));
   the dashboard screens come in v1.1.
@@ -126,7 +123,6 @@ type the pairing code (valid for 10 minutes) with the server URL into the popup.
 - [docs/self-hosting.md](docs/self-hosting.md): configuration, TLS, backups and upgrades
 - [docs/api.md](docs/api.md): the HTTP API, with examples
 - [docs/rule-format.md](docs/rule-format.md): the rule format and the rule engine
-- [docs/saved-queries.md](docs/saved-queries.md): saved-query endpoints
 - [docs/export-format.md](docs/export-format.md): the export file format
 - [docs/data-lifecycle.md](docs/data-lifecycle.md): what is kept, for how long, and what deletion removes
 - [docs/threat-model.md](docs/threat-model.md): what the project defends against and what it does not

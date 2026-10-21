@@ -3,6 +3,7 @@
  * (Testcontainers; CI runs these, Docker may be off locally). Events are seeded with SQL so
  * `occurred_at` and the durations are exact. Fixed clock: FIXED_NOW (2026-10-14T12:00Z).
  */
+
 import { randomUUID } from "node:crypto";
 import {
   activityDailyResponseSchema,
@@ -13,6 +14,7 @@ import {
 } from "@personal-api/contracts";
 import request from "supertest";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { FORMER_READ_KEY } from "../../../test/former-read-key";
 import {
   FIXED_NOW,
   type IngestHarness,
@@ -200,55 +202,6 @@ describe("GET /v1/activity/domains", () => {
   });
 });
 
-describe("activity with a read key", () => {
-  async function mint(user: FixtureUser, body: object) {
-    const res = await http().post("/v1/keys").set("Cookie", user.cookie).send(body);
-    expect(res.status, JSON.stringify(res.body)).toBe(201);
-    return res.body.key as string;
-  }
-  const keyGet = (key: string, path: string) =>
-    http().get(path).set("Authorization", `Bearer ${key}`);
-
-  it("works with activity:read, for the data of the key owner only", async () => {
-    await seed(h.a, { occurredAt: "2026-10-13T09:00:00Z", durationMs: 5000 });
-    await seed(h.b, { occurredAt: "2026-10-13T09:00:00Z", durationMs: 700_000 });
-    const key = await mint(h.a, { scopes: ["activity:read"] });
-    expect(daily(await keyGet(key, "/v1/activity/daily")).days[0]?.activeMs).toBe(5000);
-    expect(domains(await keyGet(key, "/v1/activity/domains")).domains[0]?.activeMs).toBe(5000);
-  });
-
-  it("needs the activity:read scope", async () => {
-    const key = await mint(h.a, { scopes: ["events:read"] });
-    expectProblem(await keyGet(key, "/v1/activity/daily"), 403, "auth.insufficient_scope");
-    expectProblem(await keyGet(key, "/v1/activity/domains"), 403, "auth.insufficient_scope");
-  });
-
-  it("is narrowed by the types and sources of the key", async () => {
-    await seed(h.a, { occurredAt: "2026-10-13T09:00:00Z", durationMs: 5000 });
-    await visit(h.a, "2026-10-13T09:00:00Z");
-    const visitsOnly = await mint(h.a, {
-      scopes: ["activity:read"],
-      restriction: { types: ["browser.page_visited"] },
-    });
-    expect(daily(await keyGet(visitsOnly, "/v1/activity/daily")).days).toEqual([
-      { date: "2026-10-13", activeMs: 0, pageVisits: 1 },
-    ]);
-    const ownSource = await mint(h.a, {
-      scopes: ["activity:read"],
-      restriction: { sources: [h.a.integrationId], types: ["browser.focus_segment"] },
-    });
-    expect(daily(await keyGet(ownSource, "/v1/activity/daily")).days).toEqual([
-      { date: "2026-10-13", activeMs: 5000, pageVisits: 0 },
-    ]);
-    // A source that is not the key owner's cannot be named in a key at all (404 at creation).
-    const foreign = await http()
-      .post("/v1/keys")
-      .set("Cookie", h.a.cookie)
-      .send({ scopes: ["activity:read"], restriction: { sources: [h.b.integrationId] } });
-    expect(foreign.status).toBe(404);
-  });
-});
-
 describe("/v1/settings", () => {
   const patch = (u: FixtureUser, body: unknown) =>
     http()
@@ -306,22 +259,14 @@ describe("/v1/settings", () => {
 
   it("serves the zone list to a session only", async () => {
     expectProblem(await http().get("/v1/settings/time-zones"), 401, "auth.unauthenticated");
-    const created = await http()
-      .post("/v1/keys")
-      .set("Cookie", h.a.cookie)
-      .send({ scopes: ["events:read", "activity:read"] });
     const res = await http()
       .get("/v1/settings/time-zones")
-      .set("Authorization", `Bearer ${created.body.key}`);
+      .set("Authorization", `Bearer ${FORMER_READ_KEY}`);
     expectProblem(res, 401, "auth.unauthenticated");
   });
 
-  it("is dashboard-only: a read key is refused", async () => {
-    const created = await http()
-      .post("/v1/keys")
-      .set("Cookie", h.a.cookie)
-      .send({ scopes: ["events:read", "activity:read"] });
-    const res = await http().get("/v1/settings").set("Authorization", `Bearer ${created.body.key}`);
+  it("is dashboard-only: a bearer is refused", async () => {
+    const res = await http().get("/v1/settings").set("Authorization", `Bearer ${FORMER_READ_KEY}`);
     expectProblem(res, 401, "auth.unauthenticated");
     expectProblem(await http().get("/v1/settings"), 401, "auth.unauthenticated");
   });

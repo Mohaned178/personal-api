@@ -6,12 +6,10 @@ import { isWelcomeDone, needsWelcome } from "@/lib/welcome";
 import { RootLayout } from "@/routes/__root";
 import { LoginPage, SetupPage, SignupPage } from "@/routes/auth-pages";
 import { ConnectExtensionDonePage, ConnectExtensionPage } from "@/routes/connect-extension-page";
-import { EndpointsPage } from "@/routes/endpoints-page";
 import { EventsPage } from "@/routes/events-page";
 import { HealthPage } from "@/routes/health-page";
 import { IndexPage } from "@/routes/index";
 import { IntegrationsPage } from "@/routes/integrations-page";
-import { KeysPage } from "@/routes/keys-page";
 import { RetentionPage } from "@/routes/retention-page";
 import { RulesPage } from "@/routes/rules-page";
 import { SettingsPage } from "@/routes/settings-page";
@@ -76,20 +74,6 @@ const integrationsRoute = createRoute({
   path: "/integrations",
   beforeLoad: requireAuth,
   component: IntegrationsPage,
-});
-
-const keysRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "/keys",
-  beforeLoad: requireAuth,
-  component: KeysPage,
-});
-
-const endpointsRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "/endpoints",
-  beforeLoad: requireAuth,
-  component: EndpointsPage,
 });
 
 const eventsRoute = createRoute({
@@ -196,8 +180,6 @@ export const routeTree = rootRoute.addChildren([
   indexRoute,
   welcomeRoute,
   integrationsRoute,
-  keysRoute,
-  endpointsRoute,
   eventsRoute,
   healthRoute,
   retentionRoute,

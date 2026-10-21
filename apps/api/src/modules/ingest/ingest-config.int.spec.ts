@@ -10,16 +10,19 @@
  * `ingest.rule_error` with no rules in it; a key without ingest rights is refused; the key of an
  * `http` integration is refused too, since only a browser extension applies rules (M4-R S2).
  */
+
 import type { RuleDefinition } from "@personal-api/contracts";
 import { ingestConfigResponseSchema } from "@personal-api/contracts";
 import request from "supertest";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { FORMER_READ_KEY } from "../../../test/former-read-key";
 import {
   type IngestHarness,
   PROBLEM_JSON,
   setDefaultPolicy,
   startIngestHarness,
 } from "../../../test/ingest-helpers";
+
 import { generateApiKey } from "../keys/key-generation";
 import { RulesService } from "../rules/rules.service";
 
@@ -206,8 +209,8 @@ describe("tenancy", () => {
 describe("authentication", () => {
   it.each([
     ["no key", () => undefined],
-    ["a read key", () => generateApiKey("read").plaintext],
-    ["a made-up ingest key", () => generateApiKey("ingest").plaintext],
+    ["a read key", () => FORMER_READ_KEY],
+    ["a made-up ingest key", () => generateApiKey().plaintext],
   ])("refuses %s with 401", async (_label, key) => {
     await addRule(h.a.userId, ruleFor("one"));
     const res = await getConfig(key());

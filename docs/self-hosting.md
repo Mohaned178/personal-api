@@ -107,7 +107,7 @@ proxy.
 
 Sign-in and sign-up allow 3 attempts per 10 seconds per client address, whatever `NODE_ENV` is
 (only the test suites turn this off). Pairing allows 10 attempts a minute per address. Each ingest
-key and each read key gets 120 requests a minute. The counters live in memory, so a restart resets
+key gets 120 requests a minute. The counters live in memory, so a restart resets
 them. Behind a reverse proxy, set `TRUST_PROXY` to the number of proxies in front, and no higher:
 a higher value lets a client pick its own address. See `docs/threat-model.md`.
 

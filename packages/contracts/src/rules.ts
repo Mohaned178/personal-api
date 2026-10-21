@@ -150,7 +150,7 @@ export const ruleActionSchema = z.discriminatedUnion("action", [
 ]);
 export type RuleAction = z.output<typeof ruleActionSchema>;
 
-/** An event type or a `*` glob over types. Shared with the type restriction of a read key. */
+/** An event type or a `*` glob over types. */
 export const typePatternSchema = z
   .string()
   .min(1)
@@ -236,7 +236,7 @@ function valueFits(spec: RuleFieldSpec, cond: RuleCondition): boolean {
 /**
  * Checks a `when` against the event types it selects: every `type` pattern must match a type, and
  * every condition must name a field, op and value that fit. Issue paths start at `base`. Returns
- * the selected types. Saved queries (M5-04) use it too, so the condition language cannot drift.
+ * the selected types.
  */
 export function validateRuleWhen(
   when: RuleWhen,

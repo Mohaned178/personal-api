@@ -8,6 +8,7 @@
  * A last block checks the table against the routes Nest actually registers under /v1, so a new
  * route cannot be forgotten, and that every route refuses a missing or wrong-kind credential.
  */
+
 import { randomUUID } from "node:crypto";
 import { RequestMethod } from "@nestjs/common";
 import { METHOD_METADATA, PATH_METADATA } from "@nestjs/common/constants";
@@ -26,6 +27,8 @@ import {
   postHeartbeat,
   tenantState,
 } from "../../../test/adversarial-helpers";
+import { FORMER_READ_KEY } from "../../../test/former-read-key";
+
 import {
   eventRows,
   expectResults,
@@ -45,7 +48,6 @@ import {
 } from "../../../test/pairing-helpers";
 import type { FixtureUser } from "../../../test/two-user-fixture";
 import { DeletionsRunService } from "../deletions/deletions-run.service";
-import { generateApiKey } from "../keys/key-generation";
 
 let h: IngestHarness;
 
@@ -127,14 +129,6 @@ const ruleBody = {
 };
 const githubVisit = () => pageVisit({ data: { domain: "github.com" } });
 const ruleIds = new Map<string, string>();
-/** Each user's read key (id and plaintext), set per test. */
-const readKeys = new Map<string, { id: string; key: string }>();
-/** Each user's endpoint (id, slug) and the key minted with it, set per test. */
-const endpointsOf = new Map<string, { id: string; slug: string; key: string }>();
-const endpointBody = (slug: string) => ({
-  slug,
-  definition: { when: {}, window: { kind: "last_n_days", days: 7 }, aggregate: "count_by_day" },
-});
 
 /** Each user's extension integration and its pending (unused, unexpired) code, set per test. */
 const pending = new Map<string, { integrationId: string; pairingCode: string }>();
@@ -819,141 +813,6 @@ const ROUTES: Route[] = [
     },
   },
   {
-    route: "POST /v1/keys",
-    attacks: [
-      {
-        label: "naming the victim as owner in the body",
-        run: async (attacker, victim) => {
-          const res = await cookiePost(attacker, "/v1/keys", {
-            scopes: ["events:read"],
-            userId: victim.userId,
-          });
-          expectProblem(res, 400, "request.invalid");
-          expect(JSON.stringify(res.body)).not.toContain(victim.userId);
-        },
-      },
-      {
-        label: "restricting a key to the victim's integration",
-        run: async (attacker, victim) => {
-          const res = await cookiePost(attacker, "/v1/keys", {
-            scopes: ["events:read"],
-            restriction: { sources: [victim.integrationId] },
-          });
-          expectProblem(res, 404, NOT_FOUND);
-          await expectSameAsUnknown(
-            res,
-            await cookiePost(attacker, "/v1/keys", {
-              scopes: ["events:read"],
-              restriction: { sources: [missing] },
-            }),
-          );
-          expect(JSON.stringify(res.body)).not.toContain(victim.integrationId);
-        },
-      },
-      {
-        label: "creating a key while naming the victim in query and headers",
-        run: async (attacker, victim) => {
-          const res = await cookiePost(attacker, `/v1/keys?userId=${victim.userId}`, {
-            scopes: ["events:read"],
-          }).set("X-User-Id", victim.userId);
-          expect(res.status).toBe(201);
-          const { rows } = await h.testDb.pool.query(
-            "select user_id, integration_id from api_keys where id = $1",
-            [res.body.readKey.id],
-          );
-          expect(rows).toEqual([{ user_id: attacker.userId, integration_id: null }]);
-        },
-      },
-    ],
-    control: async (owner) => {
-      const res = await cookiePost(owner, "/v1/keys", {
-        scopes: ["events:read"],
-        restriction: { sources: [owner.integrationId] },
-      });
-      expect(res.status).toBe(201);
-      expect(res.body.key).toMatch(/^pa_read_/);
-    },
-  },
-  {
-    route: "GET /v1/keys",
-    attacks: [
-      {
-        label: "listing while the victim has a read key, naming the victim in query and headers",
-        run: async (attacker, victim) => {
-          const res = await cookieGet(attacker, `/v1/keys?userId=${victim.userId}`).set(
-            "X-User-Id",
-            victim.userId,
-          );
-          expect(res.status).toBe(200);
-          // Earlier rows in this run left more keys behind, so compare with the rows themselves.
-          const listed = res.body.readKeys.map((k: { id: string }) => k.id);
-          const owned = async (user: FixtureUser) =>
-            (
-              await h.testDb.pool.query<{ id: string }>(
-                "select id from api_keys where user_id = $1 and kind = 'read'",
-                [user.userId],
-              )
-            ).rows.map((r) => r.id);
-          expect([...listed].sort()).toEqual((await owned(attacker)).sort());
-          const victimIds = await owned(victim);
-          expect(victimIds.length).toBeGreaterThan(0);
-          const text = JSON.stringify(res.body);
-          for (const secret of [
-            ...victimIds,
-            readKeys.get(victim.userId)?.key,
-            victim.ingestKeyId,
-            victim.ingestKey,
-          ]) {
-            expect(text).not.toContain(secret);
-          }
-        },
-      },
-    ],
-    control: async (owner) => {
-      const res = await cookieGet(owner, "/v1/keys");
-      expect(res.status).toBe(200);
-      expect(res.body.readKeys.map((k: { id: string }) => k.id)).toContain(
-        readKeys.get(owner.userId)?.id,
-      );
-    },
-  },
-  {
-    route: "POST /v1/keys/:id/revoke",
-    attacks: [
-      {
-        label: "revoking the victim's read key",
-        run: async (attacker, victim) => {
-          const id = readKeys.get(victim.userId)?.id as string;
-          const res = await cookiePost(attacker, `/v1/keys/${id}/revoke`);
-          expectProblem(res, 404, "key.not_found");
-          await expectSameAsUnknown(res, await cookiePost(attacker, `/v1/keys/${missing}/revoke`));
-          // The victim's key is not revoked: their api_keys rows are compared before and after.
-        },
-      },
-      {
-        label: "revoking the victim's ingest key through the read key route",
-        run: async (attacker, victim) => {
-          const res = await cookiePost(attacker, `/v1/keys/${victim.ingestKeyId}/revoke`);
-          expectProblem(res, 404, "key.not_found");
-        },
-      },
-      {
-        label: "revoking the attacker's own ingest key by id (not a read key)",
-        run: async (attacker) => {
-          const res = await cookiePost(attacker, `/v1/keys/${attacker.ingestKeyId}/revoke`);
-          expectProblem(res, 404, "key.not_found");
-        },
-      },
-    ],
-    control: async (owner) => {
-      // A throwaway key, so the seeded one stays usable for the rest of the table.
-      const spare = await cookiePost(owner, "/v1/keys", { scopes: ["activity:read"] });
-      const res = await cookiePost(owner, `/v1/keys/${spare.body.readKey.id}/revoke`);
-      expect(res.status).toBe(200);
-      expect(res.body.readKey.revokedAt).not.toBeNull();
-    },
-  },
-  {
     route: "GET /v1/activity/daily",
     attacks: [
       {
@@ -998,211 +857,6 @@ const ROUTES: Route[] = [
       const res = await cookieGet(owner, "/v1/activity/domains");
       expect(res.status).toBe(200);
       expect(res.body.domains).toHaveLength(1);
-    },
-  },
-  {
-    route: "GET /v1/endpoints",
-    attacks: [
-      {
-        label: "listing endpoints while the victim has one, naming the victim",
-        run: async (attacker, victim) => {
-          const res = await cookieGet(attacker, `/v1/endpoints?userId=${victim.userId}`).set(
-            "X-User-Id",
-            victim.userId,
-          );
-          expect(res.status).toBe(200);
-          expect(res.body.endpoints.map((e: { id: string }) => e.id)).toEqual([
-            endpointsOf.get(attacker.userId)?.id,
-          ]);
-        },
-      },
-    ],
-    control: async (owner) => {
-      expect((await cookieGet(owner, "/v1/endpoints")).status).toBe(200);
-    },
-  },
-  {
-    route: "POST /v1/endpoints",
-    attacks: [
-      {
-        label: "naming the victim as owner in the body",
-        run: async (attacker, victim) => {
-          const res = await cookiePost(attacker, "/v1/endpoints", {
-            ...endpointBody("hijack"),
-            userId: victim.userId,
-          });
-          expectProblem(res, 400, "request.invalid");
-          expect(JSON.stringify(res.body)).not.toContain(victim.userId);
-        },
-      },
-      {
-        label:
-          "creating an endpoint with the victim's slug (slugs are per user: it is the attacker's own)",
-        run: async (attacker, victim) => {
-          const slug = endpointsOf.get(victim.userId)?.slug as string;
-          const res = await cookiePost(attacker, "/v1/endpoints", endpointBody(`${slug}-x`));
-          expect(res.status).toBe(201);
-          const { rows } = await h.testDb.pool.query(
-            "select user_id from endpoints where id = $1",
-            [res.body.endpoint.id],
-          );
-          expect(rows).toEqual([{ user_id: attacker.userId }]);
-        },
-      },
-    ],
-    control: async (owner) => {
-      const res = await cookiePost(owner, "/v1/endpoints", endpointBody("control"));
-      expect(res.status).toBe(201);
-    },
-  },
-  {
-    route: "POST /v1/endpoints/preview",
-    attacks: [
-      {
-        label: "previewing while the victim has events, naming the victim",
-        run: async (attacker, victim) => {
-          const res = await cookiePost(attacker, `/v1/endpoints/preview?userId=${victim.userId}`, {
-            definition: { when: {}, window: { kind: "last_n_days", days: 7 }, fields: ["type"] },
-          }).set("X-User-Id", victim.userId);
-          expect(res.status).toBe(200);
-          // The attacker has one event of their own; the victim's is never counted.
-          expect(res.body.result.rows).toHaveLength(1);
-        },
-      },
-    ],
-    control: async (owner) => {
-      const res = await cookiePost(owner, "/v1/endpoints/preview", {
-        definition: { when: {}, window: { kind: "today" }, aggregate: "count_by_day" },
-      });
-      expect(res.status).toBe(200);
-    },
-  },
-  {
-    route: "GET /v1/endpoints/:id",
-    attacks: [
-      {
-        label: "reading the victim's endpoint",
-        run: async (attacker, victim) => {
-          const res = await cookieGet(
-            attacker,
-            `/v1/endpoints/${endpointsOf.get(victim.userId)?.id}`,
-          );
-          expectProblem(res, 404, "endpoint.not_found");
-          await expectSameAsUnknown(res, await cookieGet(attacker, `/v1/endpoints/${missing}`));
-        },
-      },
-    ],
-    control: async (owner) => {
-      const res = await cookieGet(owner, `/v1/endpoints/${endpointsOf.get(owner.userId)?.id}`);
-      expect(res.status).toBe(200);
-    },
-  },
-  {
-    route: "PUT /v1/endpoints/:id",
-    attacks: [
-      {
-        label: "replacing the victim's endpoint",
-        run: async (attacker, victim) => {
-          const body = { ...endpointBody("hijacked"), enabled: false };
-          const id = endpointsOf.get(victim.userId)?.id;
-          const res = await cookiePut(attacker, `/v1/endpoints/${id}`, body);
-          expectProblem(res, 404, "endpoint.not_found");
-          await expectSameAsUnknown(
-            res,
-            await cookiePut(attacker, `/v1/endpoints/${missing}`, body),
-          );
-        },
-      },
-    ],
-    control: async (owner) => {
-      const res = await cookiePut(owner, `/v1/endpoints/${endpointsOf.get(owner.userId)?.id}`, {
-        ...endpointBody("renamed"),
-        enabled: true,
-      });
-      expect(res.status).toBe(200);
-      expect(res.body.endpoint.slug).toBe("renamed");
-    },
-  },
-  {
-    route: "DELETE /v1/endpoints/:id",
-    attacks: [
-      {
-        label: "deleting the victim's endpoint",
-        run: async (attacker, victim) => {
-          const res = await cookieRemove(
-            attacker,
-            `/v1/endpoints/${endpointsOf.get(victim.userId)?.id}`,
-          );
-          expectProblem(res, 404, "endpoint.not_found");
-          await expectSameAsUnknown(res, await cookieRemove(attacker, `/v1/endpoints/${missing}`));
-        },
-      },
-    ],
-    control: async (owner) => {
-      const res = await cookieRemove(owner, `/v1/endpoints/${endpointsOf.get(owner.userId)?.id}`);
-      expect(res.status).toBe(200);
-    },
-  },
-  {
-    route: "POST /v1/endpoints/:id/rotate-key",
-    attacks: [
-      {
-        label: "rotating the victim's endpoint key",
-        run: async (attacker, victim) => {
-          const id = endpointsOf.get(victim.userId)?.id;
-          const res = await cookiePost(attacker, `/v1/endpoints/${id}/rotate-key`);
-          expectProblem(res, 404, "endpoint.not_found");
-          await expectSameAsUnknown(
-            res,
-            await cookiePost(attacker, `/v1/endpoints/${missing}/rotate-key`),
-          );
-        },
-      },
-    ],
-    control: async (owner) => {
-      const res = await cookiePost(
-        owner,
-        `/v1/endpoints/${endpointsOf.get(owner.userId)?.id}/rotate-key`,
-      );
-      expect(res.status).toBe(200);
-      expect(res.body.key).toMatch(/^pa_read_/);
-    },
-  },
-  {
-    route: "GET /v1/me/:slug",
-    attacks: [
-      {
-        label: "running the shared slug with the attacker's key reads the attacker's data only",
-        run: async (attacker, victim) => {
-          const mine = endpointsOf.get(attacker.userId) as { slug: string; key: string };
-          // Both users use the same slug on purpose: the slug resolves within the KEY's owner.
-          expect(endpointsOf.get(victim.userId)?.slug).toBe(mine.slug);
-          const res = await http()
-            .get(`/v1/me/${mine.slug}`)
-            .set("Authorization", `Bearer ${mine.key}`);
-          expect(res.status).toBe(200);
-          expect(res.body.rows).toEqual([{ date: expect.any(String), count: 1 }]);
-        },
-      },
-      {
-        label: "running another endpoint of the attacker's with this endpoint's key",
-        run: async (attacker, victim) => {
-          const second = await cookiePost(attacker, "/v1/endpoints", endpointBody("second"));
-          expect(second.status).toBe(201);
-          const res = await http()
-            .get("/v1/me/second")
-            .set("Authorization", `Bearer ${endpointsOf.get(attacker.userId)?.key}`);
-          expectProblem(res, 404, "endpoint.not_found");
-          expect(JSON.stringify(res.body)).not.toContain(endpointsOf.get(victim.userId)?.id);
-        },
-      },
-    ],
-    control: async (owner) => {
-      const mine = endpointsOf.get(owner.userId) as { slug: string; key: string };
-      const res = await http()
-        .get(`/v1/me/${mine.slug}`)
-        .set("Authorization", `Bearer ${mine.key}`);
-      expect(res.status).toBe(200);
     },
   },
   {
@@ -1578,17 +1232,6 @@ async function seedActivity() {
     expect(
       (await cookiePut(user, `/v1/retention/source/${user.integrationId}`, { days: 60 })).status,
     ).toBe(200);
-    const readKey = await cookiePost(user, "/v1/keys", { scopes: ["events:read"] });
-    expect(readKey.status).toBe(201);
-    readKeys.set(user.userId, { id: readKey.body.readKey.id, key: readKey.body.key });
-    // The same slug for both users: a slug names an endpoint within its owner only.
-    const endpoint = await cookiePost(user, "/v1/endpoints", endpointBody("stats"));
-    expect(endpoint.status).toBe(201);
-    endpointsOf.set(user.userId, {
-      id: endpoint.body.endpoint.id,
-      slug: "stats",
-      key: endpoint.body.key,
-    });
   }
 }
 
@@ -1653,17 +1296,13 @@ describe("the table covers every M1 route, and each refuses a missing or wrong-k
     (r) =>
       !r.route.includes("/v1/ingest/") &&
       r.route !== "POST /v1/pair" &&
-      r.route !== "GET /v1/setup/status" &&
-      // Open to a read key too (M5-02); its credential matrix is in events.int.spec.ts.
-      r.route !== "GET /v1/events" &&
-      r.route !== "GET /v1/me/:slug" &&
-      !r.route.startsWith("GET /v1/activity/"),
+      r.route !== "GET /v1/setup/status",
   );
   const ingestRoutes = ROUTES.filter((r) => r.route.includes("/v1/ingest/"));
 
   function call(route: string) {
     const [method, path] = route.split(" ") as [string, string];
-    const url = path.replace(":id", h.a.integrationId).replace(":slug", "stats");
+    const url = path.replace(":id", h.a.integrationId);
     const agent = http();
     if (method === "GET") return agent.get(url);
     if (method === "PATCH") return agent.patch(url);
@@ -1683,7 +1322,7 @@ describe("the table covers every M1 route, and each refuses a missing or wrong-k
   it.each(sessionRoutes.map((r) => r.route))(
     "%s: 401 auth.unauthenticated with no credential, an ingest key, a read key or a session token as bearer",
     async (route) => {
-      const bearers = [undefined, h.a.ingestKey, generateApiKey("read").plaintext, randomUUID()];
+      const bearers = [undefined, h.a.ingestKey, FORMER_READ_KEY, randomUUID()];
       for (const bearer of bearers) {
         let req = call(route);
         if (bearer) req = req.set("Authorization", `Bearer ${bearer}`);
@@ -1692,36 +1331,12 @@ describe("the table covers every M1 route, and each refuses a missing or wrong-k
     },
   );
 
-  it.each(["GET /v1/events", "GET /v1/activity/daily", "GET /v1/activity/domains"])(
-    "%s: no credential is 401 auth.unauthenticated; any bearer takes the key path",
-    async (route) => {
-      expectProblem(await call(route), 401, "auth.unauthenticated");
-      for (const bearer of [h.a.ingestKey, generateApiKey("read").plaintext, randomUUID()]) {
-        const res = await call(route).set("Authorization", `Bearer ${bearer}`);
-        expectProblem(res, 401, "auth.invalid_key");
-      }
-    },
-  );
-
-  it("GET /v1/me/:slug takes a read key only: every other credential, or none, is 401 auth.invalid_key", async () => {
-    const attempts: Array<(req: ReturnType<typeof call>) => ReturnType<typeof call>> = [
-      (req) => req,
-      (req) => req.set("Cookie", h.a.cookie),
-      (req) => req.set("Authorization", `Bearer ${h.a.ingestKey}`),
-      (req) => req.set("Authorization", `Bearer ${generateApiKey("read").plaintext}`),
-      (req) => req.set("Cookie", h.a.cookie).set("Authorization", `Bearer ${randomUUID()}`),
-    ];
-    for (const attempt of attempts) {
-      expectProblem(await attempt(call("GET /v1/me/:slug")), 401, "auth.invalid_key");
-    }
-  });
-
   it("POST /v1/pair is the one open route: no credential is needed, and none changes the answer", async () => {
     const attempts: Array<(req: ReturnType<typeof call>) => ReturnType<typeof call>> = [
       (req) => req,
       (req) => req.set("Cookie", h.a.cookie),
       (req) => req.set("Authorization", `Bearer ${h.a.ingestKey}`),
-      (req) => req.set("Authorization", `Bearer ${generateApiKey("read").plaintext}`),
+      (req) => req.set("Authorization", `Bearer ${FORMER_READ_KEY}`),
     ];
     for (const attempt of attempts) {
       expectProblem(
@@ -1738,7 +1353,7 @@ describe("the table covers every M1 route, and each refuses a missing or wrong-k
       const attempts: Array<(req: ReturnType<typeof call>) => ReturnType<typeof call>> = [
         (req) => req,
         (req) => req.set("Cookie", h.a.cookie),
-        (req) => req.set("Authorization", `Bearer ${generateApiKey("read").plaintext}`),
+        (req) => req.set("Authorization", `Bearer ${FORMER_READ_KEY}`),
         (req) => req.set("Authorization", `Bearer ${randomUUID()}`),
         (req) => req.set("Cookie", h.a.cookie).set("Authorization", "Bearer pa_ing_"),
       ];

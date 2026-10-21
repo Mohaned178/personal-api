@@ -37,8 +37,16 @@ describe("OpenAPI document from the real application", () => {
     const res = await request(app.getHttpServer()).get("/docs/json");
     expect(res.status).toBe(200);
     const paths = Object.keys(res.body.paths);
-    for (const path of ["/v1/events", "/v1/me/{slug}", "/v1/ingest/events", "/v1/endpoints"]) {
+    for (const path of ["/v1/events", "/v1/ingest/events", "/v1/activity/daily"]) {
       expect(paths, path).toContain(path);
+    }
+  });
+
+  it("no longer lists the removed endpoint and read-key routes (M9-01)", async () => {
+    const res = await request(app.getHttpServer()).get("/docs/json");
+    const paths = Object.keys(res.body.paths);
+    for (const path of ["/v1/me/{slug}", "/v1/endpoints", "/v1/keys"]) {
+      expect(paths, path).not.toContain(path);
     }
   });
 

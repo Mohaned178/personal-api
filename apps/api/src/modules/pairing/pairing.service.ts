@@ -62,7 +62,7 @@ export class PairingService {
   async redeem(presented: string): Promise<PairResponse> {
     const normalized = normalizePairingCode(presented);
     if (normalized === null) throw codeInvalid();
-    const key = generateApiKey("ingest");
+    const key = generateApiKey();
     const paired = await this.repository.redeem(hashPairingCode(normalized), this.clock.now(), {
       prefix: key.prefix,
       hash: key.hash,

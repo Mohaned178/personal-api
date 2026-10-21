@@ -256,32 +256,23 @@ column.
 only: no payload, domain or URL is kept for a dropped event. A deleted rule's id can still appear, and
 the dashboard shows only the rules it knows.
 
-## 7. Read your data (read keys and endpoints)
+## 7. Read your data
 
-Read routes take a read key (`pa_read_...`) as `Authorization: Bearer`. Make one from the
-dashboard session. The `key` is shown once, in this response; the server keeps only its hash.
-
-```bash
-curl -s -X POST "$BASE/v1/keys" -H "Content-Type: application/json" -b "$JAR" \
-  -d '{"name":"Docs run read","scopes":["events:read","activity:read"]}'
-export READ=pa_read_<paste-the-key>
-```
-
-Scopes are `events:read` (the events routes) and `activity:read` (the activity routes). A key can
-only read; a key without the scope gets `403 auth.insufficient_scope`. Endpoint keys
-(`endpoint:<id>`) are made with an endpoint, not here.
+Read routes take the dashboard session cookie (`-b "$JAR"`, from the sign-in step) and nothing else:
+no API key reads data. The only API key is the ingest key, which can only ingest. Read keys
+(`pa_read_`) and saved-query endpoints (`/v1/endpoints`, `/v1/me/<slug>`) were removed in v1.1; those
+paths answer `404`, and a `pa_read_` key in an `Authorization` header is ignored.
 
 ### Events
 
 ```bash
-curl -s "$BASE/v1/events?limit=5" -H "Authorization: Bearer $READ"
+curl -s "$BASE/v1/events?limit=5" -b "$JAR"
 ```
 
 Filters: `source` (integration id), `type`, `from`, `to`, `domain`. `limit` is 1 to 200 (default
 50). Pass the previous page's `nextCursor` as `cursor`; it is opaque and paged on
-`(occurredAt, id)`, so offsets are not used. The list also accepts the dashboard session cookie.
-`GET /v1/events/<id>` (one event) and `DELETE /v1/events` take the session cookie only (see
-[Delete data](#delete-data)).
+`(occurredAt, id)`, so offsets are not used. `GET /v1/events/<id>` (one event) and
+`DELETE /v1/events` also take the session cookie (see [Delete data](#delete-data)).
 
 Each event carries `origin` (`collected`), `tags`, and `trace` (why it was kept; `null` for events
 stored before rules existed). The payload is in `data`.
@@ -290,9 +281,9 @@ stored before rules existed). The payload is in `data`.
 
 ```bash
 curl -s "$BASE/v1/activity/daily?from=2026-10-01T00:00:00.000Z&to=2026-10-31T00:00:00.000Z" \
-  -H "Authorization: Bearer $READ"
+  -b "$JAR"
 curl -s "$BASE/v1/activity/domains?from=2026-10-01T00:00:00.000Z&to=2026-10-31T00:00:00.000Z&limit=5" \
-  -H "Authorization: Bearer $READ"
+  -b "$JAR"
 ```
 
 `from` must be before `to`, at most 90 days apart (`400 activity.range_invalid` otherwise). When
@@ -303,8 +294,8 @@ and one entry per local day that has activity, with `activeMs` and `pageVisits`.
 
 ### Time zone
 
-Days are cut in your time zone, which is a setting. Both routes take the session cookie only (a
-read key gets `401 auth.unauthenticated`).
+Days are cut in your time zone, which is a setting. Like every route here they take the session
+cookie only (a bearer key gets `401 auth.unauthenticated`).
 
 ```bash
 curl -s "$BASE/v1/settings" -b "$JAR"                          # { "timeZone": "UTC" }
@@ -316,7 +307,7 @@ curl -s -X PATCH "$BASE/v1/settings" -b "$JAR" -H "Content-Type: application/jso
 `time-zones` lists the names the **database** accepts, sorted. That is not the same list as your
 browser's: the Postgres image has no legacy link names such as `Asia/Calcutta` (use `Asia/Kolkata`),
 and such a name is `400 settings.time_zone_unsupported`. A zone that was saved earlier and no
-longer works makes `/v1/activity/daily` and the endpoints answer `409 settings.time_zone_unsupported`
+longer works makes `/v1/activity/daily` answer `409 settings.time_zone_unsupported`
 until you choose another one.
 
 ### Retention
@@ -400,7 +391,7 @@ curl -s "$BASE/v1/exports/<export-id>/download" -b "$JAR" -o events.ndjson.gz
 ### Delete your account
 
 `DELETE /v1/account` deletes your account and everything it owns: events, integrations, every
-ingest and read key, rules, endpoints, retention policies, deletion records, exports (files too), sessions
+ingest key, rules, retention policies, deletion records, exports (files too), sessions
 and queued jobs. It takes the session cookie only (no key can call it), and the account is the session's.
 
 ```bash
@@ -415,40 +406,6 @@ current password and the exact phrase `delete my account`. A wrong password is
 The deletion is one database transaction, so it either happens completely or not at all, and the
 email can be used to sign up again afterwards. It is a hard delete: database backups keep the data
 until they rotate.
-
-### Endpoints (saved queries)
-
-An endpoint is a saved query with a slug and a read key of its own. The definition format is in
-[saved-queries.md](saved-queries.md). These routes take the session cookie.
-
-```bash
-# Dry run: runs the definition with the same limits and stores nothing
-curl -s -X POST "$BASE/v1/endpoints/preview" -H "Content-Type: application/json" -b "$JAR" \
-  -d '{"definition":{"when":{"type":["browser.page_visited"]},"window":{"kind":"last_n_days","days":7},"aggregate":"count_by_day"}}'
-
-# Create (201): { "endpoint": {...}, "key": "pa_read_..." }  (the key is shown once)
-curl -s -X POST "$BASE/v1/endpoints" -H "Content-Type: application/json" -b "$JAR" \
-  -d '{"slug":"visits-by-day","definition":{"when":{"type":["browser.page_visited"]},"window":{"kind":"last_n_days","days":7},"aggregate":"count_by_day"}}'
-# (enabled defaults to true when you create one)
-
-curl -s "$BASE/v1/endpoints" -b "$JAR"                       # list
-curl -s "$BASE/v1/endpoints/<id>" -b "$JAR"                  # one
-curl -s -X PUT "$BASE/v1/endpoints/<id>" -b "$JAR" -H "Content-Type: application/json" -d '<slug, enabled, definition: all three>'
-curl -s -X POST "$BASE/v1/endpoints/<id>/rotate-key" -b "$JAR"   # new key, old one stops working
-curl -s -X DELETE "$BASE/v1/endpoints/<id>" -b "$JAR"
-
-# The public read: the endpoint's own key, nothing else
-curl -s "$BASE/v1/me/visits-by-day" -H "Authorization: Bearer $ENDPOINT_KEY"
-```
-
-`GET /v1/me/<slug>` answers with the result only (for example
-`{ "kind": "count_by_day", "rows": [{ "date": "2026-10-13", "count": 1 }], "truncated": false }`).
-An endpoint key on `/v1/events` gets `403 auth.insufficient_scope`. `PUT` replaces the whole
-endpoint, so `enabled` is required (leaving it out is `400 request.invalid`, and never re-enables
-a disabled endpoint). `GET /v1/me/<slug>` answers the same `404 endpoint.not_found` when the slug
-does not exist, when the endpoint is disabled, and when your key does not cover it, so a key cannot
-be used to find out which slugs exist. A slug is unique per user
-(`endpoint.slug_taken`), and a user can have a limited number of endpoints (`endpoint.limit_reached`).
 
 ## 8. OpenAPI
 
@@ -482,7 +439,7 @@ Errors are `application/problem+json` (RFC 9457) with a stable `code`:
 | ---- | -------------------------- | -------------------------------------------------------------------------------------- |
 | 400  | `ingest.batch_invalid`     | The batch has no `events` array, an empty one, more than 100 events, or an unknown top-level key. |
 | 400  | `request.invalid`          | A request body fails validation (for example the heartbeat or an integration create).  |
-| 401  | `auth.invalid_key`         | The Bearer key (ingest key, or read key on the read routes) is missing, malformed, unknown or revoked. |
+| 401  | `auth.invalid_key`         | The Bearer ingest key is missing, malformed, unknown or revoked. |
 | 401  | `auth.unauthenticated`     | A dashboard route was called without a valid session cookie.                           |
 | 403  | `auth.signup_disabled`     | Sign-up is closed (`ALLOW_SIGNUP=false` and an account already exists).                 |
 | 403  | `auth.csrf_origin_invalid` | A POST/PATCH/PUT/DELETE carrying a session cookie came from another origin (`Origin` is not `BETTER_AUTH_URL`'s). Nothing was done. |
@@ -500,8 +457,6 @@ Errors are `application/problem+json` (RFC 9457) with a stable `code`:
 | 413  | `http.payload_too_large`   | The body is over the route's limit (100 KB, or 256 KB for `/v1/ingest/events`), or has no declared length on the auth routes. |
 | 400  | `activity.range_invalid`   | `from` is not before `to`, or the range is more than 90 days.                          |
 | 400  | `events.cursor_invalid`    | The `cursor` is not one `nextCursor` returned.                                         |
-| 403  | `auth.insufficient_scope`  | The read key lacks the scope the route needs (for example an endpoint key on `/v1/events`). |
-| 429  | `read.rate_limited`        | More than 120 requests a minute with one read key (every read route together, `/v1/me/<slug>` included). `Retry-After` says when to try again. |
 | 404  | `deletion.not_found`       | `GET /v1/events/deletions/<id>`: the id is unknown, belongs to another user, or is malformed. |
 | 404  | `export.not_found`         | An `/v1/exports/<id>` route: the id is unknown, belongs to another user, or is malformed. |
 | 409  | `export.not_ready`         | `/download` or `/manifest` of an export that has not completed.                          |
@@ -509,14 +464,8 @@ Errors are `application/problem+json` (RFC 9457) with a stable `code`:
 | 429  | `export.limit_reached`     | `POST /v1/exports`: 3 exports are already queued or running, or 10 were created in the last 24 hours. |
 | 400  | `export.cursor_invalid`    | `GET /v1/exports`: the `cursor` is not one `nextCursor` returned.                      |
 | 404  | `event.not_found`          | The event id is unknown, belongs to another user, or is malformed.                     |
-| 404  | `key.not_found`            | The read key id is unknown or belongs to another user.                                 |
-| 404  | `endpoint.not_found`       | The endpoint id or slug is unknown, belongs to another user, or is malformed. For `/v1/me/<slug>` also: the endpoint is disabled, or the key does not carry its scope. |
 | 400  | `settings.time_zone_unsupported` | `PATCH /v1/settings`: the database does not know this time zone (for example `Asia/Calcutta`). |
-| 409  | `settings.time_zone_unsupported` | The time zone saved in your settings no longer works in a query (`/v1/activity/daily`, endpoints and their preview). Choose another one. |
+| 409  | `settings.time_zone_unsupported` | The time zone saved in your settings no longer works in a query (`/v1/activity/daily`). Choose another one. |
 | 400  | `retention.target_invalid` | A retention route names an unknown scope, an unknown event type or a malformed integration id. |
 | 404  | `retention.target_not_found` | `PUT`/`DELETE /v1/retention/...`: the integration is not yours or unknown, or there is no such policy to delete. |
-| 409  | `endpoint.slug_taken`      | You already have an endpoint with this slug.                                           |
-| 409  | `endpoint.limit_reached`   | The user already has the maximum number of endpoints.                                  |
-| 409  | `saved_query.definition_invalid` | The saved query definition is invalid (the same check the preview runs).         |
-| 504  | `saved_query.timeout`      | The query ran past its time limit. Narrow the window or the filters.                   |
 | 500  | `internal.error`           | Unexpected failure. Details are logged, not returned.                                  |

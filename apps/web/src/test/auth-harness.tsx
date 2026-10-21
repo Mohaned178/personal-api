@@ -38,18 +38,6 @@ export interface FakeBackend {
   timeZones?: string[];
   /** Answer PATCH /v1/settings with this error status. */
   rejectSettings?: number;
-  /** Read keys for /v1/keys. Leave unset and those routes answer 404. */
-  readKeys?: FakeReadKey[];
-  /** Answer the next POST /v1/keys with this error status. */
-  rejectKeyCreate?: number | undefined;
-  /** Endpoints for /v1/endpoints. Leave unset and those routes answer 404. */
-  endpoints?: FakeEndpoint[];
-  /** Body of the next POST /v1/endpoints/preview answer (default: an empty count_by_day result). */
-  previewResult?: unknown;
-  /** Answer the next POST /v1/endpoints/preview with this error status. */
-  rejectPreview?: number | undefined;
-  /** Answer the next create/replace of an endpoint with this error status. */
-  rejectEndpointSave?: number | undefined;
   /** Aggregates for /v1/activity. Leave unset and those routes answer 404. */
   activity?: FakeActivity;
   calls: { method: string; path: string; body: unknown; search?: string }[];
@@ -77,15 +65,6 @@ async function activityRoute(b: FakeBackend, method: string, url: URL): Promise<
     return json(200, { from, to, domains: activity.domains.slice(0, limit) });
   }
   return null;
-}
-
-export interface FakeEndpoint {
-  id: string;
-  slug: string;
-  enabled: boolean;
-  definition: Record<string, unknown>;
-  createdAt: string;
-  updatedAt: string;
 }
 
 export interface FakeRule {
@@ -204,57 +183,6 @@ export interface FakeIntegration {
   createdAt: string;
 }
 
-export interface FakeReadKey {
-  id: string;
-  name: string | null;
-  prefix: string;
-  scopes: string[];
-  restriction: { sources?: string[]; types?: string[] } | null;
-  createdAt: string;
-  lastUsedAt: string | null;
-  revokedAt: string | null;
-}
-
-export const ENDPOINT_KEY = "pa_read_endpointendpointendpoint";
-export const READ_KEY = "pa_read_secretsecretsecret";
-
-function keysRoute(
-  b: FakeBackend,
-  method: string,
-  pathname: string,
-  body: unknown,
-): Response | null {
-  const list = b.readKeys;
-  if (!list) return null;
-  const route = `${method} ${pathname}`;
-  if (route === "GET /v1/keys") return json(200, { readKeys: list });
-  if (route === "POST /v1/keys") {
-    if (b.rejectKeyCreate) {
-      const status = b.rejectKeyCreate;
-      b.rejectKeyCreate = undefined;
-      return json(status, { code: "request.invalid" });
-    }
-    const request = body as Pick<FakeReadKey, "scopes" | "restriction"> & { name?: string };
-    const readKey: FakeReadKey = {
-      id: crypto.randomUUID(),
-      name: request.name ?? null,
-      prefix: "pa_read_secret",
-      scopes: request.scopes,
-      restriction: request.restriction ?? null,
-      createdAt: "2026-10-19T00:00:00.000Z",
-      lastUsedAt: null,
-      revokedAt: null,
-    };
-    list.unshift(readKey);
-    return json(201, { readKey, key: READ_KEY });
-  }
-  const id = /^\/v1\/keys\/([^/]+)\/revoke$/.exec(pathname)?.[1];
-  const target = method === "POST" ? list.find((k) => k.id === id) : undefined;
-  if (!target) return null;
-  target.revokedAt ??= "2026-10-19T01:00:00.000Z";
-  return json(200, { readKey: target });
-}
-
 function retentionRoute(
   b: FakeBackend,
   method: string,
@@ -344,64 +272,6 @@ function json(status: number, body: unknown, headers: Record<string, string> = {
   });
 }
 
-function endpointsRoute(
-  b: FakeBackend,
-  method: string,
-  pathname: string,
-  body: unknown,
-): Response | null {
-  const list = b.endpoints;
-  if (!list) return null;
-  const route = `${method} ${pathname}`;
-  if (route === "GET /v1/endpoints") return json(200, { endpoints: list });
-  if (route === "POST /v1/endpoints/preview") {
-    if (b.rejectPreview) {
-      const status = b.rejectPreview;
-      b.rejectPreview = undefined;
-      return json(status, { code: "request.invalid" });
-    }
-    return json(200, {
-      result: b.previewResult ?? { kind: "count_by_day", rows: [], truncated: false },
-    });
-  }
-  const input = body as Pick<FakeEndpoint, "slug" | "enabled" | "definition">;
-  if (route === "POST /v1/endpoints") {
-    if (b.rejectEndpointSave) {
-      const status = b.rejectEndpointSave;
-      b.rejectEndpointSave = undefined;
-      return json(status, { code: "endpoint.slug_taken" });
-    }
-    const endpoint: FakeEndpoint = {
-      id: crypto.randomUUID(),
-      slug: input.slug,
-      enabled: input.enabled ?? true,
-      definition: input.definition,
-      createdAt: "2026-10-19T00:00:00.000Z",
-      updatedAt: "2026-10-19T00:00:00.000Z",
-    };
-    list.push(endpoint);
-    return json(201, { endpoint, key: ENDPOINT_KEY });
-  }
-  const match = /^\/v1\/endpoints\/([^/]+)(\/rotate-key)?$/.exec(pathname);
-  const target = list.find((e) => e.id === match?.[1]);
-  if (!match || !target) return null;
-  if (method === "POST" && match[2]) return json(200, { endpoint: target, key: ENDPOINT_KEY });
-  if (method === "PUT") {
-    if (b.rejectEndpointSave) {
-      const status = b.rejectEndpointSave;
-      b.rejectEndpointSave = undefined;
-      return json(status, { code: "endpoint.slug_taken" });
-    }
-    Object.assign(target, input, { updatedAt: "2026-10-19T02:00:00.000Z" });
-    return json(200, { endpoint: target });
-  }
-  if (method === "DELETE") {
-    list.splice(list.indexOf(target), 1);
-    return json(200, { endpoint: target });
-  }
-  return null;
-}
-
 export function installFetch(b: FakeBackend) {
   const fn = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const req = input instanceof Request ? input : null;
@@ -464,8 +334,6 @@ export function installFetch(b: FakeBackend) {
           rulesRoute(b, method, url.pathname, body) ??
           eventsRoute(b, method, url, body) ??
           integrationsRoute(b, method, url.pathname, body) ??
-          keysRoute(b, method, url.pathname, body) ??
-          endpointsRoute(b, method, url.pathname, body) ??
           json(404, { code: "not_found" })
         );
     }

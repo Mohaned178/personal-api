@@ -6,7 +6,6 @@ import {
   type GetEventResponse,
   type ListEventsQuery,
   type ListEventsResponse,
-  type ReadKeyRestriction,
   ruleTraceSchema,
   type StoredEvent,
 } from "@personal-api/contracts";
@@ -24,18 +23,7 @@ import { type EventRow, EventsRepository } from "./events.repository";
 export class EventsService {
   constructor(private readonly repository: EventsRepository) {}
 
-  /**
-   * `access` is how the caller got in. A read key's restriction narrows the query, and its events
-   * come without the rule trace (which names the owner's rules; a key is for reading data).
-   */
-  async list(
-    userId: string,
-    query: ListEventsQuery,
-    access: { restriction: ReadKeyRestriction | null; withTrace: boolean } = {
-      restriction: null,
-      withTrace: true,
-    },
-  ): Promise<ListEventsResponse> {
+  async list(userId: string, query: ListEventsQuery): Promise<ListEventsResponse> {
     assertUserScope(userId);
     const limit = query.limit ?? EVENTS_DEFAULT_LIMIT;
     const rows = await this.repository.list(
@@ -46,8 +34,6 @@ export class EventsService {
         from: query.from ? new Date(query.from) : undefined,
         to: query.to ? new Date(query.to) : undefined,
         domain: query.domain,
-        sources: access.restriction?.sources,
-        types: access.restriction?.types,
         after: query.cursor ? decodeCursor(query.cursor) : undefined,
       },
       limit + 1,
@@ -55,10 +41,7 @@ export class EventsService {
     const page = rows.slice(0, limit);
     const last = page.at(-1);
     return {
-      events: page.map((row) => {
-        const event = toStoredEvent(row);
-        return access.withTrace ? event : { ...event, trace: null };
-      }),
+      events: page.map(toStoredEvent),
       nextCursor:
         rows.length > limit && last
           ? encodeCursor({ occurredAt: last.occurredAt, id: last.id })

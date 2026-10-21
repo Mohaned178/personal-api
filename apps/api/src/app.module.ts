@@ -10,13 +10,11 @@ import { isAuthPath } from "./modules/auth/auth.http";
 import { AuthModule } from "./modules/auth/auth.module";
 import { DeletionsModule } from "./modules/deletions/deletions.module";
 import { DiagnosticsModule } from "./modules/diagnostics/diagnostics.module";
-import { EndpointsModule } from "./modules/endpoints/endpoints.module";
 import { EventsModule } from "./modules/events/events.module";
 import { ExportsModule } from "./modules/exports/exports.module";
 import { INGEST_EVENTS_PATH } from "./modules/ingest/ingest.controller";
 import { IngestModule } from "./modules/ingest/ingest.module";
 import { IntegrationsModule } from "./modules/integrations/integrations.module";
-import { KeysModule } from "./modules/keys/keys.module";
 import { PairingModule } from "./modules/pairing/pairing.module";
 import { RetentionModule } from "./modules/retention/retention.module";
 import { RulesModule } from "./modules/rules/rules.module";
@@ -52,14 +50,12 @@ import { buildPinoHttpOptions } from "./platform/logging/logging";
     // The API only enqueues; the worker process (src/worker.ts) runs the handlers.
     JobsModule.forRoot({ work: false }),
     AuthModule,
-    KeysModule,
     IntegrationsModule,
     DiagnosticsModule,
     AccountModule,
     DeletionsModule,
     EventsModule,
     ActivityModule,
-    EndpointsModule,
     SettingsModule,
     IngestModule,
     PairingModule,

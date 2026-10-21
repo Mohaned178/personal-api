@@ -13,6 +13,7 @@ import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { captureOutput } from "../../../test/auth.helpers";
 import { FakeClock } from "../../../test/fake-clock";
+import { FORMER_READ_KEY } from "../../../test/former-read-key";
 import { startTestDatabase, type TestDatabase } from "../../../test/postgres";
 import { buildFixtureApp, type FixtureUser, seedTwoUsers } from "../../../test/two-user-fixture";
 import { apiKeys, integrations } from "../../platform/db/schema";
@@ -121,14 +122,9 @@ describe("rejected keys all get the same 401 (no oracle)", () => {
       .set({ status: "revoked" })
       .where(eq(integrations.id, integration.id));
 
-    const read = generateApiKey("read");
-    await testDb.db
-      .insert(apiKeys)
-      .values({ userId: a.userId, kind: "read", prefix: read.prefix, hash: read.hash });
-
     return [
       ["no Authorization header", () => probe()],
-      ["unknown well-formed key", () => probe(generateApiKey("ingest").plaintext)],
+      ["unknown well-formed key", () => probe(generateApiKey().plaintext)],
       ["malformed key", () => probe("pa_ing_not-a-real-key")],
       ["truncated key", () => probe(a.ingestKey.slice(0, 20))],
       [
@@ -138,7 +134,7 @@ describe("rejected keys all get the same 401 (no oracle)", () => {
       ["not a pa_ key at all", () => probe("hello")],
       ["revoked key", () => probe(revoked.key)],
       ["live key of a revoked integration", () => probe(orphaned.key)],
-      ["valid pa_read_ key", () => probe(read.plaintext)],
+      ["pa_read_ key (read keys no longer exist)", () => probe(FORMER_READ_KEY)],
       [
         "wrong scheme",
         () => http().get("/probe/ingest").set("Authorization", `Basic ${a.ingestKey}`),
@@ -175,7 +171,7 @@ describe("rejected keys all get the same 401 (no oracle)", () => {
   });
 
   it("does not echo the presented key in the response", async () => {
-    const key = generateApiKey("ingest").plaintext;
+    const key = generateApiKey().plaintext;
     const res = await probe(key);
     expect(res.text).not.toContain(key);
     expect(res.text).not.toContain(key.slice("pa_ing_".length));
@@ -253,12 +249,8 @@ describe("session and ingest credentials are not interchangeable", () => {
     expect(res.body.code).toBe("auth.unauthenticated");
   });
 
-  it("a stored pa_read_ key cannot pass SessionGuard", async () => {
-    const read = generateApiKey("read");
-    await testDb.db
-      .insert(apiKeys)
-      .values({ userId: a.userId, kind: "read", prefix: read.prefix, hash: read.hash });
-    const res = await http().get("/v1/me").set("Authorization", `Bearer ${read.plaintext}`);
+  it("a pa_read_ key cannot pass SessionGuard", async () => {
+    const res = await http().get("/v1/me").set("Authorization", `Bearer ${FORMER_READ_KEY}`);
     expect(res.status).toBe(401);
     expect(res.body.code).toBe("auth.unauthenticated");
   });
@@ -286,7 +278,7 @@ describe("session and ingest credentials are not interchangeable", () => {
 describe("logs never contain keys or hashes (invariant 6)", () => {
   it("keeps a valid key, a rejected key and their hashes out of log output", async () => {
     const created = await freshIngestKey(a);
-    const rejected = generateApiKey("ingest");
+    const rejected = generateApiKey();
     const capture = captureOutput();
     let output = "";
     try {

@@ -9,6 +9,7 @@
  *  - an in-flight request that already passed the guard when the revoke commits (issue #29, item 1);
  *  - a captureOutput() sweep: ingest and heartbeat never log a domain, path, key or hash.
  */
+
 import { randomUUID } from "node:crypto";
 import request from "supertest";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
@@ -23,6 +24,7 @@ import {
   waitForBlockedStatement,
 } from "../../../test/adversarial-helpers";
 import { captureOutput } from "../../../test/auth.helpers";
+import { FORMER_READ_KEY } from "../../../test/former-read-key";
 import {
   eventRows,
   expectResults,
@@ -213,7 +215,7 @@ describe("revocation takes effect on the next request", () => {
       expect(String(res.headers["content-type"])).toMatch(PROBLEM_JSON);
       expect(res.body.code).toBe("auth.invalid_key");
     }
-    const unknown = await postEvents(h.app, generateApiKey("ingest").plaintext, [pageVisit()]);
+    const unknown = await postEvents(h.app, generateApiKey().plaintext, [pageVisit()]);
     expect(events.body).toEqual(unknown.body);
   }
 
@@ -341,7 +343,7 @@ describe("a request already past the guard when the revoke commits (issue #29, i
       expect(res.status).toBe(401);
       expect(String(res.headers["content-type"])).toMatch(PROBLEM_JSON);
       expect(res.body.code).toBe("auth.invalid_key");
-      const unknown = await postEvents(h.app, generateApiKey("ingest").plaintext, [pageVisit()]);
+      const unknown = await postEvents(h.app, generateApiKey().plaintext, [pageVisit()]);
       expect(res.body).toEqual(unknown.body);
 
       expect(await eventRows(h.testDb.pool, h.a.userId)).toEqual([]);
@@ -388,8 +390,8 @@ describe("log hygiene sweep (invariant 6): ingest and heartbeat", () => {
   it("writes no domain, path, key or hash to the process output on any ingest or heartbeat outcome", async () => {
     const revoked = await createAllowing(h.a, "log hygiene");
     expect((await revokeViaRoute(h.app, h.a, revoked.integrationId)).status).toBe(200);
-    const unknown = generateApiKey("ingest").plaintext;
-    const read = generateApiKey("read").plaintext;
+    const unknown = generateApiKey().plaintext;
+    const read = FORMER_READ_KEY;
     const sentinelEvent = () =>
       pageVisit({ data: { domain: SENTINEL_DOMAIN, path: SENTINEL_PATH } });
     const query = "?domain=sentinel-query-7c1e&path=/sentinel-path-7c1e";

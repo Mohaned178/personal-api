@@ -130,12 +130,29 @@ describe("grouped navigation", () => {
         .map((l) => l.textContent);
     expect(group("Sources")).toEqual(["Integrations", "Health"]);
     expect(group("Data")).toEqual(["Events", "Retention"]);
-    expect(group("Developer")).toEqual(["Read keys", "Endpoints"]);
+    expect(within(nav).queryByRole("region", { name: "Developer" })).toBeNull();
     for (const name of ["Insights", "Rules", "Settings"]) {
       expect(within(nav).getByRole("link", { name })).toBeTruthy();
     }
     expect(within(nav).getByRole("link", { name: "Insights" }).getAttribute("aria-current")).toBe(
       "page",
     );
+  });
+
+  it("links nowhere near the removed read keys and endpoints pages (M9-01)", async () => {
+    mount("/");
+    const nav = await screen.findByRole("navigation", { name: "Main" });
+    const hrefs = within(nav)
+      .getAllByRole("link")
+      .map((l) => l.getAttribute("href"));
+    expect(hrefs).not.toContain("/keys");
+    expect(hrefs).not.toContain("/endpoints");
+    expect(within(nav).queryByText(/read keys|endpoints/i)).toBeNull();
+  });
+
+  it.each(["/keys", "/endpoints"])("answers %s with not found, not a page", async (path) => {
+    mount(path);
+    expect(await screen.findByText(/not found/i)).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: /read keys|endpoints/i })).toBeNull();
   });
 });

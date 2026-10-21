@@ -5,11 +5,6 @@
  */
 import type { INestApplication } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
-import {
-  createReadKeyResponseSchema,
-  endpointKeyResponseSchema,
-  READ_RATE_LIMITED_CODE,
-} from "@personal-api/contracts";
 import request from "supertest";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { authTestConfig, TEST_ORIGIN } from "../../../test/auth.helpers";
@@ -21,8 +16,6 @@ import { applyHttpHardening } from "../../platform/http/security";
 import type { RateLimiter } from "../../platform/rate-limit/rate-limiter";
 import { INGEST_RATE_LIMITER } from "../ingest/ingest.tokens";
 import { INGEST_REQUESTS_PER_WINDOW } from "../ingest/ingest-rate-limit.guard";
-import { READ_RATE_LIMITER } from "../keys/keys.tokens";
-import { READ_REQUESTS_PER_WINDOW } from "../keys/read-key.guard";
 
 let testDb: TestDatabase;
 let app: INestApplication;
@@ -44,7 +37,6 @@ afterAll(async () => {
 
 beforeEach(() => {
   app.get<RateLimiter>(INGEST_RATE_LIMITER).reset();
-  app.get<RateLimiter>(READ_RATE_LIMITER).reset();
 });
 
 const http = () => request(app.getHttpServer());
@@ -76,7 +68,7 @@ describe("CSRF on cookie mutations", () => {
       .set("Origin", foreign)
       .send({ timeZone: "Asia/Tokyo" });
     const post = await http()
-      .post("/v1/keys")
+      .post("/v1/integrations")
       .set("Cookie", a.cookie)
       .set("Origin", foreign)
       .send({});
@@ -152,65 +144,6 @@ describe("ingest rate limit", () => {
       expect((await send("pa_ing_not-a-real-key")).status).toBe(401);
     }
     expect((await send(a.ingestKey)).status).toBe(400);
-  });
-});
-
-describe("read-key rate limit (M7-04)", () => {
-  const sessionPost = (user: FixtureUser, path: string, body: object) =>
-    http().post(path).set("Cookie", user.cookie).set("Origin", TEST_ORIGIN).send(body);
-
-  async function readKey(user: FixtureUser): Promise<string> {
-    const res = await sessionPost(user, "/v1/keys", { scopes: ["events:read"] });
-    expect(res.status).toBe(201);
-    return createReadKeyResponseSchema.parse(res.body).key;
-  }
-
-  const events = (key: string) => http().get("/v1/events").set("Authorization", `Bearer ${key}`);
-
-  it("limits one read key with 429 read.rate_limited and Retry-After, and nothing else", async () => {
-    const limited = await readKey(a);
-    const other = await readKey(a);
-    for (let i = 0; i < READ_REQUESTS_PER_WINDOW; i++) {
-      expect((await events(limited)).status).toBe(200);
-    }
-    const blocked = await events(limited);
-    expect(blocked.status).toBe(429);
-    expect(blocked.headers["content-type"]).toMatch(/^application\/problem\+json/);
-    expect(blocked.body).toMatchObject({ status: 429, code: READ_RATE_LIMITED_CODE });
-    expect(Number(blocked.headers["retry-after"])).toBeGreaterThan(0);
-
-    // Another key of the same user, user B's key and a session on the same route are untouched.
-    expect((await events(other)).status).toBe(200);
-    expect((await events(await readKey(b))).status).toBe(200);
-    expect((await http().get("/v1/events").set("Cookie", a.cookie)).status).toBe(200);
-  });
-
-  it("limits an endpoint key on GET /v1/me/:slug, the route a shared key reaches", async () => {
-    const created = await sessionPost(a, "/v1/endpoints", {
-      slug: "shared-stats",
-      definition: {
-        when: { type: ["browser.page_visited"] },
-        window: { kind: "last_n_days", days: 7 },
-        aggregate: "count_by_day",
-      },
-    });
-    expect(created.status).toBe(201);
-    const { key } = endpointKeyResponseSchema.parse(created.body);
-    const run = () => http().get("/v1/me/shared-stats").set("Authorization", `Bearer ${key}`);
-    for (let i = 0; i < READ_REQUESTS_PER_WINDOW; i++) {
-      expect((await run()).status).toBe(200);
-    }
-    const blocked = await run();
-    expect(blocked.status).toBe(429);
-    expect(blocked.body.code).toBe(READ_RATE_LIMITED_CODE);
-  });
-
-  it("does not count requests with a bad key against anyone", async () => {
-    const key = await readKey(a);
-    for (let i = 0; i < READ_REQUESTS_PER_WINDOW + 5; i++) {
-      expect((await events("pa_read_not-a-real-key")).status).toBe(401);
-    }
-    expect((await events(key)).status).toBe(200);
   });
 });
 

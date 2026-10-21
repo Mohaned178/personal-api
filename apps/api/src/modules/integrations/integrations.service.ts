@@ -38,7 +38,7 @@ export class IntegrationsService {
     request: CreateIntegrationRequest,
   ): Promise<CreateIntegrationResponse> {
     assertUserScope(userId);
-    const key = generateApiKey("ingest");
+    const key = generateApiKey();
     const { integration, keyId } = await this.repository.createHttp(
       userId,
       { name: request.name },

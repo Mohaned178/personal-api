@@ -15,7 +15,6 @@ import request from "supertest";
 import { expect } from "vitest";
 import { ACCOUNT_RATE_LIMITER } from "../src/modules/account/account.constants";
 import { INGEST_RATE_LIMITER } from "../src/modules/ingest/ingest.tokens";
-import { READ_RATE_LIMITER } from "../src/modules/keys/keys.tokens";
 import { PAIRING_RATE_LIMITER } from "../src/modules/pairing/pairing.tokens";
 import { RuleSetProvider } from "../src/modules/rules/rule-set.provider";
 import type { RateLimiter } from "../src/platform/rate-limit/rate-limiter";
@@ -188,7 +187,7 @@ export interface IngestHarness {
   clock: FakeClock;
   a: FixtureUser;
   b: FixtureUser;
-  /** Empties events, ingestion_log, pairing codes, rules, bulk deletions and endpoints, and puts the clock back to FIXED_NOW. Users stay. */
+  /** Empties events, ingestion_log, pairing codes, rules, bulk deletions, and puts the clock back to FIXED_NOW. Users stay. */
   reset: () => Promise<void>;
   stop: () => Promise<void>;
 }
@@ -229,17 +228,14 @@ export async function startIngestHarness(): Promise<IngestHarness> {
       await testDb.pool.query(
         "truncate events, ingestion_log, pairing_codes, rules, rule_sets, rule_history, retention_policies, bulk_deletions, exports restart identity",
       );
-      // Deleted, not truncated: api_keys references it, and the users' own keys must stay.
-      await testDb.pool.query("delete from endpoints");
       clock.set(FIXED_NOW);
       // The truncate restarts every rule-set version at 0, so cached sets would look current.
       app.get(RuleSetProvider).clear();
       // Every request in a test run comes from one address, and a key outlives a test, so forget
-      // the pairing, account, ingest and read-key throttles.
+      // the pairing, account and ingest throttles.
       app.get<RateLimiter>(PAIRING_RATE_LIMITER).reset();
       app.get<RateLimiter>(ACCOUNT_RATE_LIMITER).reset();
       app.get<RateLimiter>(INGEST_RATE_LIMITER).reset();
-      app.get<RateLimiter>(READ_RATE_LIMITER).reset();
     },
     stop: async () => {
       await app.close();

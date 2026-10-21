@@ -5,7 +5,6 @@ import type { Database } from "../../platform/db/db";
 import { DB } from "../../platform/db/db.tokens";
 import { events } from "../../platform/db/schema";
 import { assertUserScope, scopeCondition } from "../../platform/db/tenant-scope";
-import { restrictionConditions } from "../events/events.repository";
 
 const FOCUS_SEGMENT = "browser.focus_segment";
 const PAGE_VISITED = "browser.page_visited";
@@ -14,9 +13,6 @@ export interface ActivityFilters {
   from: Date;
   /** Exclusive. */
   to: Date;
-  /** A read key's restriction: ANDed on, so it can only narrow what is counted. */
-  sources?: string[] | undefined;
-  types?: string[] | undefined;
 }
 
 export interface DayRow {
@@ -92,6 +88,5 @@ function activityCondition(filters: ActivityFilters): SQL {
     gte(events.occurredAt, filters.from),
     lt(events.occurredAt, filters.to),
     inArray(events.type, [FOCUS_SEGMENT, PAGE_VISITED]),
-    ...restrictionConditions(filters.sources, filters.types),
   ) as SQL;
 }

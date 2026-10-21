@@ -1,6 +1,6 @@
 # Personal API — v1 Plan
 
-> **Your Data. Your Endpoints. Your Rules.**
+> **Your Data. Your Rules.**
 > Status: approved direction, pre-code. Written 2026-10-13 from the brain dump plus the planning interview.
 
 ---
@@ -32,12 +32,12 @@ The whole project uses TypeScript in strict mode. Coming from JavaScript, this i
 | Concern | Choice | Why |
 | --- | --- | --- |
 | Runtime | **Node 24 LTS**, **pnpm** workspaces + **Turborepo** | Standard monorepo. One install, cached builds. |
-| Backend | **NestJS 11** on the default **Express 5** platform, with `nestjs-zod` + `@nestjs/swagger` and `nestjs-pino`, with `helmet` for headers and an in-process rate limiter of our own (`platform/rate-limit`, plus Better Auth's limiter for login) instead of `@nestjs/throttler`, see ADR 0001 | Modules and dependency injection keep about 8 domain areas organized. Guards cover the three auth types (session, ingest key, read key) and per-user scoping. The worker reuses the same services through a standalone app context. Express is used over the Fastify adapter because Better Auth, nestjs-zod and Swagger support it best, and raw speed isn't a constraint at this volume. |
+| Backend | **NestJS 11** on the default **Express 5** platform, with `nestjs-zod` + `@nestjs/swagger` and `nestjs-pino`, with `helmet` for headers and an in-process rate limiter of our own (`platform/rate-limit`, plus Better Auth's limiter for login) instead of `@nestjs/throttler`, see ADR 0001 | Modules and dependency injection keep about 8 domain areas organized. Guards cover the two auth types (session, ingest key) and per-user scoping. The worker reuses the same services through a standalone app context. Express is used over the Fastify adapter because Better Auth, nestjs-zod and Swagger support it best, and raw speed isn't a constraint at this volume. |
 | Database | **PostgreSQL 18** | JSONB for payloads with GIN indexes when needed. Unique constraints give real dedupe and transactions give safe ingest. Native `uuidv7()`. It also hosts the job queue, so there's no Redis. SQLite is too weak for multi-account use plus a queue plus a concurrent worker. |
-| Data access | **Drizzle ORM** + drizzle-kit migrations | TS-first and close to SQL. Dynamic JSONB filters for saved queries are built with its query builder, never with string SQL. One tool instead of Prisma + Kysely. |
+| Data access | **Drizzle ORM** + drizzle-kit migrations | TS-first and close to SQL. Dynamic JSONB filters are built with its query builder, never with string SQL. One tool instead of Prisma + Kysely. |
 | Jobs | **pg-boss** | A Postgres-backed queue with retries, cron and a dead-letter queue. Used for retention purges, bulk deletes, exports and (later) webhook delivery. |
 | Dashboard auth | **Better Auth** (Drizzle adapter), email + password sessions | Self-hostable. TOTP and passkeys are available later. |
-| Machine auth | Custom **hashed API keys** (`pa_ing_…`, `pa_read_…`), SHA-256 at rest, shown once | Keys are simple, revocable and scoped. Ingest keys and read keys are separate. |
+| Machine auth | Custom **hashed ingest keys** (`pa_ing_…`), SHA-256 at rest, shown once | Keys are simple and revocable. They can only ingest; reading data needs a dashboard session (read keys were removed in M9-01). |
 | Contracts | **Zod 4** in `packages/contracts` | One source of truth for the envelope, event types, rule format and API DTOs. |
 | Extension | **WXT** (Vite-based, MV3) + TypeScript; IndexedDB queue via `idb` | Best DX for MV3: hot reload, manifest generation, and one codebase for the Firefox and Edge builds (`browser.*` API through WXT, never raw `chrome.*`). |
 | Dashboard | **Vite + React 19 + TanStack Router/Query + shadcn/ui + Tailwind v4** | A logged-in SPA needs no SSR. The API serves it as static files, so it's same-origin with simple cookies and no CORS. |
@@ -64,7 +64,7 @@ Pin exact versions when scaffolding in M0, using releases at least 14 days old. 
 │   → process-rules (tag, retention) → ONE tx: INSERT … ON CONFLICT DO NOTHING + ingestion log      │
 │   → per-item result {accepted | duplicate | dropped(rule) | rejected(error)}                       │
 │ GET /v1/ingest/config  (rules + default policy, ETag) · POST /v1/ingest/heartbeat                  │
-│ Platform API (session cookie) · Read API (session or pa_read_ key) · /v1/me/:slug saved queries  │
+│ Platform and read API (session cookie only: no read keys, no saved-query endpoints)                │
 │ Serves the dashboard SPA as static files                                                          │
 └──────────────────────────────────────────┬───────────────────────────────────────────────────────┘
                                            ▼
@@ -87,9 +87,8 @@ Pin exact versions when scaffolding in M0, using releases at least 14 days old. 
 users, sessions, accounts, verification — Better Auth (users also carry time_zone, an IANA name, default 'UTC')
 integrations   id, user_id, kind ('browser-extension' | 'http'), name, default_policy ('deny'|'allow'),
                status ('active'|'revoked'), last_seen_at, last_heartbeat jsonb (queue depth, version)
-api_keys       id, user_id, kind ('ingest'|'read'), integration_id?, prefix, hash, scopes jsonb,
-               name? (read keys), restriction jsonb? (read keys: {sources?, types?}),
-               endpoint_id?, created_at, last_used_at, revoked_at
+api_keys       id, user_id, kind ('ingest' only since M9-01), integration_id, prefix, hash,
+               created_at, last_used_at, revoked_at
 pairing_codes  code_hash, user_id, integration_id, expires_at (10 min), used_at
 rule_sets      user_id, version (int, bumps on every change), updated_at
 rules          id, user_id, name, enabled, priority, stage ('collect'|'process'), definition jsonb, ...
@@ -103,7 +102,6 @@ ingestion_log  user_id, integration_id, bucket (hour), accepted, duplicate, drop
                by_reason jsonb  (rule ids / error codes → counts), no payloads
 retention_policies  user_id, match (source/type), days
 bulk_deletions user_id, kind (events/integration), filter jsonb, status, total, deleted, finished_at (M6-03: progress of a delete-by-filter job; no event data)
-endpoints      id, user_id, slug, definition jsonb (saved query), enabled, created_at, updated_at
 exports        id, user_id, status, filter jsonb, file_path, event_count, size_bytes, created_at, finished_at, expires_at  (M6-05: the files live in EXPORT_DIR/<id>/, never in the database)
 ```
 
@@ -170,7 +168,7 @@ Page titles, full URLs, form contents, keystrokes and incognito activity are **n
 
 Errors use RFC 9457 `application/problem+json`. Lists use keyset cursors on `(occurred_at, id)`. OpenAPI is served at `/docs`, and `/docs` is public: it describes request shapes only and holds no data (ADR 0001, deviation 6).
 
-**`source` means two things.** On `GET /v1/events?source=` and in a read key's `restriction.sources` it is an **integration id** (a uuid). In a saved query's `when.source` it is an **integration kind** (`browser-extension`, `http`), the same as in a rule's `when`.
+**`source` means two things.** On `GET /v1/events?source=` it is an **integration id** (a uuid). In a rule's `when.source` it is an **integration kind** (`browser-extension`, `http`).
 
 **Known exception:** the routes Better Auth serves itself under `/api/auth/*` return Better Auth's own JSON error body, not problem+json. The responses we add in front of it (refused signup `auth.signup_disabled`, oversized body `http.payload_too_large`, unexpected 500) are still problem+json. See `docs/self-hosting.md`.
 
@@ -186,15 +184,11 @@ Errors use RFC 9457 `application/problem+json`. Lists use keyset cursors on `(oc
 | session | `/v1/integrations` (CRUD, pairing code, revoke) | Connect and disconnect sources |
 | session | `/v1/rules` (CRUD), `POST /v1/rules/test` | Manage rules and dry-run them against a sample event |
 | session | `DELETE /v1/events` (ids: 200; filter: 202 job), `GET /v1/events/deletions/:id`, `DELETE /v1/integrations/:id/data`, `/v1/exports` (`POST` 202 job, `GET` list, `GET /:id`, `GET /:id/download` NDJSON.gz, `GET /:id/manifest`; 409 `export.not_ready`, 410 `export.expired`), `/v1/retention` | Data management |
-| session | `/v1/keys`, `/v1/endpoints` (CRUD, `POST /v1/endpoints/:id/rotate-key`, `POST /v1/endpoints/preview`) | Read keys and saved queries. Creating or rotating an endpoint answers with its `endpoint:<id>` key, once |
 | session | `GET /v1/settings`, `PATCH /v1/settings`, `GET /v1/settings/time-zones` | The user's time zone, which the activity aggregates cut days in. `PATCH` checks the name against the database (`pg_timezone_names`, not Node's list: `400 settings.time_zone_unsupported`), and `time-zones` lists the names it accepts |
 | session | `DELETE /v1/account` | Delete the account and all its data. The body carries the current password and `confirm: "delete my account"`; `204` clears the session cookies, `403 account.password_invalid`, `429 account.rate_limited` (M6-04). One transaction; modules that keep data outside the database register an `AccountDeletionStep` that runs first |
 | session | `GET /v1/diagnostics` | Ingestion log, integration last-seen, queue backlog, job failures, and drop counts per rule over the window (M4-07) |
-| session or read key | `GET /v1/events?source=&type=&from=&to=&domain=&cursor=` | Raw events |
-| session or read key | `GET /v1/activity/daily?from=&to=`, `GET /v1/activity/domains?from=&to=&limit=` | Aggregates computed with SQL at query time (no materialized tables needed at this volume). Active time is the sum of `focus_segment` durations, visits count `page_visited`; an event counts toward the day of its `occurred_at` in the user's time zone. Default range is the last 7 days, at most 90. Needs `activity:read` for a key. |
-| read key scoped to it | `GET /v1/me/:slug` | A user-defined saved query |
-
-**Saved query definition:** source and type filters, a relative time window (`today`, `this_week`, `last_n_days`), the same condition language as rules, a field allowlist for projection, and an optional aggregate (`count_by_day`, `count_by_domain`, `duration_by_domain`). Hard limits: 1,000 rows and a 2-second `statement_timeout`. An aggregate-only endpoint can never return raw events. That covers "share my browsing stats without individual visits". The exact format is `docs/saved-queries.md`.
+| session | `GET /v1/events?source=&type=&from=&to=&domain=&cursor=` | Raw events |
+| session | `GET /v1/activity/daily?from=&to=`, `GET /v1/activity/domains?from=&to=&limit=` | Aggregates computed with SQL at query time (no materialized tables needed at this volume). Active time is the sum of `focus_segment` durations, visits count `page_visited`; an event counts toward the day of its `occurred_at` in the user's time zone. Default range is the last 7 days, at most 90. |
 
 ---
 
@@ -213,7 +207,7 @@ Errors use RFC 9457 `application/problem+json`. Lists use keyset cursors on `(oc
 - Every query is scoped by `user_id` from the auth context through repository helpers. **A cross-tenant test suite** checks that user B's session and keys get a 404 for every one of user A's resources. Postgres RLS is planned as hardening in v1.1.
 - Keys are hashed at rest and shown once. Each key has a prefix for identification and a `last_used_at`. Revocation takes effect immediately.
 - Logs never contain payloads, URLs, domains or keys. pino uses a redaction list, and a test asserts it.
-- Dashboard: secure, HttpOnly, SameSite=Lax cookies, CSRF protection on mutations, and rate limits on login, pairing, ingest (per key) and reads (per read key).
+- Dashboard: secure, HttpOnly, SameSite=Lax cookies, CSRF protection on mutations, and rate limits on login, pairing and ingest (per key).
 - Signups can be disabled after the first account exists (self-host admin setting).
 - Deletion is a hard delete. The docs state that database backups keep deleted data until they rotate.
 - Event types say which part of the system produced them (`origin` + integration), so collected, imported and derived data stay distinguishable.
@@ -225,15 +219,15 @@ Errors use RFC 9457 `application/problem+json`. Lists use keyset cursors on `(oc
 ```text
 personal-api/
   apps/api/            NestJS: src/main.ts (HTTP) + src/worker.ts (standalone app context, pg-boss consumers)
-                       src/modules/{auth,integrations,ingest,rules,events,activity,endpoints,keys,
+                       src/modules/{auth,integrations,ingest,rules,events,activity,keys,
                                     retention,exports,diagnostics} · src/platform/{db,jobs,logging,config}
   apps/web/            React dashboard (the API serves WEB_DIST_DIR, default apps/web/dist; release path settled in M7-05)
   apps/extension/      WXT MV3 extension (firefox-mv3 + chrome-mv3 builds for Edge)
   apps/e2e/            Firefox e2e (web-ext + Selenium, primary) + Edge smoke (Playwright, unpacked Chromium build) + local fixture site
-  packages/contracts/  Zod: envelope, event types, API DTOs, rule + saved-query schemas
-  packages/rules/      Pure rule engine (no Node/DOM deps). The saved-query schema and validator live in contracts (M5-04).
+  packages/contracts/  Zod: envelope, event types, API DTOs, rule schemas
+  packages/rules/      Pure rule engine (no Node/DOM deps).
   packages/tsconfig/   Shared TS config
-  docs/                PLAN.md, self-hosting.md, event-types.md, rule-format.md, saved-queries.md, api.md,
+  docs/                PLAN.md, self-hosting.md, event-types.md, rule-format.md, api.md,
                        export-format.md, data-lifecycle.md, threat-model.md, extension-build.md, adr/
   deploy/Caddyfile     TLS reverse proxy example for the production stack
   scripts/             license-check.mjs (fails CI on a production dependency outside the allowlist)
@@ -362,7 +356,7 @@ Targets changed on 2026-10-14: Firefox + Edge (free stores only) instead of Chro
 ### M7: Hardening and v1.0
 
 - [x] **M7-01 [S · high] The full 8-step demo as one Firefox e2e test in CI** (`firefox-mv3` build, web-ext + Selenium), plus the Edge smoke passing. This is the v1 definition of done.
-  The 8 steps (`apps/e2e/tests/demo-firefox.spec.ts`): 1 sign up and log in · 2 pair the extension with a pairing code · 3 add a rule for a site: nothing is collected before it (deny by default), the visit after it is · 4 the events appear through the API with the query string and fragment stripped · 5 create a read key and a saved-query endpoint · 6 read the endpoint with its own key (other key types are refused) · 7 change the rule: later visits behave differently and the endpoint follows · 8 export the data, then delete the account: every row, key, session and export file is gone. The account steps call the dashboard's HTTP routes with the user's session; the browser steps use the real popup and real navigations.
+  The 8 steps (`apps/e2e/tests/demo-firefox.spec.ts`; M9-01 removed steps 5 and 6 with read keys and endpoints, so the spec now has six): 1 sign up and log in · 2 pair the extension with a pairing code · 3 add a rule for a site: nothing is collected before it (deny by default), the visit after it is · 4 the events appear through the API with the query string and fragment stripped · 5 create a read key and a saved-query endpoint · 6 read the endpoint with its own key (other key types are refused) · 7 change the rule: later visits behave differently and the endpoint follows · 8 export the data, then delete the account: every row, key, session and export file is gone. The account steps call the dashboard's HTTP routes with the user's session; the browser steps use the real popup and real navigations.
 - [x] **M7-02 [S · high] Route-table-generated suite:** every route checked for unauthenticated, wrong-key-type and cross-tenant access.
 - [x] **M7-03 [S · medium] Hardening:** rate limits (login, pairing, ingest per key), helmet security headers, and CSRF checks on mutations (every session-cookie POST/PATCH/DELETE, including `DELETE /v1/events`).
 - [x] **M7-04 [O · xhigh] Security pass:** `/security-review`, fixes, and a short threat model in `docs/`. *(Done: `docs/threat-model.md`; read keys rate limited, login limit on outside tests.)*
@@ -386,7 +380,7 @@ Goal: a non-developer installs the extension, connects with one click, picks wha
 
 Goal: help people change how they browse, not only see it: a detailed dashboard of their own data, daily limits with notifications, and recommendations for the sites they use most. The privacy invariants in `CLAUDE.md` do not change. Limits and recommendations are computed from the user's own data on their own server or device, with no outside service. Decided 2026-10-21 after a review of similar tools (ActivityWatch, RescueTime, LeechBlock NG, StayFocusd, one sec, Opal): trackers rarely help you change, blockers rarely show you anything, and the tools that do both keep your data. Decisions taken: limits are set in the dashboard and synced to every connected browser; "5 more minutes" is allowed by default, with an optional strict mode per limit; the `notifications` permission is added (M9-02). Routing follows the `[model · effort]` tags (`CLAUDE.md`) unless the user decides otherwise, as for M8.
 
-- [ ] **M9-01 [S · high] Remove endpoints and read keys (security-touching):** delete saved-query endpoints (`/v1/endpoints`, `GET /v1/me/:slug`, the saved-query contracts, the Endpoints page) and read keys (`pa_read_`, `/v1/keys`, the Read keys page, the read-key path of `SessionOrReadKeyGuard` on `/v1/activity` and `/v1/events`, the read-key rate limit). A migration drops their tables. Ingest keys (`pa_ing_`) and pairing are unchanged. Update `CLAUDE.md` invariant 5, §3/§5/§6 of this plan, `docs/api.md`, the README, and demo steps 5–6 (`demo-firefox.spec.ts` keeps the steps that remain). *Done when:* the removed routes answer 404, `/v1/activity` and `/v1/events` accept only a session (a test sends a former `pa_read_` key and gets 401), the migration runs on a database that held endpoints and read keys (`test:int`), the cross-tenant sweep no longer lists the removed routes, and nothing in the dashboard links to them.
+- [x] **M9-01 [S · high] Remove endpoints and read keys (security-touching):** delete saved-query endpoints (`/v1/endpoints`, `GET /v1/me/:slug`, the saved-query contracts, the Endpoints page) and read keys (`pa_read_`, `/v1/keys`, the Read keys page, the read-key path of `SessionOrReadKeyGuard` on `/v1/activity` and `/v1/events`, the read-key rate limit). A migration drops their tables. Ingest keys (`pa_ing_`) and pairing are unchanged. Update `CLAUDE.md` invariant 5, §3/§5/§6 of this plan, `docs/api.md`, the README, and demo steps 5–6 (`demo-firefox.spec.ts` keeps the steps that remain). *Done when:* the removed routes answer 404, `/v1/activity` and `/v1/events` accept only a session (a test sends a former `pa_read_` key and gets 401), the migration runs on a database that held endpoints and read keys (`test:int`), the cross-tenant sweep no longer lists the removed routes, and nothing in the dashboard links to them.
 - [ ] **M9-02 [S · high] Daily site limits with notifications (privacy-touching):** a limit is a domain pattern plus minutes per day, with an optional strict mode (no override until local midnight). Contracts first; `/v1/limits` CRUD (session, cross-tenant tests); the extension gets the limits with its ingest key alongside the rules (`GET /v1/ingest/config`, ETag) and enforces them on the device from M8-04's totals. With 10 minutes left, a notification; at the limit, a notification and the tab moves to an extension "Time's up" page (no content script) with "5 more minutes" unless strict; each later overrun notifies again. The popup shows the time left per limited site, and the icon badge turns red at a limit. Resets at the user's local midnight. Adds the `notifications` permission: update §7 and the manifest tests. A notification never shows anything but the domain the user set the limit on. *Done when:* unit tests with a fixed clock cover the warning, the limit, snooze, strict mode, the midnight reset and a background restart mid-day; a dropped or incognito site never counts toward a limit; a Firefox e2e reaches a short limit and sees the "Time's up" page.
 - [ ] **M9-03 [S · medium] Detailed dashboard:** a per-site page (time per day for 30 days, visits, average and longest session, top paths), an hour-by-weekday heatmap, this week vs last week per site, and a timeline of today's sessions. New session-only activity routes (per site, per hour, sessions), contracts first, keyset cursors where they list, cross-tenant tests, and the user's time zone throughout. *Done when:* API tests check each route's numbers on fixed data across a time-zone boundary, and web tests cover the empty, loading and filled states of each view.
 - [ ] **M9-04 [S · medium] Recommendations for sites you use a lot:** from the user's own last 2–4 weeks, a deterministic rule set (no AI, no outside service) suggests (a) a stepped limit plan for a heavy site ("1h30 → 1h15 → 1h, one step a week"), applied in one click as M9-02 limits, and (b) pattern hints ("most of your time on this site is after 23:00: block it 23:00–07:00"), applied as an M9-06 schedule. Shown on Insights and the per-site page, and dismissible. *Done when:* unit tests cover every rule on fixed data (including "not enough data, no suggestion"), and applying a plan creates the expected limits.

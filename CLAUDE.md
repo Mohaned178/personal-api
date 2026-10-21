@@ -1,6 +1,6 @@
 # Personal API
 
-A self-hosted, multi-account personal data platform. A browser extension (Firefox first, then Edge; Chrome after v1), and later other sources, sends events. User-defined rules decide what is collected and kept. Users query their data through built-in endpoints and their own saved-query endpoints.
+A self-hosted, multi-account personal data platform. A browser extension (Firefox first, then Edge; Chrome after v1), and later other sources, sends events. User-defined rules decide what is collected and kept. Users read their data in the dashboard, behind a login session. There are no read keys or saved-query endpoints (removed in M9-01).
 
 **Source of truth:** `docs/PLAN.md` holds the architecture, data model, rule format, API and the task list with model tags. Read the relevant section before starting a task, and tick the task's box when it merges. If code and plan disagree, stop and ask. Don't silently follow either.
 
@@ -12,7 +12,7 @@ TypeScript (strict) everywhere · Node 24 LTS · pnpm workspaces + Turborepo · 
 - `apps/web`: Vite, React 19, TanStack Router + Query, shadcn/ui, Tailwind v4
 - `apps/extension`: WXT (MV3, `firefox-mv3` is the primary build, `chrome-mv3` for Edge; the Chrome Web Store comes after v1)
 - `apps/e2e`: Firefox is the primary e2e (web-ext + Selenium/geckodriver); Edge smoke via Playwright loading the unpacked Chromium build.
-- `packages/contracts`: Zod schemas shared by everything (envelope, event types, DTOs, rule and saved-query formats)
+- `packages/contracts`: Zod schemas shared by everything (envelope, event types, DTOs, rule formats)
 - `packages/rules`: pure rule engine used by both the extension and the API
 
 ## Commands
@@ -69,10 +69,10 @@ Before calling a task done, run `pnpm lint && pnpm typecheck && pnpm test` in th
 2. **Dropped events are never stored.** Keep only counters in `ingestion_log`, never payloads.
 3. **URLs:** the extension keeps domain + path only. Query strings and fragments are always stripped in v1 (`keep_query` is reserved for v1.1 and the rules API rejects it on save). Never collect titles, form contents, keystrokes, passwords or incognito tabs.
 4. **Tenant scoping:** every query on user data goes through the scoped repository helpers with `userId` from `AuthContext`. Never take `userId` or `integrationId` from the request body. Every new route gets a cross-tenant test (use the two-user fixture).
-5. **Keys:** API keys are stored as SHA-256 hashes and shown once. Ingest keys (`pa_ing_`) can only ingest. Read keys (`pa_read_`) can only read within their scopes.
+5. **Keys:** API keys are stored as SHA-256 hashes and shown once. The only API key is the ingest key (`pa_ing_`), and it can only ingest. Everything that reads data needs a dashboard session; no key reads (read keys were removed in M9-01).
 6. **Logs:** never log payloads, URLs, domains, keys, cookies or emails. Extend the pino redaction list rather than working around it.
-7. **No string SQL** with user input. Build dynamic queries (saved queries, filters) with Drizzle's query builder and parameters only.
-8. **No code execution** in rules or saved queries, and no regex ops in v1.
+7. **No string SQL** with user input. Build dynamic queries (filters) with Drizzle's query builder and parameters only.
+8. **No code execution** in rules, and no regex ops in v1.
 
 ## Conventions
 

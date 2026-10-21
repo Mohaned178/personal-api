@@ -11,8 +11,8 @@ one answers, and what v1 knowingly leaves open.
 | Browsing history: domain, path, visit and focus timings | `events` (Postgres), export files in `EXPORT_DIR`, database backups |
 | What the user chose not to collect | Nowhere: dropped events are only counted in `ingestion_log` (invariant 2) |
 | Dashboard login | Better Auth: password hash in `account`, session cookie (HttpOnly, SameSite=Lax, Secure on https) |
-| Ingest keys (`pa_ing_`), read keys (`pa_read_`), pairing codes | Only SHA-256 hashes are stored. Keys have 256 random bits, codes 100 bits and expire after 10 minutes |
-| Rules and saved queries | `rules`, `endpoints` (they say what the user cares about, so they are personal data too) |
+| Ingest keys (`pa_ing_`), pairing codes | Only SHA-256 hashes are stored. Keys have 256 random bits, codes 100 bits and expire after 10 minutes |
+| Rules | `rules` (they say what the user cares about, so they are personal data too) |
 
 ## Who we defend against
 
@@ -20,9 +20,8 @@ one answers, and what v1 knowingly leaves open.
 | --- | --- | --- |
 | A website the user visits | Run script in the user's browser | Read anything from the extension, or make the dashboard act (CSRF) |
 | Another account on the same server | Use the API normally with its own session and keys | See, change or even confirm the existence of another user's data |
-| Someone holding a shared endpoint key | Call `GET /v1/me/<slug>` | Read anything else, reach raw events through an aggregate-only endpoint, or exhaust the server |
 | Someone holding a stolen ingest key | Send events as that integration | Read anything back, or reach another user's account |
-| Someone on the network | Watch and change traffic | Read keys or cookies (https everywhere except loopback) |
+| Someone on the network | Watch and change traffic | Cookies or ingest keys (https everywhere except loopback) |
 | The person who reaches a fresh install first | Open the sign-up page | Become the owner of someone else's server (see "Operator checklist") |
 
 Out of scope: anyone with shell, Docker or database access on the host (they can read
@@ -69,18 +68,15 @@ everything), and a compromised browser or OS on the user's machine.
 - **Secrets lingering.** A new key or pairing code is shown once and kept in component state only,
   never in the query cache or browser storage.
 
-### Read API and saved queries
+### Reading data
 
-- **Scope escalation.** A read key reads only within its scopes and its source and type
-  restriction. An endpoint key (`endpoint:<id>`) runs only that endpoint. A disabled endpoint, an
-  unknown slug and a key without the scope all return the same 404.
-- **Injection.** Saved queries and filters are built with Drizzle's query builder. Field names
-  come from a closed list and every value is a bound parameter (invariant 7). There is no regex
-  and no code execution (invariant 8).
-- **Exhausting the database.** Each run is read-only, with a 2-second `statement_timeout` and at
-  most 1,000 rows. Since M7-04 every read key also has its own budget of 120 requests a minute
-  (`429 read.rate_limited`), so one shared key can keep at most about 4 of the pool's
-  10 connections busy.
+- **Only a session reads.** Events and activity answer a dashboard session and nothing else. The
+  only API key is the ingest key, which can only ingest; a bearer on a read route is ignored and
+  the answer is `401 auth.unauthenticated`. Read keys and saved-query endpoints were removed in
+  M9-01, so there is no shared, scoped or public read credential to steal, and no query language
+  that a user can store.
+- **Injection.** Filters are built with Drizzle's query builder and every value is a bound
+  parameter (invariant 7). There is no regex and no code execution (invariant 8).
 
 ### Across tenants
 
@@ -135,13 +131,13 @@ registered and fails when a route without auth is not on the explicit allowlist.
 
 ## M7-04 review log
 
-Reviewed: auth and CSRF, API keys and pairing, ingest and server-side rule enforcement, saved
-queries, exports, static serving, logging and config, the extension's connect, queue and sanitizer
+Reviewed: auth and CSRF, API keys and pairing, ingest and server-side rule enforcement,
+exports, static serving, logging and config, the extension's connect, queue and sanitizer
 code, and the dashboard's storage of secrets. Findings:
 
 | # | Severity | Finding | Outcome |
 | --- | --- | --- | --- |
-| 1 | Should-fix | Read-key routes had no rate limit. A shared endpoint key could hold pool connections (2 s each) and starve ingest and the dashboard. | Fixed: 120 requests a minute per read key, `429 read.rate_limited` with `Retry-After` |
+| 1 | Should-fix | Read-key routes had no rate limit. A shared endpoint key could hold pool connections (2 s each) and starve ingest and the dashboard. | Fixed: 120 requests a minute per read key, `429 read.rate_limited` with `Retry-After`. Read keys were removed in M9-01 |
 | 2 | Should-fix | The login and sign-up limit only applied with `NODE_ENV=production`, but NODE_ENV defaults to `development`. | Fixed: on everywhere except `NODE_ENV=test` |
 | 3 | Docs | Takeover of a fresh install by whoever signs up first | Already in `docs/self-hosting.md`; added to the checklist above |
 | 4 | Nit | A stale "TODO M7-03" about `TRUST_PROXY` in the pairing limiter | Fixed |

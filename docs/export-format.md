@@ -4,7 +4,7 @@ A data export is a copy of your stored events, written as two files. You create 
 dashboard or with the session API, then download both files. This page describes those files.
 The schemas it refers to live in `packages/contracts/src/exports.ts`.
 
-Exports need a dashboard session. Keys (`pa_ing_` or `pa_read_`) cannot create or download them.
+Exports need a dashboard session. API keys (`pa_ing_`) cannot create or download them.
 
 ## Creating an export
 
