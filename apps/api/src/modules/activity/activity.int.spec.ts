@@ -8,6 +8,9 @@ import { randomUUID } from "node:crypto";
 import {
   activityDailyResponseSchema,
   activityDomainsResponseSchema,
+  activityHoursResponseSchema,
+  activitySessionsResponseSchema,
+  activitySiteResponseSchema,
   FOCUS_SEGMENT_MAX_MS,
   settingsSchema,
   timeZonesResponseSchema,
@@ -199,6 +202,180 @@ describe("GET /v1/activity/domains", () => {
     const res = await get(h.a, "/v1/activity/domains");
     expect(domains(res).domains).toEqual([]);
     expect(JSON.stringify(res.body)).not.toContain("secret.test");
+  });
+});
+
+async function segment(
+  user: FixtureUser,
+  options: { endedAt: string; durationMs: number; domain?: string; path?: string },
+): Promise<void> {
+  const ended = new Date(options.endedAt).getTime();
+  await h.testDb.pool.query(
+    `insert into events (user_id, integration_id, client_event_id, type, type_version, occurred_at, data)
+     values ($1, $2, $3, 'browser.focus_segment', 1, $4, $5::jsonb)`,
+    [
+      user.userId,
+      user.integrationId,
+      randomUUID(),
+      options.endedAt,
+      JSON.stringify({
+        domain: options.domain ?? "example.com",
+        path: options.path ?? "/",
+        startedAt: new Date(ended - options.durationMs).toISOString(),
+        endedAt: options.endedAt,
+        durationMs: options.durationMs,
+      }),
+    ],
+  );
+}
+
+describe("GET /v1/activity/site (M9-03)", () => {
+  it("totals one domain: days, visits, session stats and the busiest paths", async () => {
+    await segment(h.a, { endedAt: "2026-10-12T10:00:00Z", durationMs: 60_000, path: "/a" });
+    await segment(h.a, { endedAt: "2026-10-13T10:00:00Z", durationMs: 180_000, path: "/b" });
+    await segment(h.a, { endedAt: "2026-10-13T11:00:00Z", durationMs: 120_000, path: "/b" });
+    await segment(h.a, {
+      endedAt: "2026-10-13T11:00:00Z",
+      durationMs: 999_000,
+      domain: "other.test",
+    });
+    await visit(h.a, "2026-10-13T09:00:00Z");
+    const body = activitySiteResponseSchema.parse(
+      (await get(h.a, "/v1/activity/site?domain=example.com")).body,
+    );
+    expect(body.days).toEqual([
+      { date: "2026-10-12", activeMs: 60_000, pageVisits: 0 },
+      { date: "2026-10-13", activeMs: 300_000, pageVisits: 1 },
+    ]);
+    expect(body).toMatchObject({
+      activeMs: 360_000,
+      pageVisits: 1,
+      sessions: 3,
+      averageSessionMs: 120_000,
+      longestSessionMs: 180_000,
+    });
+    expect(body.paths).toEqual([
+      { path: "/b", activeMs: 300_000, pageVisits: 0 },
+      { path: "/a", activeMs: 60_000, pageVisits: 0 },
+      { path: "/", activeMs: 0, pageVisits: 1 },
+    ]);
+  });
+
+  it("is all zeros for a domain with no activity, and cuts days in the user's zone", async () => {
+    const empty = activitySiteResponseSchema.parse(
+      (await get(h.a, "/v1/activity/site?domain=none.test")).body,
+    );
+    expect(empty).toMatchObject({
+      days: [],
+      sessions: 0,
+      averageSessionMs: 0,
+      longestSessionMs: 0,
+    });
+    await segment(h.a, { endedAt: "2026-10-13T23:30:00Z", durationMs: 60_000 });
+    await http().patch("/v1/settings").set("Cookie", h.a.cookie).send({ timeZone: "Asia/Tokyo" });
+    const tokyo = activitySiteResponseSchema.parse(
+      (await get(h.a, "/v1/activity/site?domain=example.com")).body,
+    );
+    expect(tokyo.days.map((d) => d.date)).toEqual(["2026-10-14"]);
+  });
+
+  it("needs a domain, refuses a user, and never counts another user's time", async () => {
+    await segment(h.b, { endedAt: "2026-10-13T09:00:00Z", durationMs: 777_000 });
+    const res = await get(h.a, "/v1/activity/site?domain=example.com");
+    expect(activitySiteResponseSchema.parse(res.body).activeMs).toBe(0);
+    expectProblem(await get(h.a, "/v1/activity/site"), 400, "request.invalid");
+    expectProblem(
+      await get(h.a, `/v1/activity/site?domain=example.com&userId=${h.b.userId}`),
+      400,
+      "request.invalid",
+    );
+    expectProblem(await http().get("/v1/activity/site?domain=a.test"), 401, "auth.unauthenticated");
+  });
+});
+
+describe("GET /v1/activity/hours (M9-03)", () => {
+  it("sums focus time per weekday and hour in the user's zone (Monday is 0)", async () => {
+    // 2026-10-12 is a Monday. 23:30Z is 08:30 on Tuesday in Tokyo.
+    await segment(h.a, { endedAt: "2026-10-12T09:15:00Z", durationMs: 60_000 });
+    await segment(h.a, { endedAt: "2026-10-12T09:45:00Z", durationMs: 30_000 });
+    await segment(h.a, { endedAt: "2026-10-12T23:30:00Z", durationMs: 10_000 });
+    await visit(h.a, "2026-10-12T09:00:00Z");
+    const utc = activityHoursResponseSchema.parse((await get(h.a, "/v1/activity/hours")).body);
+    expect(utc.cells).toEqual([
+      { weekday: 0, hour: 9, activeMs: 90_000 },
+      { weekday: 0, hour: 23, activeMs: 10_000 },
+    ]);
+    await http().patch("/v1/settings").set("Cookie", h.a.cookie).send({ timeZone: "Asia/Tokyo" });
+    const tokyo = activityHoursResponseSchema.parse((await get(h.a, "/v1/activity/hours")).body);
+    expect(tokyo.timeZone).toBe("Asia/Tokyo");
+    expect(tokyo.cells).toEqual([
+      { weekday: 0, hour: 18, activeMs: 90_000 },
+      { weekday: 1, hour: 8, activeMs: 10_000 },
+    ]);
+  });
+
+  it("never counts another user's time", async () => {
+    await segment(h.b, { endedAt: "2026-10-12T09:15:00Z", durationMs: 60_000 });
+    const res = await get(h.a, "/v1/activity/hours");
+    expect(activityHoursResponseSchema.parse(res.body).cells).toEqual([]);
+    expectProblem(await get(h.a, "/v1/activity/hours?domain=x.test"), 400, "request.invalid");
+  });
+});
+
+describe("GET /v1/activity/sessions (M9-03)", () => {
+  it("lists focus segments newest first with a keyset cursor, and nothing else", async () => {
+    await segment(h.a, { endedAt: "2026-10-13T09:00:00Z", durationMs: 60_000, domain: "a.test" });
+    await segment(h.a, { endedAt: "2026-10-13T10:00:00Z", durationMs: 120_000, domain: "b.test" });
+    await segment(h.a, { endedAt: "2026-10-13T11:00:00Z", durationMs: 30_000, domain: "c.test" });
+    await visit(h.a, "2026-10-13T11:30:00Z");
+    const first = activitySessionsResponseSchema.parse(
+      (await get(h.a, "/v1/activity/sessions?limit=2")).body,
+    );
+    expect(first.sessions.map((s) => s.domain)).toEqual(["c.test", "b.test"]);
+    expect(first.sessions[1]).toMatchObject({
+      startedAt: "2026-10-13T09:58:00.000Z",
+      endedAt: "2026-10-13T10:00:00.000Z",
+      durationMs: 120_000,
+    });
+    expect(first.nextCursor).not.toBeNull();
+    const second = activitySessionsResponseSchema.parse(
+      (await get(h.a, `/v1/activity/sessions?limit=2&cursor=${first.nextCursor}`)).body,
+    );
+    expect(second.sessions.map((s) => s.domain)).toEqual(["a.test"]);
+    expect(second.nextCursor).toBeNull();
+  });
+
+  it("takes from (inclusive) and to (exclusive)", async () => {
+    await segment(h.a, { endedAt: "2026-10-13T00:00:00Z", durationMs: 1000 });
+    await segment(h.a, { endedAt: "2026-10-14T00:00:00Z", durationMs: 2000 });
+    const res = await get(
+      h.a,
+      "/v1/activity/sessions?from=2026-10-13T00:00:00.000Z&to=2026-10-14T00:00:00.000Z",
+    );
+    const durations = activitySessionsResponseSchema
+      .parse(res.body)
+      .sessions.map((s) => s.durationMs);
+    expect(durations).toEqual([1000]);
+  });
+
+  it("refuses a bad cursor, a bad limit and a named user, and shows nothing of another user", async () => {
+    await segment(h.b, { endedAt: "2026-10-13T09:00:00Z", durationMs: 60_000 });
+    const mine = await get(h.a, "/v1/activity/sessions");
+    expect(activitySessionsResponseSchema.parse(mine.body).sessions).toEqual([]);
+    const forged = Buffer.from(JSON.stringify(["nope", "nope"])).toString("base64url");
+    for (const cursor of ["x", forged]) {
+      expectProblem(
+        await get(h.a, `/v1/activity/sessions?cursor=${cursor}`),
+        400,
+        "activity.cursor_invalid",
+      );
+    }
+    expectProblem(await get(h.a, "/v1/activity/sessions?limit=201"), 400, "request.invalid");
+    expectProblem(
+      await get(h.a, `/v1/activity/sessions?userId=${h.b.userId}`),
+      400,
+      "request.invalid",
+    );
   });
 });
 

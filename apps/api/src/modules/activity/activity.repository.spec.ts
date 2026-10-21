@@ -28,7 +28,7 @@ function publicMethods(): string[] {
 
 describe("ActivityRepository tenant scoping", () => {
   it("has the methods the service relies on (so the scoping check below is not vacuous)", () => {
-    expect(publicMethods().sort()).toEqual(["daily", "domains"]);
+    expect(publicMethods().sort()).toEqual(["daily", "domains", "hours", "sessions", "site"]);
   });
 
   it("rejects every method with MissingUserScopeError when userId is missing", async () => {

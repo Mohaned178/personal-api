@@ -3,6 +3,10 @@ import {
   activityDailyQuerySchema,
   activityDomainsQuerySchema,
   activityDomainsResponseSchema,
+  activityHoursQuerySchema,
+  activitySessionsQuerySchema,
+  activitySiteQuerySchema,
+  activitySiteResponseSchema,
 } from "./activity.js";
 import {
   settingsSchema,
@@ -94,5 +98,49 @@ describe("time zone setting", () => {
       false,
     );
     expect(settingsSchema.safeParse({}).success).toBe(false);
+  });
+});
+
+describe("detailed dashboard queries (M9-03)", () => {
+  it("needs a lowercase hostname for a site and refuses unknown keys", () => {
+    expect(activitySiteQuerySchema.safeParse({ domain: "example.com" }).success).toBe(true);
+    expect(activitySiteQuerySchema.safeParse({}).success).toBe(false);
+    expect(activitySiteQuerySchema.safeParse({ domain: "Example.com" }).success).toBe(false);
+    expect(activitySiteQuerySchema.safeParse({ domain: "a.test", userId: "x" }).success).toBe(
+      false,
+    );
+  });
+
+  it("takes only a range for the hours", () => {
+    expect(activityHoursQuerySchema.safeParse({}).success).toBe(true);
+    expect(activityHoursQuerySchema.safeParse({ tz: "UTC" }).success).toBe(false);
+  });
+
+  it("turns the sessions limit into a number between 1 and 200", () => {
+    expect(activitySessionsQuerySchema.parse({ limit: "50" }).limit).toBe(50);
+    for (const limit of ["0", "201", "-1", "x", "1.5"]) {
+      expect(activitySessionsQuerySchema.safeParse({ limit }).success, limit).toBe(false);
+    }
+    expect(activitySessionsQuerySchema.safeParse({ cursor: "" }).success).toBe(false);
+  });
+
+  it("describes a site response with at most 10 paths", () => {
+    const base = {
+      domain: "a.test",
+      from: "2026-10-01T00:00:00.000Z",
+      to: "2026-10-02T00:00:00.000Z",
+      timeZone: "UTC",
+      days: [],
+      activeMs: 0,
+      pageVisits: 0,
+      sessions: 0,
+      averageSessionMs: 0,
+      longestSessionMs: 0,
+    };
+    const path = { path: "/", activeMs: 1, pageVisits: 1 };
+    expect(activitySiteResponseSchema.safeParse({ ...base, paths: [path] }).success).toBe(true);
+    expect(
+      activitySiteResponseSchema.safeParse({ ...base, paths: Array(11).fill(path) }).success,
+    ).toBe(false);
   });
 });

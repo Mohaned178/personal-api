@@ -1,8 +1,20 @@
 import { Controller, Get, Query, UseGuards } from "@nestjs/common";
-import type { ActivityDailyResponse, ActivityDomainsResponse } from "@personal-api/contracts";
+import type {
+  ActivityDailyResponse,
+  ActivityDomainsResponse,
+  ActivityHoursResponse,
+  ActivitySessionsResponse,
+  ActivitySiteResponse,
+} from "@personal-api/contracts";
 import { CurrentAuth, type SessionAuthContext } from "../auth/auth-context";
 import { SessionGuard } from "../auth/session.guard";
-import { ActivityDailyQueryDto, ActivityDomainsQueryDto } from "./activity.dto";
+import {
+  ActivityDailyQueryDto,
+  ActivityDomainsQueryDto,
+  ActivityHoursQueryDto,
+  ActivitySessionsQueryDto,
+  ActivitySiteQueryDto,
+} from "./activity.dto";
 import { ActivityService } from "./activity.service";
 
 /** Aggregates for the signed-in user. The user is the session's, never the query's. */
@@ -25,5 +37,29 @@ export class ActivityController {
     @Query() query: ActivityDomainsQueryDto,
   ): Promise<ActivityDomainsResponse> {
     return this.activity.domains(auth.userId, query);
+  }
+
+  @Get("site")
+  site(
+    @CurrentAuth("session") auth: SessionAuthContext,
+    @Query() query: ActivitySiteQueryDto,
+  ): Promise<ActivitySiteResponse> {
+    return this.activity.site(auth.userId, query);
+  }
+
+  @Get("hours")
+  hours(
+    @CurrentAuth("session") auth: SessionAuthContext,
+    @Query() query: ActivityHoursQueryDto,
+  ): Promise<ActivityHoursResponse> {
+    return this.activity.hours(auth.userId, query);
+  }
+
+  @Get("sessions")
+  sessions(
+    @CurrentAuth("session") auth: SessionAuthContext,
+    @Query() query: ActivitySessionsQueryDto,
+  ): Promise<ActivitySessionsResponse> {
+    return this.activity.sessions(auth.userId, query);
   }
 }

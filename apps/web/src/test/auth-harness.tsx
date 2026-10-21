@@ -49,6 +49,20 @@ export interface FakeActivity {
   days: { date: string; activeMs: number; pageVisits: number }[];
   /** Already sorted like the API (most active first); the route applies `limit`. */
   domains: { domain: string; activeMs: number; pageVisits: number }[];
+  /** Cells for /v1/activity/hours. */
+  hours?: { weekday: number; hour: number; activeMs: number }[];
+  /** Newest first; /v1/activity/sessions pages them by `limit` with the index as the cursor. */
+  sessions?: {
+    id: string;
+    domain: string;
+    startedAt: string;
+    endedAt: string;
+    durationMs: number;
+  }[];
+  /** Answer for /v1/activity/site (zero totals when unset). */
+  site?: Record<string, unknown>;
+  /** Answer `/v1/activity/domains` differently for a window: matched on the `from` it is asked. */
+  domainsByFrom?: Record<string, { domain: string; activeMs: number; pageVisits: number }[]>;
   /** When set, the activity routes wait for it before answering (the loading state). */
   hold?: Promise<void>;
 }
@@ -64,7 +78,36 @@ async function activityRoute(b: FakeBackend, method: string, url: URL): Promise<
   }
   if (url.pathname === "/v1/activity/domains") {
     const limit = Number(url.searchParams.get("limit") ?? 20);
-    return json(200, { from, to, domains: activity.domains.slice(0, limit) });
+    const domains = activity.domainsByFrom?.[from] ?? activity.domains;
+    return json(200, { from, to, domains: domains.slice(0, limit) });
+  }
+  if (url.pathname === "/v1/activity/hours") {
+    return json(200, { from, to, timeZone: b.timeZone ?? "UTC", cells: activity.hours ?? [] });
+  }
+  if (url.pathname === "/v1/activity/sessions") {
+    const all = activity.sessions ?? [];
+    const limit = Number(url.searchParams.get("limit") ?? 50);
+    const start = Number(url.searchParams.get("cursor") ?? 0);
+    const sessions = all.slice(start, start + limit);
+    const next = start + limit < all.length ? String(start + limit) : null;
+    return json(200, { from, to, sessions, nextCursor: next });
+  }
+  if (url.pathname === "/v1/activity/site") {
+    const domain = url.searchParams.get("domain") ?? "";
+    return json(200, {
+      domain,
+      from,
+      to,
+      timeZone: b.timeZone ?? "UTC",
+      days: [],
+      activeMs: 0,
+      pageVisits: 0,
+      sessions: 0,
+      averageSessionMs: 0,
+      longestSessionMs: 0,
+      paths: [],
+      ...activity.site,
+    });
   }
   return null;
 }
