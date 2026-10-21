@@ -4,6 +4,24 @@ All notable changes to Personal API are listed here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [1.1.0] - Unreleased
+
+"Easy to use": a non-developer connects, picks what to track and sees time per site without writing rules.
+
+### Added
+
+- **One-click connect.** The popup needs only the server URL; the dashboard's **Connect this browser**
+  button pairs the extension and the tab closes. Manual pairing codes still work. See
+  [`docs/adr/0003-one-click-connect.md`](docs/adr/0003-one-click-connect.md).
+- **Setup wizard** with rule presets: everything except sensitive sites, only work sites, or chosen sites.
+- **Insights home** with today's and this week's time, a 7-day chart and top sites, and grouped navigation.
+- **Popup "Today".** The top 5 sites with time, computed on the device, and a **Stop tracking this site**
+  link that prefills a drop rule.
+
+### Changed
+
+- The extension never captures the connected server's own origin, even under an allow-all rule.
+
 ## [1.0.0] - Unreleased
 
 First v1 release. The tag `v1.0.0` is not created yet; it needs the owner's approval.
