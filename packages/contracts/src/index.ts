@@ -29,6 +29,7 @@ export * from "./registry.js";
 export * from "./retention.js";
 export * from "./rule-fields.js";
 export * from "./rule-glob.js";
+export * from "./rule-presets.js";
 export * from "./rule-trace.js";
 export * from "./rules.js";
 export * from "./rules-api.js";
