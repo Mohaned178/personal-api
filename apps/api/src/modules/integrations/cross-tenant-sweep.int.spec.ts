@@ -1702,7 +1702,7 @@ const ROUTES: Route[] = [
     control: async (owner) => {
       const res = await cookiePost(owner, "/v1/categories", {
         ...categoryBody,
-        pattern: "other.example.com",
+        pattern: "control.example.com",
       });
       expect(res.status).toBe(201);
     },
@@ -1774,14 +1774,17 @@ const ROUTES: Route[] = [
             victim.userId,
           );
           expect(res.status).toBe(200);
-          expect(res.body.goals).toEqual([{ category: "distracting", ...goalBody }]);
+          expect(res.body.goals).toEqual([
+            { category: "distracting", ...goalBody },
+            { category: "neutral", ...goalBody },
+          ]);
         },
       },
     ],
     control: async (owner) => {
       const res = await cookieGet(owner, "/v1/goals");
       expect(res.status).toBe(200);
-      expect(res.body.goals).toHaveLength(1);
+      expect(res.body.goals).toHaveLength(2);
     },
   },
   {
@@ -1820,10 +1823,10 @@ const ROUTES: Route[] = [
         label: "deleting a goal while naming the victim in query and headers",
         run: async (attacker, victim) => {
           // The attacker has a goal too, so this deletes the attacker's own, never the victim's.
-          const res = await cookieRemove(
-            attacker,
-            `/v1/goals/distracting?userId=${victim.userId}`,
-          ).set("X-User-Id", victim.userId);
+          const res = await cookieRemove(attacker, `/v1/goals/neutral?userId=${victim.userId}`).set(
+            "X-User-Id",
+            victim.userId,
+          );
           expect(res.status).toBe(204);
         },
       },
@@ -1869,6 +1872,7 @@ async function seedActivity() {
     expect(category.status).toBe(201);
     categoryIds.set(user.userId, category.body.id);
     expect((await cookiePut(user, "/v1/goals/distracting", goalBody)).status).toBe(200);
+    expect((await cookiePut(user, "/v1/goals/neutral", goalBody)).status).toBe(200);
     expect(
       (await cookiePut(user, "/v1/retention/type/browser.page_visited", { days: 30 })).status,
     ).toBe(200);
