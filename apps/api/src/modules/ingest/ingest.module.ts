@@ -2,6 +2,7 @@ import { Module } from "@nestjs/common";
 import { CLOCK, type Clock } from "../../platform/clock/clock";
 import { RateLimiter } from "../../platform/rate-limit/rate-limiter";
 import { KeysModule } from "../keys/keys.module";
+import { LimitsModule } from "../limits/limits.module";
 import { RetentionModule } from "../retention/retention.module";
 import { RulesModule } from "../rules/rules.module";
 import { IngestController } from "./ingest.controller";
@@ -20,7 +21,7 @@ import {
  * from the global ClockModule.
  */
 @Module({
-  imports: [KeysModule, RulesModule, RetentionModule],
+  imports: [KeysModule, RulesModule, RetentionModule, LimitsModule],
   controllers: [IngestController],
   providers: [
     IngestRepository,

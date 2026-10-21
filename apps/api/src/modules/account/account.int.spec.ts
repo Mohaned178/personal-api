@@ -139,6 +139,9 @@ async function seedActivity(user: FixtureUser): Promise<void> {
     .set("Cookie", user.cookie)
     .send({ days: 30 });
   expect(policy.status, JSON.stringify(policy.body)).toBe(200);
+  // site_limits
+  const limit = await post("/v1/limits", { pattern: "youtube.com", minutes: 30 });
+  expect(limit.status, JSON.stringify(limit.body)).toBe(201);
   // bulk_deletions, and a queued job whose payload carries this user's id (no worker runs here)
   const bulk = await http()
     .delete("/v1/events")

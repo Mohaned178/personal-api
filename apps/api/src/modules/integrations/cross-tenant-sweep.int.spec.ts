@@ -129,6 +129,9 @@ const ruleBody = {
 };
 const githubVisit = () => pageVisit({ data: { domain: "github.com" } });
 const ruleIds = new Map<string, string>();
+/** Each user starts with one limit on this pattern. */
+const limitBody = { pattern: "youtube.com", minutes: 30, strict: false };
+const limitIds = new Map<string, string>();
 
 /** Each user's extension integration and its pending (unused, unexpired) code, set per test. */
 const pending = new Map<string, { integrationId: string; pairingCode: string }>();
@@ -502,6 +505,10 @@ const ROUTES: Route[] = [
             ruleIds.get(attacker.userId),
           ]);
           expect(JSON.stringify(res.body)).not.toContain(ruleIds.get(victim.userId));
+          expect(res.body.limits.map((l: { id: string }) => l.id)).toEqual([
+            limitIds.get(attacker.userId),
+          ]);
+          expect(JSON.stringify(res.body)).not.toContain(limitIds.get(victim.userId));
         },
       },
       {
@@ -1202,6 +1209,117 @@ const ROUTES: Route[] = [
       );
     },
   },
+  {
+    route: "GET /v1/limits",
+    attacks: [
+      {
+        label: "listing while the victim has a limit, naming the victim in query and headers",
+        run: async (attacker, victim) => {
+          const res = await cookieGet(attacker, `/v1/limits?userId=${victim.userId}`).set(
+            "X-User-Id",
+            victim.userId,
+          );
+          expect(res.status).toBe(200);
+          expect(res.body.limits.map((l: { id: string }) => l.id)).toEqual([
+            limitIds.get(attacker.userId),
+          ]);
+          expect(JSON.stringify(res.body)).not.toContain(limitIds.get(victim.userId));
+        },
+      },
+    ],
+    control: async (owner) => {
+      const res = await cookieGet(owner, "/v1/limits");
+      expect(res.status).toBe(200);
+      expect(res.body.limits).toHaveLength(1);
+    },
+  },
+  {
+    route: "POST /v1/limits",
+    attacks: [
+      {
+        label: "naming the victim as owner in the body",
+        run: async (attacker, victim) => {
+          const res = await cookiePost(attacker, "/v1/limits", {
+            ...limitBody,
+            pattern: "other.example.com",
+            userId: victim.userId,
+          });
+          expectProblem(res, 400, "request.invalid");
+          expect(JSON.stringify(res.body)).not.toContain(victim.userId);
+        },
+      },
+      {
+        label: "creating a limit while naming the victim in query and headers",
+        run: async (attacker, victim) => {
+          const res = await cookiePost(attacker, `/v1/limits?userId=${victim.userId}`, {
+            ...limitBody,
+            pattern: "other.example.com",
+          }).set("X-User-Id", victim.userId);
+          expect(res.status).toBe(201);
+          const { rows } = await h.testDb.pool.query(
+            "select user_id from site_limits where id = $1",
+            [res.body.id],
+          );
+          expect(rows).toEqual([{ user_id: attacker.userId }]);
+        },
+      },
+    ],
+    control: async (owner) => {
+      const res = await cookiePost(owner, "/v1/limits", {
+        ...limitBody,
+        pattern: "control.example.com",
+      });
+      expect(res.status).toBe(201);
+    },
+  },
+  {
+    route: "PUT /v1/limits/:id",
+    attacks: [
+      {
+        label: "replacing the victim's limit",
+        run: async (attacker, victim) => {
+          const body = { ...limitBody, minutes: 1, strict: true };
+          const res = await cookiePut(attacker, `/v1/limits/${limitIds.get(victim.userId)}`, body);
+          expectProblem(res, 404, "limit.not_found");
+          await expectSameAsUnknown(res, await cookiePut(attacker, `/v1/limits/${missing}`, body));
+        },
+      },
+    ],
+    control: async (owner) => {
+      const res = await cookiePut(owner, `/v1/limits/${limitIds.get(owner.userId)}`, {
+        ...limitBody,
+        minutes: 45,
+      });
+      expect(res.status).toBe(200);
+      expect(res.body.minutes).toBe(45);
+    },
+  },
+  {
+    route: "DELETE /v1/limits/:id",
+    attacks: [
+      {
+        label: "deleting the victim's limit",
+        run: async (attacker, victim) => {
+          const res = await cookieRemove(attacker, `/v1/limits/${limitIds.get(victim.userId)}`);
+          expectProblem(res, 404, "limit.not_found");
+          await expectSameAsUnknown(res, await cookieRemove(attacker, `/v1/limits/${missing}`));
+        },
+      },
+      {
+        label: "deleting with a malformed id answers like an unknown one",
+        run: async (attacker) => {
+          const res = await cookieRemove(attacker, "/v1/limits/not-a-uuid");
+          expectProblem(res, 404, "limit.not_found");
+          await expectSameAsUnknown(res, await cookieRemove(attacker, `/v1/limits/${missing}`));
+        },
+      },
+    ],
+    control: async (owner) => {
+      expect((await cookieRemove(owner, `/v1/limits/${limitIds.get(owner.userId)}`)).status).toBe(
+        204,
+      );
+    },
+  },
 ];
 
 /**
@@ -1226,6 +1344,9 @@ async function seedActivity() {
     const created = await cookiePost(user, "/v1/rules", ruleBody);
     expect(created.status).toBe(201);
     ruleIds.set(user.userId, created.body.rule.id);
+    const limit = await cookiePost(user, "/v1/limits", limitBody);
+    expect(limit.status).toBe(201);
+    limitIds.set(user.userId, limit.body.id);
     expect(
       (await cookiePut(user, "/v1/retention/type/browser.page_visited", { days: 30 })).status,
     ).toBe(200);

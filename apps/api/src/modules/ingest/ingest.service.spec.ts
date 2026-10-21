@@ -9,6 +9,7 @@ import { compileRuleSet } from "@personal-api/rules";
 import { describe, expect, it } from "vitest";
 import { FakeClock } from "../../../test/fake-clock";
 import { AppException } from "../../platform/errors/problem";
+import type { LimitsService } from "../limits/limits.service";
 import type { RetentionService } from "../retention/retention.service";
 import type { RuleSetProvider } from "../rules/rule-set.provider";
 import type {
@@ -63,6 +64,10 @@ function noPolicies(): RetentionService {
   return {
     daysByTarget: async () => ({ type: new Map(), source: new Map() }),
   } as unknown as RetentionService;
+}
+
+function noLimits(): LimitsService {
+  return { list: async () => ({ limits: [] }) } as unknown as LimitsService;
 }
 
 const at = (offsetMs: number) => new Date(NOW.getTime() + offsetMs).toISOString();
@@ -472,7 +477,7 @@ describe("IngestService", () => {
     return {
       ...fake,
       clock,
-      ingest: new IngestService(fake.repository, ruleSets(), noPolicies(), clock),
+      ingest: new IngestService(fake.repository, ruleSets(), noPolicies(), clock, noLimits()),
     };
   }
 
@@ -558,7 +563,7 @@ describe("IngestService", () => {
         throw new Error("must not touch last_seen_at after a refusal");
       },
     } as unknown as IngestRepository;
-    const error = await new IngestService(repository, ruleSets(), noPolicies(), clock)
+    const error = await new IngestService(repository, ruleSets(), noPolicies(), clock, noLimits())
       .ingestBatch(USER, INTEGRATION, KEY, { events: [visit()] })
       .catch((e: unknown) => e);
     expect(error).toBeInstanceOf(AppException);
@@ -577,7 +582,13 @@ describe("IngestService", () => {
         throw new Error("must not load rules for a revoked caller");
       },
     } as unknown as RuleSetProvider;
-    const error = await new IngestService(repository, rules, noPolicies(), new FakeClock(NOW))
+    const error = await new IngestService(
+      repository,
+      rules,
+      noPolicies(),
+      new FakeClock(NOW),
+      noLimits(),
+    )
       .ingestBatch(USER, INTEGRATION, KEY, { events: [visit()] })
       .catch((e: unknown) => e);
     expect((error as AppException).getStatus()).toBe(401);
@@ -600,7 +611,7 @@ describe("IngestService.getConfig (M4-R S2)", () => {
       },
     } as unknown as RuleSetProvider;
     return {
-      ingest: new IngestService(repository, rules, noPolicies(), new FakeClock(NOW)),
+      ingest: new IngestService(repository, rules, noPolicies(), new FakeClock(NOW), noLimits()),
       loaded,
     };
   }

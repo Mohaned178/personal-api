@@ -86,7 +86,7 @@ const globValueSchema = textValueSchema.refine((v) => countWildcards(v) <= GLOB_
 });
 
 /** `example.com` (exact) or `*.example.com` (any subdomain, not the apex). */
-const domainPatternSchema = z
+export const domainPatternSchema = z
   .string()
   .max(RULE_LIMITS.valueMax)
   .refine((v) => domainSchema.safeParse(v.startsWith("*.") ? v.slice(2) : v).success, {
