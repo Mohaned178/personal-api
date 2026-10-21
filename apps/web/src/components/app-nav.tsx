@@ -7,6 +7,7 @@ import { Link } from "@tanstack/react-router";
 const NAV = [
   { label: "Insights", to: "/" },
   { label: "Rules", to: "/rules" },
+  { label: "Limits", to: "/limits" },
   {
     label: "Sources",
     links: [
