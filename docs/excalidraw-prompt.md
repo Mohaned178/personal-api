@@ -2,7 +2,7 @@
 
 How to use: give this whole file to an AI and ask for a single `.excalidraw` JSON file (or Mermaid per diagram). If the model truncates, feed it one `## DIAGRAM` block at a time, always together with the "Global rules" and "Legend" sections.
 
-Tagline: **Your Data. Your Endpoints. Your Rules.**
+Tagline: **Your Data. Your Rules.**
 Status date: 2026-10-18. Milestones M0 to M4 are done (M4 review fixes in progress). M5 to M7 are open.
 
 ---
@@ -35,7 +35,7 @@ Shapes: rectangle = component or service; rounded rectangle = process step; cyli
 
 ## What the project is
 
-Personal API is a self-hosted, multi-account personal data platform. A browser extension (Firefox first, then Edge, Chrome after v1) and later other sources send events to the user's own server. User-defined rules decide what is collected and kept. Users then query their data through built-in endpoints and their own saved-query endpoints. All data stays on the user's server.
+Personal API is a self-hosted, multi-account personal data platform. A browser extension (Firefox first, then Edge, Chrome after v1) and later other sources send events to the user's own server. User-defined rules decide what is collected and kept. Users read their data in the dashboard, behind a login session. All data stays on the user's server.
 
 ---
 
@@ -50,10 +50,9 @@ Nodes (use the colors from the legend):
    - `POST /v1/ingest/heartbeat`
    - `POST /v1/pair`
    - `Platform API (session cookie)`
-   - `Read API (session or pa_read_ key)`
-   - `/v1/me/:slug saved queries`
+   - `Read API (session cookie only)`
    - `Serves dashboard SPA + OpenAPI /docs`
-4. **Dashboard (React SPA)** (blue): setup, login, integrations, rules, events, diagnostics, keys, endpoints, exports, retention.
+4. **Dashboard (React SPA)** (blue): setup, login, integrations, rules, events, diagnostics, exports, retention.
 5. **PostgreSQL 18** (purple cylinder): `app tables + pgboss schema`.
 6. **Worker (pg-boss)** (green): `retention purge · bulk delete · export`.
 
@@ -64,7 +63,6 @@ Arrows:
 - Dashboard → API: `session cookie`
 - API → PostgreSQL: `Drizzle · 1 transaction per batch`
 - Worker ↔ PostgreSQL: `pg-boss jobs`
-- External consumers (small box `Scripts / apps`, blue) → API: `Bearer pa_read_… · GET /v1/me/:slug`
 
 ---
 
@@ -133,7 +131,7 @@ Packages: a box `packages/rules (pure TS, no Node/DOM/chrome)` with two arrows i
 Entities and key fields:
 - `users / sessions / accounts / verification`: Better Auth.
 - `integrations`: id, user_id, kind (browser-extension | http), name, default_policy (deny | allow), status (active | revoked), last_seen_at, last_heartbeat
-- `api_keys`: id, user_id, kind (ingest | read), integration_id?, prefix, hash (SHA-256), scopes, endpoint_id?, created_at, last_used_at, revoked_at
+- `api_keys`: id, user_id, kind (ingest only), integration_id?, prefix, hash (SHA-256), created_at, last_used_at, revoked_at
 - `pairing_codes`: code_hash, user_id, integration_id, expires_at (10 min), used_at
 - `rule_sets`: user_id, version (bumps on every change), updated_at
 - `rules`: id, user_id, name, enabled, priority, stage, definition (jsonb)
@@ -141,10 +139,9 @@ Entities and key fields:
 - `events`: id (uuidv7), user_id, integration_id, client_event_id, type, type_version, occurred_at, client_occurred_at?, received_at, origin (collected | imported | derived), data (jsonb), tags[], trace (jsonb), expires_at. **UNIQUE (user_id, integration_id, client_event_id)**. Indexes: (user_id, occurred_at DESC, id), (user_id, type, occurred_at), (expires_at).
 - `ingestion_log`: user_id, integration_id, bucket (hour), accepted, duplicate, dropped, rejected, by_reason (counts only, no payloads). UNIQUE (user_id, integration_id, bucket).
 - `retention_policies`: user_id, match (source/type), days
-- `endpoints`: id, user_id, slug, definition (jsonb saved query), enabled
 - `exports`: id, user_id, status, filter, file_path, expires_at
 
-Relations (label the cardinality): users 1-N integrations, rules, api_keys, events, endpoints, exports, retention_policies; integrations 1-N events, api_keys, pairing_codes; rule_sets 1-N rule_history; endpoints 1-N api_keys (read keys scoped to an endpoint). Every tenant table has `user_id → user(id) ON DELETE CASCADE`.
+Relations (label the cardinality): users 1-N integrations, rules, api_keys, events, exports, retention_policies; integrations 1-N events, api_keys, pairing_codes; rule_sets 1-N rule_history. Every tenant table has `user_id → user(id) ON DELETE CASCADE`.
 
 ---
 
@@ -178,18 +175,14 @@ Red "Never collected" box: `page titles · full URLs · form contents · keystro
 
 ---
 
-## DIAGRAM 8: Auth, keys and saved queries
+## DIAGRAM 8: Auth and keys
 
-Left, auth types (three lanes):
+Auth types (two lanes):
 - `Dashboard session`: Better Auth email + password, HttpOnly + SameSite=Lax cookie, CSRF on mutations, login and pairing rate limits, `ALLOW_SIGNUP` (the first account can always sign up).
-- `pa_ing_ ingest key`: can only ingest (and read config and send heartbeat).
-- `pa_read_ read key`: read-only, within scopes `events:read`, `activity:read`, `endpoint:<id>`, with an optional source/type restriction.
+- `pa_ing_ ingest key`: can only ingest (and read config and send heartbeat). It is the only API key: everything that reads data needs a dashboard session (read keys were removed in v1.2).
 - Common: `SHA-256 hash at rest · shown once · prefix for display · last_used_at · immediate revocation · unknown/malformed/revoked keys all return the same 401 auth.invalid_key (no oracle)`.
 
-Right, saved queries:
-`definition: source/type filters · relative window (today, this_week, last_n_days) · same condition language as rules · field allowlist (projection) · optional aggregate (count_by_day, count_by_domain, duration_by_domain)` → `compiled to a parameterized Drizzle query` → `limits: 1,000 rows, 2 s statement_timeout` → `GET /v1/me/:slug`. Red note: `aggregate-only endpoints can never return raw events`.
-
-Route table (small): public `/healthz /readyz /v1/setup/status`; pairing code `/v1/pair`; ingest key `/v1/ingest/*`; session `/v1/integrations /v1/rules /v1/rules/test /v1/events (DELETE) /v1/exports /v1/retention /v1/keys /v1/endpoints /v1/diagnostics`; session or read key `GET /v1/events /v1/activity/daily /v1/activity/domains`; read key scoped to it `GET /v1/me/:slug`.
+Route table (small): public `/healthz /readyz /v1/setup/status`; pairing code `/v1/pair`; ingest key `/v1/ingest/*`; session `/v1/me /v1/integrations /v1/rules /v1/rules/test /v1/events /v1/activity/* /v1/exports /v1/retention /v1/diagnostics /v1/limits /v1/focus /v1/schedules /v1/recommendations`.
 
 ---
 
@@ -200,10 +193,10 @@ Eight numbered boxes:
 2. Dropped events are never stored (counters only).
 3. The extension keeps domain + path only. Query and fragment are stripped unless `keep_query` matches. No titles, form contents, keystrokes or incognito.
 4. Tenant scoping: every query goes through scoped repository helpers using `userId` from AuthContext, never from the request body. Every new route gets a cross-tenant test.
-5. Keys are SHA-256 hashed and shown once. Ingest keys only ingest. Read keys only read in their scopes.
+5. Keys are SHA-256 hashed and shown once. Ingest keys only ingest; nothing reads data without a dashboard session.
 6. Logs never contain payloads, URLs, domains, keys, cookies or emails (pino redaction list).
 7. No string SQL with user input (Drizzle query builder and parameters only).
-8. No code execution and no regex in rules or saved queries.
+8. No code execution and no regex in rules.
 
 Extra row: `At-least-once delivery in, effectively-once storage (UNIQUE key + ON CONFLICT DO NOTHING)` · `Hard delete (backups keep data until they rotate)` · `Postgres RLS planned for v1.1` · `Never connect to Postgres on port 5432 (the user's personal server); the project DB is on 5433`.
 
@@ -217,12 +210,12 @@ Extra row: `At-least-once delivery in, effectively-once storage (UNIQUE key + ON
 - `apps/web`: Vite, React 19, TanStack Router + Query, shadcn/ui, Tailwind v4
 - `apps/extension`: WXT (MV3), IndexedDB via `idb`
 - `apps/e2e`: Firefox (web-ext + Selenium/geckodriver, primary) · Edge smoke (Playwright + Chromium) · local fixture site
-- `packages/contracts` (Zod: envelope, event types, DTOs, rule and saved-query formats) · `packages/rules` (pure engine) · `packages/tsconfig`
+- `packages/contracts` (Zod: envelope, event types, DTOs, rule formats) · `packages/rules` (pure engine) · `packages/tsconfig`
 - Deploy: docker compose (`postgres`, `api`, `worker`; same image for api and worker) + optional Caddy for TLS
 
 Dependency arrows: `contracts → api, web, extension, rules`; `rules → api, extension`.
 
-**Repository tree**: `apps/api` (`src/main.ts`, `src/worker.ts`, `src/modules/{auth, integrations, ingest, rules, events, activity, endpoints, keys, retention, exports, diagnostics}`, `src/platform/{db, jobs, logging, config}`) · `apps/web` · `apps/extension` · `apps/e2e` · `packages/*` · `docs/` (`PLAN.md`, `self-hosting.md`, `event-types.md`, `rule-format.md`, `api.md`, `adr/`) · `spikes/` · `docker-compose.yml` · `CLAUDE.md`.
+**Repository tree**: `apps/api` (`src/main.ts`, `src/worker.ts`, `src/modules/{auth, integrations, ingest, rules, events, activity, retention, exports, diagnostics}`, `src/platform/{db, jobs, logging, config}`) · `apps/web` · `apps/extension` · `apps/e2e` · `packages/*` · `docs/` (`PLAN.md`, `self-hosting.md`, `event-types.md`, `rule-format.md`, `api.md`, `adr/`) · `spikes/` · `docker-compose.yml` · `CLAUDE.md`.
 
 **Workflow** (grey flow): `read CLAUDE.md + PLAN task + ADRs + neighbouring code` → `branch mx-nn-short-name from main` → `tests first for high/xhigh/security tasks` → `implement` → `pnpm lint && typecheck && test (+ test:int if DB touched)` → `commit (Conventional Commits) → push → PR` → `CI green` → `tick box in PLAN.md` → `squash-merge with user approval`. Rules: never commit to main; the repo is public (no secrets, .env or real browsing data); at 40% context write a handoff and start a new chat.
 
@@ -243,12 +236,12 @@ Use the status colors from the legend. Each column is a card with the task list.
 - **M2 Extension capture and delivery (DONE)**: cross-browser build · Spike C · Firefox e2e harness · pairing · connect UI · URL sanitizer · capture engine · persistent queue and sync · popup and heartbeat · temporary allow list · e2e · M2-R
 - **M3 Dashboard v0 (DONE)**: web scaffold · auth pages · integrations page · events API · events UI · diagnostics and health · polish · M3-R
 - **M4 Rules (DONE, review fixes in progress, yellow badge)**: Firefox as the primary e2e · rule format · engine · engine tests · rules API · server enforcement · extension rule sync · rules UI · explainability · e2e for demo steps 3 and 7 · M4-R. Fixes on branch `m4-r-review-fixes`: S1 linear-time glob matcher, S2 refuse config for http keys, S3 collected shortcut only when an allow rule reads a rewritten field, S4 popup verdict on any probe.
-- **M5 Query API and user endpoints (OPEN)**: read keys · GET /v1/events · aggregates · saved-query compiler · endpoints CRUD and UI · injection and scope tests · OpenAPI · M5-R
+- **M5 Query API (the read keys, saved queries and endpoints in it were removed in v1.2)**: GET /v1/events · aggregates · OpenAPI · M5-R
 - **M6 Data lifecycle (OPEN)**: retention policies (precedence: set_retention > type policy > source policy > 90-day default) · retention jobs · bulk delete · account deletion · export (NDJSON.gz + manifest) · tests · docs · M6-R
 - **M7 Hardening and v1.0 (OPEN)**: full 8-step demo e2e on Firefox · route-table suite · rate limits, helmet, CSRF · security pass and threat model · production packaging (AMO and Edge zips, Dockerfile, Caddy) · docs · release prep (tagging v1.0.0 needs user approval) · M7-R
 - **v1.1+ (OPEN, dashed outline)**: webhook `forward` (HMAC, retries, SSRF guard) · GitHub integration · content-script interactions · Postgres RLS · user-defined event types · Chrome support · partitioning
 
-Below the timeline, a decisions strip: `Self-hosted, multi-account` · `Deny by default` · `Domain + path only` · `Firefox first, then Edge, Chrome after v1` · `JSON rules edited via a dashboard form` · `Fixed endpoints + saved queries` · `No element interactions in v1`.
+Below the timeline, a decisions strip: `Self-hosted, multi-account` · `Deny by default` · `Domain + path only` · `Firefox first, then Edge, Chrome after v1` · `JSON rules edited via a dashboard form` · `No element interactions in v1`.
 
 Risks strip (two-column mini table): `MV3 background killed → IndexedDB + alarms` · `Firefox/Edge differences → one browser.* codebase, Firefox is the reference` · `Inflated time-on-site → closed focus segments capped at 30 min` · `Rules change while events are queued → the server re-applies current rules` · `Rule bugs widen collection → deny by default, fail closed, property tests, dry-run` · `tabs permission warning → explain it in onboarding` · `Clock skew → store occurredAt and receivedAt, clamp` · `Scope creep → v1.1`.
 

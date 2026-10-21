@@ -165,6 +165,13 @@ Upgrades rebuild the image from the new code and apply any new database migratio
 4. Check the result: `docker compose ... ps` shows `api` as `healthy`, and
    `https://<PA_DOMAIN>/healthz` returns `200`. `/readyz` also checks the database and the queue.
 
+**Update the extension together with the server.** The extension reads the rules from
+`GET /v1/ingest/config` strictly and fails closed: when the server sends a field it does not know, it
+collects nothing until it is updated. Going from 1.1 to 1.2 adds `limits`, `focus` and `schedules` to that
+config, so an extension older than 1.2 collects nothing against a 1.2 server. Update the server, then the extension
+(or the other way round, an older server works with a newer extension) and check the popup says it is
+collecting again.
+
 **Migrations only move forward.** The project has no down migrations. To roll back, stop the
 stack, check out the previous version, and restore the backup you took in step 1. Data written
 after that backup is lost.

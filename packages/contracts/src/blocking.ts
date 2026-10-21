@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { safeMessage } from "./errors.js";
+import { utcDateTimeSchema } from "./primitives.js";
 import { domainPatternSchema } from "./rules.js";
 
 /**
@@ -51,7 +52,7 @@ export type FocusStart = z.output<typeof focusStartSchema>;
 export const focusSessionSchema = z.strictObject({
   id: z.uuid(),
   patterns: patternsSchema,
-  endsAt: z.iso.datetime(),
+  endsAt: utcDateTimeSchema,
 });
 export type FocusSession = z.output<typeof focusSessionSchema>;
 

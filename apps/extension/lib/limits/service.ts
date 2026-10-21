@@ -9,13 +9,15 @@
 //   adds time for the rest of the day (not in strict mode), and using it up notifies and blocks again;
 // - the local midnight starts over: the per-day state is keyed by the local date.
 //
-// A site the rules drop, a private window and a paused browser are never counted (lib/today.ts and
-// the open segment only know pages the rules allowed), so they never reach a limit. A notification
+// A site the rules drop, a private window and a paused browser are never counted (lib/today.ts only
+// knows the focus segments the rules kept, and the open segment is counted only when the rules would
+// keep a focus segment for its page), so they never reach a limit. A notification
 // shows only the pattern the user set the limit on, never a page the user visited.
 
 import type { Limit } from "@personal-api/contracts";
 import { CONNECTION_STORAGE_KEY, parseStoredConnection } from "../connect";
-import { activeLimits, RULES_STORAGE_KEY } from "../rules/active-rules";
+import { activeLimits, activeRules, RULES_STORAGE_KEY } from "../rules/active-rules";
+import { mayCollectFocusSegment } from "../rules/gate";
 import { sanitizeUrl } from "../sanitize-url";
 import { readToday, TODAY_STORAGE_KEY } from "../today";
 import {
@@ -72,16 +74,20 @@ async function load(deps: {
   readOpen(): Promise<OpenUse | null>;
 }): Promise<Loaded> {
   const raw = await deps.storage.get(STATE_KEYS);
-  const limits = activeLimits(
-    raw[RULES_STORAGE_KEY],
-    parseStoredConnection(raw[CONNECTION_STORAGE_KEY]),
-  );
+  const connection = parseStoredConnection(raw[CONNECTION_STORAGE_KEY]);
+  const limits = activeLimits(raw[RULES_STORAGE_KEY], connection);
   if (limits.length === 0) return { limits, statuses: [], raw };
   let open: OpenUse | null = null;
   try {
     open = await deps.readOpen();
   } catch {
     // The completed segments are still counted.
+  }
+  // The gate admits a page for any kind of event, so a segment can be open for a page whose focus
+  // segments the rules drop. Today never counts those, and a limit counts only what the rules collect.
+  if (open !== null) {
+    const rules = activeRules(raw[RULES_STORAGE_KEY], connection);
+    if (rules === null || !mayCollectFocusSegment(rules, open)) open = null;
   }
   const statuses = limitStatuses(
     limits,

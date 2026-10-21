@@ -72,6 +72,25 @@ export function mayCollect(active: ActiveRules, page: SanitizedUrl | null): bool
 }
 
 /**
+ * True only when the rules would collect a focus segment for the page (M9-02: a limit counts only
+ * what the rules collect, and the gate admits a page for any kind of event). Never throws.
+ */
+export function mayCollectFocusSegment(active: ActiveRules, page: SanitizedUrl): boolean {
+  try {
+    return probeEvents(page).some(
+      (event) =>
+        event.type === "browser.focus_segment" &&
+        evaluate(event, active.ruleSet, active.defaultPolicy, {
+          source: "browser-extension",
+          process: false,
+        }).decision === "allow",
+    );
+  } catch {
+    return false;
+  }
+}
+
+/**
  * The capture gate backed by the stored rules. `storage` is read on every call (one `get`), so a
  * rule change or a removed connection applies to the next navigation. No rules, rules of another
  * connection, or any failure: deny (invariant 1).

@@ -49,6 +49,13 @@ describe("focusSessionSchema", () => {
     expect(focusSessionSchema.safeParse({ ...ok, endsAt: "tomorrow" }).success).toBe(false);
     expect(focusSessionSchema.safeParse({ ...ok, id: "1" }).success).toBe(false);
   });
+
+  it("takes the end time as UTC only: no offset, no impossible date", () => {
+    const ok = { id: ID, patterns: ["x.com"], endsAt: "2026-10-21T12:00:00.000Z" };
+    for (const endsAt of ["2026-10-21T12:00:00+02:00", "2026-02-30T00:00:00Z"]) {
+      expect(focusSessionSchema.safeParse({ ...ok, endsAt }).success).toBe(false);
+    }
+  });
 });
 
 describe("scheduleSaveSchema", () => {
