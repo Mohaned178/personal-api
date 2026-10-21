@@ -50,7 +50,33 @@ export interface FakeBackend {
   rejectPreview?: number | undefined;
   /** Answer the next create/replace of an endpoint with this error status. */
   rejectEndpointSave?: number | undefined;
+  /** Aggregates for /v1/activity. Leave unset and those routes answer 404. */
+  activity?: FakeActivity;
   calls: { method: string; path: string; body: unknown; search?: string }[];
+}
+
+export interface FakeActivity {
+  days: { date: string; activeMs: number; pageVisits: number }[];
+  /** Already sorted like the API (most active first); the route applies `limit`. */
+  domains: { domain: string; activeMs: number; pageVisits: number }[];
+  /** When set, the activity routes wait for it before answering (the loading state). */
+  hold?: Promise<void>;
+}
+
+async function activityRoute(b: FakeBackend, method: string, url: URL): Promise<Response | null> {
+  const activity = b.activity;
+  if (!activity || method !== "GET" || !url.pathname.startsWith("/v1/activity/")) return null;
+  await activity.hold;
+  const from = url.searchParams.get("from") ?? "";
+  const to = url.searchParams.get("to") ?? "";
+  if (url.pathname === "/v1/activity/daily") {
+    return json(200, { from, to, timeZone: b.timeZone ?? "UTC", days: activity.days });
+  }
+  if (url.pathname === "/v1/activity/domains") {
+    const limit = Number(url.searchParams.get("limit") ?? 20);
+    return json(200, { from, to, domains: activity.domains.slice(0, limit) });
+  }
+  return null;
 }
 
 export interface FakeEndpoint {
@@ -433,6 +459,7 @@ export function installFetch(b: FakeBackend) {
           : json(200, b.diagnostics);
       default:
         return (
+          (await activityRoute(b, method, url)) ??
           retentionRoute(b, method, url.pathname, body) ??
           rulesRoute(b, method, url.pathname, body) ??
           eventsRoute(b, method, url, body) ??

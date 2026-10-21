@@ -24,6 +24,15 @@ export function markWelcomeDone(): void {
   }
 }
 
+/** Lets the Insights empty state (M8-03) open the wizard again. */
+export function resetWelcome(): void {
+  try {
+    window.localStorage.removeItem(WELCOME_DONE_KEY);
+  } catch {
+    // Storage is off, so the wizard counts as done and the link lands on home.
+  }
+}
+
 /**
  * True while the user has no active integration or no rule. Any failure answers false: the home
  * page is the safe place to land, never a loop through the wizard.
