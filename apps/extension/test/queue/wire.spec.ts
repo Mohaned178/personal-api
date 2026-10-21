@@ -161,9 +161,10 @@ function wire(
 describe("wireBackground", () => {
   it("registers every listener before it returns, including the flush alarm listener", () => {
     const { listeners } = wire();
-    // The capture engine's, plus one-click connect's (M8-01) and the daily limits (M9-02).
-    expect(listeners.get("tabs.onUpdated")).toHaveLength(3);
-    expect(listeners.get("tabs.onRemoved")).toHaveLength(2);
+    // The capture engine's, plus one-click connect (M8-01), the daily limits (M9-02) and the pause
+    // before opening (M9-05).
+    expect(listeners.get("tabs.onUpdated")).toHaveLength(4);
+    expect(listeners.get("tabs.onRemoved")).toHaveLength(3);
     // The capture engine's, plus the daily limits (M9-02).
     expect(listeners.get("tabs.onActivated")).toHaveLength(2);
     for (const name of [

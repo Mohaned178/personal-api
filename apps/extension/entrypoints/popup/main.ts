@@ -2,6 +2,13 @@
 
 import { browser } from "wxt/browser";
 import {
+  addPick,
+  BEFORE_OPEN_STORAGE_KEY,
+  readConfig,
+  removePick,
+  setSeconds,
+} from "../../lib/before-open/state";
+import {
   CONNECTION_STORAGE_KEY,
   type ConnectDeps,
   ConnectError,
@@ -25,6 +32,7 @@ import { createFlusher, createIdbCaptureStore } from "../../lib/queue";
 import { readActiveRules } from "../../lib/rules/active-rules";
 import { createRulesSync } from "../../lib/rules/sync";
 import { currentTabVerdict, describeVerdict } from "../../lib/rules/verdict";
+import { sanitizeUrl } from "../../lib/sanitize-url";
 import {
   formatDuration,
   readToday,
@@ -125,7 +133,7 @@ function renderState(next: PopupState): void {
 function refreshState(): Promise<void> {
   return loadPopupState(stateDeps)
     .then(renderState)
-    .then(() => Promise.all([refreshTabVerdict(), refreshToday(), refreshLimits()]))
+    .then(() => Promise.all([refreshTabVerdict(), refreshToday(), refreshLimits(), refreshPicks()]))
     .then(() => undefined);
 }
 
@@ -265,6 +273,85 @@ async function refreshLimits(): Promise<void> {
   }
 }
 
+// -----------------------------------------------------------------------------------------------
+// M9-05 "Pause before opening": the sites the user picked, kept on this device
+// (lib/before-open/state.ts). Works without a connection: it never sends anything anywhere.
+
+const picksView = byId<HTMLElement>("picks-view");
+const picksList = byId<HTMLUListElement>("picks-list");
+const pickThisSite = byId<HTMLButtonElement>("pick-this-site");
+const picksForm = byId<HTMLFormElement>("picks-form");
+const pickInput = byId<HTMLInputElement>("pick-input");
+const pauseSeconds = byId<HTMLSelectElement>("pause-seconds");
+/** The current tab's domain when it can be picked, or null. Never shown with a path. */
+let pickableDomain: string | null = null;
+
+const PICK_ERRORS = {
+  invalid: "Enter a site like example.com or *.example.com.",
+  exists: "That site is already on the list.",
+  full: "The list is full. Remove a site first.",
+} as const;
+
+async function refreshPicks(): Promise<void> {
+  if (inTab) {
+    picksView.hidden = true;
+    return;
+  }
+  try {
+    const config = await readConfig(browser.storage.local);
+    picksList.replaceChildren(
+      ...config.sites.map((site) => {
+        const item = document.createElement("li");
+        const name = document.createElement("span");
+        name.className = "domain";
+        name.textContent = site.pattern;
+        name.title = site.pattern;
+        const remove = document.createElement("button");
+        remove.type = "button";
+        remove.textContent = "Remove";
+        remove.setAttribute("aria-label", `Remove ${site.pattern}`);
+        remove.addEventListener("click", () => {
+          void removePick(browser.storage.local, site.id);
+        });
+        item.append(name, remove);
+        return item;
+      }),
+    );
+    pauseSeconds.value = String(config.seconds);
+    const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
+    pickableDomain = tab?.incognito === false ? (sanitizeUrl(tab.url)?.domain ?? null) : null;
+    const listed = config.sites.some((site) => site.pattern === pickableDomain);
+    pickThisSite.hidden = pickableDomain === null || listed;
+    if (pickableDomain !== null)
+      pickThisSite.textContent = `Pause before opening ${pickableDomain}`;
+    picksView.hidden = false;
+  } catch {
+    picksView.hidden = true;
+  }
+}
+
+function pick(pattern: string): void {
+  void addPick(browser.storage.local, pattern, () => crypto.randomUUID()).then((result) => {
+    if (result === "added") {
+      pickInput.value = "";
+      setStatus("");
+    } else setStatus(PICK_ERRORS[result], true);
+  });
+}
+
+pickThisSite.addEventListener("click", () => {
+  if (pickableDomain !== null) pick(pickableDomain);
+});
+
+picksForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+  pick(pickInput.value);
+});
+
+pauseSeconds.addEventListener("change", () => {
+  void setSeconds(browser.storage.local, Number(pauseSeconds.value));
+});
+
 // ---------------------------------------------------------------------------------------------
 // M2-02 connect flow
 
@@ -381,6 +468,7 @@ browser.storage.onChanged.addListener((changes, area) => {
       void refreshState();
     });
   }
+  if (area === "local" && BEFORE_OPEN_STORAGE_KEY in changes) void refreshPicks();
   if (area === "local" && TODAY_STORAGE_KEY in changes) {
     void refreshToday();
     void refreshLimits();

@@ -96,6 +96,35 @@
         text-overflow: ellipsis;
         white-space: nowrap;
       }
+      #picks-list {
+        margin: 0 0 0.5rem;
+        padding: 0;
+        list-style: none;
+      }
+      #picks-list li {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.5rem;
+      }
+      #picks-list .domain {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      #picks-form {
+        flex-direction: row;
+        margin-top: 0.5rem;
+      }
+      #picks-form input {
+        flex: 1;
+        min-width: 0;
+      }
+      #pause-seconds-label {
+        flex-direction: row;
+        align-items: center;
+        margin-top: 0.5rem;
+      }
       #limits-list [data-reached="true"] {
         color: #d92d20;
         font-weight: 600;
@@ -152,6 +181,34 @@
       <section id="limits-view" aria-label="Daily limits" hidden>
         <h2>Daily limits</h2>
         <ul id="limits-list"></ul>
+      </section>
+
+      <section id="picks-view" aria-label="Pause before opening" hidden>
+        <h2>Pause before opening</h2>
+        <ul id="picks-list"></ul>
+        <button id="pick-this-site" type="button" hidden></button>
+        <form id="picks-form">
+          <input
+            id="pick-input"
+            type="text"
+            aria-label="Site to pause before opening"
+            placeholder="example.com or *.example.com"
+            autocomplete="off"
+            spellcheck="false"
+          />
+          <button id="pick-add" type="submit">Add</button>
+        </form>
+        <label id="pause-seconds-label" for="pause-seconds">
+          Pause for
+          <select id="pause-seconds">
+            <option value="5">5 seconds</option>
+            <option value="6">6 seconds</option>
+            <option value="7">7 seconds</option>
+            <option value="8">8 seconds</option>
+            <option value="9">9 seconds</option>
+            <option value="10">10 seconds</option>
+          </select>
+        </label>
       </section>
 
       <section id="connected-view" aria-label="Connection" hidden>
