@@ -1610,6 +1610,8 @@ const ROUTES: Route[] = [
       },
     ],
     control: async (owner) => {
+      // The attack may have ended the owner session already, so start one to end.
+      expect((await cookiePost(owner, "/v1/focus", focusBody)).status).toBe(201);
       expect((await cookieRemove(owner, "/v1/focus")).status).toBe(204);
     },
   },
