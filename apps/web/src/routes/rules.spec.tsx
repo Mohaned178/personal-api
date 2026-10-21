@@ -114,6 +114,47 @@ describe("rules page", () => {
     });
   });
 
+  describe("stop tracking from the extension (M8-04)", () => {
+    it("opens a drop rule prefilled from #drop=<domain> and saves nothing until asked", async () => {
+      const { router } = mount("/rules#drop=news.example.com");
+      expect(((await screen.findByLabelText(/^name$/i)) as HTMLInputElement).value).toBe(
+        "Never collect news.example.com",
+      );
+      // The fragment is dropped, so a reload does not reopen the form.
+      await waitFor(() => expect(router.state.location.hash).toBe(""));
+      expect(rulePosts()).toHaveLength(0);
+
+      click("Save rule");
+      await waitFor(() => expect(rulePosts()).toHaveLength(1));
+      expect(rulePosts()[0]).toMatchObject({
+        method: "POST",
+        path: "/v1/rules",
+        body: {
+          name: "Never collect news.example.com",
+          priority: 0,
+          stage: "collect",
+          when: {
+            any: [
+              { field: "data.domain", op: "domain_matches", value: "news.example.com" },
+              { field: "data.domain", op: "domain_matches", value: "*.news.example.com" },
+            ],
+          },
+          then: [{ action: "drop" }],
+        },
+      });
+    });
+
+    it.each([
+      ["an absolute URL", "/rules#drop=https%3A%2F%2Fevil.test%2Fx"],
+      ["markup", "/rules#drop=%3Cimg%20src%3Dx%3E"],
+      ["an empty domain", "/rules#drop="],
+    ])("ignores %s in the fragment", async (_name, path) => {
+      mount(path);
+      await screen.findByText("Track GitHub");
+      expect(screen.queryByRole("region", { name: /new rule/i })).toBeNull();
+    });
+  });
+
   it("lists rules in priority order with their drop counts over seven days", async () => {
     mount("/rules");
     await screen.findByText("Track GitHub");

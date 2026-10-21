@@ -403,6 +403,8 @@ export interface SimOptions {
   via?: "engine" | "listeners";
   /** Override the injected clock (default: the fake `Date.now`). */
   now?: () => number;
+  /** Wraps the store the engine writes to (rebuilt on every worker restart, like the background). */
+  wrapStore?: (store: CaptureStore) => CaptureStore;
 }
 
 export interface SegmentView {
@@ -435,11 +437,13 @@ export class Sim {
   private refCounter = 0;
   private readonly via: "engine" | "listeners";
   private readonly nowFn: () => number;
+  private readonly wrapStore: ((store: CaptureStore) => CaptureStore) | undefined;
 
   constructor(options: SimOptions = {}) {
     this.gate = options.gate ?? allowAll;
     this.via = options.via ?? "engine";
     this.nowFn = options.now ?? (() => Date.now());
+    this.wrapStore = options.wrapStore;
     this.browser = new FakeBrowser(options.firefox ?? false);
     const win = this.browser.addWindow(false, true);
     const tab = this.browser.addTab(win.id, "about:blank", true, false);
@@ -451,7 +455,7 @@ export class Sim {
   private deps(): CaptureDeps {
     return {
       browser: this.browser.api,
-      store: this.store,
+      store: this.wrapStore?.(this.store) ?? this.store,
       gate: { allows: (page) => this.gate.allows(page) },
       now: this.nowFn,
       newId: () => `0193a000-0000-7000-8000-${(++this.idCounter).toString(16).padStart(12, "0")}`,

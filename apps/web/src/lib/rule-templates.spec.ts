@@ -1,6 +1,6 @@
 import { ruleDefinitionSchema } from "@personal-api/contracts";
 import { describe, expect, it } from "vitest";
-import { RULE_TEMPLATES } from "./rule-templates";
+import { dropTemplateFromHash, neverCollectRule, RULE_TEMPLATES } from "./rule-templates";
 
 describe("rule templates", () => {
   it.each(RULE_TEMPLATES.map((t) => [t.id, t.rule] as const))("%s is a valid rule", (_id, rule) => {
@@ -23,5 +23,27 @@ describe("rule templates", () => {
     const values = (never?.rule.when.any ?? []).map((c) => c.value);
     expect(values).toEqual(["example.com", "*.example.com"]);
     expect(never?.rule.when.all).toBeUndefined();
+  });
+
+  it("the drop rule for a domain is valid and covers its subdomains (M8-04)", () => {
+    const rule = neverCollectRule("github.com");
+    expect(ruleDefinitionSchema.safeParse(rule).success).toBe(true);
+    expect(rule.when.any?.map((c) => c.value)).toEqual(["github.com", "*.github.com"]);
+  });
+
+  it("reads #drop=<domain> and refuses anything that is not a domain (M8-04)", () => {
+    expect(dropTemplateFromHash("#drop=github.com")?.rule).toEqual(neverCollectRule("github.com"));
+    expect(dropTemplateFromHash("drop=github.com")?.rule.name).toBe("Never collect github.com");
+    for (const hash of [
+      "",
+      "#",
+      "#drop=",
+      "#drop=GitHub.com",
+      "#drop=a.com/x",
+      "#drop=//evil",
+      "#other=a.com",
+    ]) {
+      expect(dropTemplateFromHash(hash)).toBeNull();
+    }
   });
 });

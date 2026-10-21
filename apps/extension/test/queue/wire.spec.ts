@@ -170,8 +170,9 @@ describe("wireBackground", () => {
     ]) {
       expect(listeners.get(name), name).toHaveLength(1);
     }
-    // flush, server heartbeat, rules sync, plus the capture engine's own heartbeat tick.
-    expect(listeners.get("alarms.onAlarm")).toHaveLength(4);
+    // flush, server heartbeat, rules sync, the Today prune (M8-04), plus the capture engine's own
+    // heartbeat tick.
+    expect(listeners.get("alarms.onAlarm")).toHaveLength(5);
   });
 
   it("one-click: pairs with the code from the tab it opened, stores the connection, closes the tab", async () => {

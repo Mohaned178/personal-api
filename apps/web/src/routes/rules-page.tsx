@@ -10,8 +10,8 @@ import {
   SAVE_RESERVED_ACTIONS,
 } from "@personal-api/contracts";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link } from "@tanstack/react-router";
-import { type ReactNode, useState } from "react";
+import { Link, useLocation, useNavigate } from "@tanstack/react-router";
+import { type ReactNode, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { getDiagnostics } from "@/lib/diagnostics";
@@ -33,7 +33,7 @@ import {
   ruleToDraft,
   validateRule,
 } from "@/lib/rule-draft";
-import { RULE_TEMPLATES, type RuleTemplate } from "@/lib/rule-templates";
+import { dropTemplateFromHash, RULE_TEMPLATES, type RuleTemplate } from "@/lib/rule-templates";
 import {
   createRule,
   deleteRule,
@@ -663,8 +663,17 @@ export function RulesPage() {
     queryKey: DIAGNOSTICS_KEY,
     queryFn: () => getDiagnostics(DROP_WINDOW_HOURS),
   });
-  // `null` is closed, `"new"` is a blank form, a rule is an edit.
-  const [editing, setEditing] = useState<Rule | RuleTemplate | "new" | null>(null);
+  // `null` is closed, `"new"` is a blank form, a rule is an edit. `#drop=<domain>` (the extension's
+  // "Stop tracking this site", M8-04) opens a prefilled drop rule; nothing is saved until the user does.
+  const hash = useLocation({ select: (location) => location.hash });
+  const navigate = useNavigate();
+  const [editing, setEditing] = useState<Rule | RuleTemplate | "new" | null>(() =>
+    dropTemplateFromHash(hash),
+  );
+  useEffect(() => {
+    // Drop the fragment so a reload does not reopen the form.
+    if (dropTemplateFromHash(hash) !== null) void navigate({ to: "/rules", replace: true });
+  }, [hash, navigate]);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
 

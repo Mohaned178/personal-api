@@ -66,6 +66,27 @@
         margin: 0;
         overflow-wrap: anywhere;
       }
+      #today-list {
+        margin: 0;
+        padding: 0;
+        list-style: none;
+      }
+      #today-list li {
+        display: flex;
+        justify-content: space-between;
+        gap: 0.5rem;
+      }
+      #today-list .domain {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      #today-empty {
+        margin: 0;
+      }
+      #stop-tracking {
+        margin-top: 0.25rem;
+      }
       #status {
         min-height: 1.25rem;
         margin: 0.5rem 0 0;
@@ -100,6 +121,13 @@
       <section id="tab-verdict-view" aria-label="This page" hidden>
         <h2>This page</h2>
         <p id="tab-verdict" aria-live="polite"></p>
+        <button id="stop-tracking" type="button" hidden>Stop tracking this site</button>
+      </section>
+
+      <section id="today-view" aria-label="Today" hidden>
+        <h2>Today</h2>
+        <ol id="today-list"></ol>
+        <p id="today-empty">No time counted yet today.</p>
       </section>
 
       <section id="connected-view" aria-label="Connection" hidden>
