@@ -7,6 +7,7 @@ import { RootLayout } from "@/routes/__root";
 import { LoginPage, SetupPage, SignupPage } from "@/routes/auth-pages";
 import { ConnectExtensionDonePage, ConnectExtensionPage } from "@/routes/connect-extension-page";
 import { EventsPage } from "@/routes/events-page";
+import { FocusPage } from "@/routes/focus-page";
 import { HealthPage } from "@/routes/health-page";
 import { IndexPage } from "@/routes/index";
 import { IntegrationsPage } from "@/routes/integrations-page";
@@ -91,6 +92,13 @@ const healthRoute = createRoute({
   path: "/health",
   beforeLoad: requireAuth,
   component: HealthPage,
+});
+
+const focusRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/focus",
+  beforeLoad: requireAuth,
+  component: FocusPage,
 });
 
 const limitsRoute = createRoute({
@@ -210,6 +218,7 @@ export const routeTree = rootRoute.addChildren([
   patternsRoute,
   siteRoute,
   limitsRoute,
+  focusRoute,
   rulesRoute,
   settingsRoute,
   connectExtensionRoute,

@@ -1,4 +1,5 @@
 import { createBeforeOpenService } from "../before-open/service";
+import { createBlockingService } from "../blocking/service";
 import type { CaptureGate } from "../capture";
 import { createCaptureEngine, registerCaptureListeners } from "../capture";
 import { CONNECTION_STORAGE_KEY, type Connection, getConnection, pairWithCode } from "../connect";
@@ -185,6 +186,19 @@ export function wireBackground(deps: BackgroundDeps): WiredBackground {
     iconUrl: browser.runtime.getURL("/icon/128.png"),
   });
 
+  // M9-06 focus mode and schedules: like the limits, they only read what is already on the device
+  // (the blocks that came with the rules) and the only effect is moving a tab to the extension page.
+  const blocking = createBlockingService({
+    storage: browser.storage.local,
+    now: deps.now,
+    tabs: browser.tabs,
+    alarms: browser.alarms,
+    blockedUrl: (block) =>
+      browser.runtime.getURL(
+        `/time-up.html?${block.kind === "focus" ? "f" : "s"}=${encodeURIComponent(block.id)}`,
+      ),
+  });
+
   // Layer two. With an explicit `collectGate` (tests) the events are not run through the rules.
   const captureStore =
     deps.collectGate === undefined
@@ -250,10 +264,15 @@ export function wireBackground(deps: BackgroundDeps): WiredBackground {
   // The limits are evaluated on their own periodic alarm, and when a tab navigates or is activated,
   // so a site whose limit is used up does not stay open until the next alarm.
   browser.alarms.onAlarm.addListener((alarm) => limits.onAlarm(alarm));
+  browser.alarms.onAlarm.addListener((alarm) => blocking.onAlarm(alarm));
   browser.tabs.onUpdated.addListener((_tabId, changeInfo) =>
     changeInfo.url === undefined ? undefined : limits.tick(),
   );
+  browser.tabs.onUpdated.addListener((_tabId, changeInfo) =>
+    changeInfo.url === undefined ? undefined : blocking.tick(),
+  );
   browser.tabs.onActivated.addListener(() => limits.tick());
+  browser.tabs.onActivated.addListener(() => blocking.tick());
 
   // M9-05 pause before opening: a tab that goes to a site the user picked moves to the pause page
   // first. It reads only the picked sites and a per-tab marker, and stores no address.
@@ -290,9 +309,10 @@ export function wireBackground(deps: BackgroundDeps): WiredBackground {
         settled(() => rulesSync.start()),
         settled(() => today.prune()),
         settled(() => limits.start()),
+        settled(() => blocking.start()),
       ]),
     )
     .then(() => undefined);
 
-  return { engine, flusher, rulesSync, limits, gate, ready };
+  return { engine, flusher, rulesSync, limits, blocking, gate, ready };
 }

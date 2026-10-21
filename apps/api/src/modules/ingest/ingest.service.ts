@@ -19,10 +19,12 @@ import type { z } from "zod";
 import { CLOCK, type Clock } from "../../platform/clock/clock";
 import { assertUserScope } from "../../platform/db/tenant-scope";
 import { AppException } from "../../platform/errors/problem";
+import { FocusService } from "../focus/focus.service";
 import { INVALID_KEY_CODE } from "../keys/ingest-key.guard";
 import { LimitsService } from "../limits/limits.service";
 import { RetentionService } from "../retention/retention.service";
 import { type LoadedRuleSet, RuleSetProvider } from "../rules/rule-set.provider";
+import { SchedulesService } from "../schedules/schedules.service";
 import { etagOf } from "./etag";
 import {
   type Caller,
@@ -238,6 +240,8 @@ export class IngestService {
     private readonly retention: RetentionService,
     @Inject(CLOCK) private readonly clock: Clock,
     private readonly limits: LimitsService,
+    private readonly focus: FocusService,
+    private readonly schedules: SchedulesService,
   ) {}
 
   /**
@@ -317,11 +321,17 @@ export class IngestService {
       throw new AppException(409, "ingest.rule_error", "The rules could not be loaded");
     }
     const { limits } = await this.limits.list(userId);
+    const [focus, schedules] = await Promise.all([
+      this.focus.running(userId),
+      this.schedules.listEnabled(userId),
+    ]);
     const config: IngestConfigResponse = {
       ruleSetVersion: compiled.version,
       defaultPolicy: caller.defaultPolicy,
       rules: [...compiled.collect],
       limits,
+      focus,
+      schedules,
     };
     return { config, etag: etagOf(config) };
   }

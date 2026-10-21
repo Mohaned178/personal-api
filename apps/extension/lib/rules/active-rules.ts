@@ -3,10 +3,12 @@
 // nothing" (invariant 1).
 
 import {
+  type FocusSession,
   type IngestConfigResponse,
   ingestConfigResponseSchema,
   type KnownEvent,
   type Limit,
+  type Schedule,
 } from "@personal-api/contracts";
 import {
   type CompiledRuleSet,
@@ -92,6 +94,25 @@ export function activeLimits(stored: unknown, connection: Connection | null): Li
     return parseStoredRules(stored)?.config.limits ?? [];
   } catch {
     return [];
+  }
+}
+
+/**
+ * M9-06 the focus session and the enabled schedules that came with the rules, or none: like the
+ * limits, nothing is blocked unless the rules around them are valid, bound to this connection and
+ * accepted by the engine.
+ */
+export function activeBlockConfig(
+  stored: unknown,
+  connection: Connection | null,
+): { focus: FocusSession | null; schedules: Schedule[] } {
+  const none = { focus: null, schedules: [] };
+  try {
+    if (activeRules(stored, connection) === null) return none;
+    const config = parseStoredRules(stored)?.config;
+    return { focus: config?.focus ?? null, schedules: config?.schedules ?? [] };
+  } catch {
+    return none;
   }
 }
 

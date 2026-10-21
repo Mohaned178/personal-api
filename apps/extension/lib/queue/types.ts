@@ -1,6 +1,7 @@
 // M2-05 persistent queue and sync: the public surface the tests rely on. The implementer may add
 // members and files, but must not change or remove what is declared here.
 
+import type { BlockingService } from "../blocking/service";
 import type {
   CaptureBrowserApi,
   CapturedEvent,
@@ -269,6 +270,8 @@ export interface WiredBackground {
   rulesSync: RulesSync;
   /** M9-02 daily site limits: notifications, the badge and the "Time's up" page. */
   limits: LimitsService;
+  /** M9-06 focus mode and schedules: tabs on a blocked site move to the "Time's up" page. */
+  blocking: BlockingService;
   /** The gate the engine uses: connected AND not disconnected AND `collectGate` allows (anything but `true` denies). */
   gate: CaptureGate;
   /** Settles (never rejects) once `engine.start()` and `flusher.start()` have settled. */

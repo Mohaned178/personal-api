@@ -1,4 +1,5 @@
 export * from "./auth";
+export * from "./blocking";
 export * from "./deletions";
 export * from "./exports";
 export * from "./ingest";

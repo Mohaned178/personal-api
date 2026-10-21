@@ -9,6 +9,7 @@ const NAV = [
   { label: "Rules", to: "/rules" },
   { label: "Patterns", to: "/patterns" },
   { label: "Limits", to: "/limits" },
+  { label: "Focus", to: "/focus" },
   {
     label: "Sources",
     links: [

@@ -172,7 +172,8 @@ curl -s -o /dev/null -w "%{http_code}\n" -X POST "$BASE/v1/ingest/heartbeat" \
 ### The rules the extension runs
 
 `GET /v1/ingest/config` (same Bearer ingest key) returns your enabled collect rules, the rule-set
-version, the integration's default policy and your daily site limits (`limits`, see section 7),
+version, the integration's default policy, your daily site limits (`limits`, see section 7), your running
+focus session (`focus`, or `null`) and enabled schedules (`schedules`),
 with a strong `ETag` that changes when any of them does. Only the key of a
 `browser-extension` integration may call it: an `http` integration's key gets
 `403 ingest.config_unsupported`, because only an extension applies rules itself. The browser extension polls it
@@ -182,7 +183,7 @@ in [rule-format.md](rule-format.md#extension-sync-m4-06).
 ```bash
 # $EXT_KEY: the ingest key of a browser-extension integration (the extension gets it when it pairs)
 curl -s "$BASE/v1/ingest/config" -H "Authorization: Bearer $EXT_KEY"
-# {"ruleSetVersion":0,"defaultPolicy":"deny","rules":[],"limits":[]}
+# {"ruleSetVersion":0,"defaultPolicy":"deny","rules":[],"limits":[],"focus":null,"schedules":[]}
 # With $KEY from the `http` integration above: 403 {"code":"ingest.config_unsupported", ...}
 ```
 
@@ -322,7 +323,8 @@ with fixed rules and no outside service. It answers with `from`, `to`, `timeZone
 - `limit_step`: a limit you kept for the last week (5 or more active days, none over it): the
   `nextMinutes` is 15 less, never under 30. Applying it is `PUT /v1/limits/:id`.
 - `late_night`: most of the time on a site (`sharePercent`) falls between `fromHour` and `toHour`
-  (23:00 to 07:00 in your time zone). A hint only until schedules arrive (M9-06).
+  (23:00 to 07:00 in your time zone). Applying it is `POST /v1/schedules` with a schedule for
+  those hours on every day (M9-06).
 
 With less than 14 days of data the list is empty. Dismissals are kept in the browser, not the API.
 
@@ -390,6 +392,40 @@ curl -s -X DELETE "$BASE/v1/limits/$LIMIT_ID" -b "$JAR"     # 204
 
 `minutes` is a whole number from 1 to 1440, `strict` defaults to `false`. A body with `id` or
 `userId` is a `400`. You can have one limit per pattern and up to 50 limits.
+
+### Focus mode and schedules
+
+Both block sites on the device. The browser extension gets them with its rules and your limits (a
+change reaches it within about a minute) and moves a tab on a blocked site to a "Time's up" page that
+says why and until when. There is no "more minutes" button. A site is blocked while any block covers
+it. `example.com` is that site only, `*.example.com` its subdomains (not the apex).
+
+A focus session blocks sites for a number of minutes. You have at most one; starting another replaces
+it. The end time is the server's clock plus `minutes`; a body with `endsAt`, `id` or `userId` is a
+`400`.
+
+```bash
+curl -s "$BASE/v1/focus" -b "$JAR"                          # { "session": { "id", "patterns", "endsAt" } | null }
+curl -s -X POST "$BASE/v1/focus" -b "$JAR" -H "Content-Type: application/json"   -d '{"patterns":["youtube.com","*.reddit.com"],"minutes":45}'   # 201, the session
+curl -s -X DELETE "$BASE/v1/focus" -b "$JAR"                # 204, also when none is running
+```
+
+`patterns` is 1 to 20 distinct sites and `minutes` a whole number from 1 to 480.
+
+A schedule repeats: it blocks on the chosen `days` (0 is Monday, 6 is Sunday) from `start` to `end`
+(`HH:MM`, 24 hours, in the clock of the device that enforces it). The start is included and the end is
+not. An `end` earlier than `start` runs past midnight and its late part belongs to the day it started
+on, so `23:00` to `07:00` on Friday is still on at 06:59 on Saturday. `start` and `end` cannot be
+equal. A schedule with `enabled: false` is kept but never sent to the extension.
+
+```bash
+curl -s "$BASE/v1/schedules" -b "$JAR"                      # { "schedules": [ { "id", "name", "patterns", "days", "start", "end", "enabled" } ] }
+curl -s -X POST "$BASE/v1/schedules" -b "$JAR" -H "Content-Type: application/json"   -d '{"name":"Work hours","patterns":["reddit.com"],"days":[0,1,2,3,4],"start":"09:00","end":"17:00"}'   # 201, with its id
+curl -s -X PUT "$BASE/v1/schedules/$SCHEDULE_ID" -b "$JAR" -H "Content-Type: application/json"   -d '{"name":"Work hours","patterns":["reddit.com"],"days":[0,1,2,3,4],"start":"09:00","end":"18:00","enabled":false}'   # replaces the whole schedule
+curl -s -X DELETE "$BASE/v1/schedules/$SCHEDULE_ID" -b "$JAR"   # 204
+```
+
+`name` is 1 to 60 characters, `patterns` 1 to 20 distinct sites. You can have up to 20 schedules.
 
 ### Delete data
 
@@ -509,6 +545,8 @@ Errors are `application/problem+json` (RFC 9457) with a stable `code`:
 | 404  | `limit.not_found`          | The limit id is unknown, belongs to another user, or is malformed (all look the same). |
 | 409  | `limit.pattern_taken`      | `POST`/`PUT /v1/limits`: another limit of yours already has this pattern.              |
 | 409  | `limit.limit_reached`      | `POST /v1/limits`: the user already has 50 limits.                                     |
+| 404  | `schedule.not_found`       | The schedule id is unknown, belongs to another user, or is malformed (all look the same). |
+| 409  | `schedule.limit_reached`   | `POST /v1/schedules`: the user already has 20 schedules.                               |
 | 409  | `ingest.rule_error`        | `GET /v1/ingest/config` only: a stored rule is invalid, so no rules are sent.          |
 | 413  | `http.payload_too_large`   | The body is over the route's limit (100 KB, or 256 KB for `/v1/ingest/events`), or has no declared length on the auth routes. |
 | 400  | `activity.range_invalid`   | `from` is not before `to`, or the range is more than 90 days.                          |

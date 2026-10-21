@@ -32,6 +32,18 @@ export interface FakeBackend {
   rules?: FakeRuleStore;
   /** Retention policies for /v1/retention. Leave unset and those routes answer 404. */
   retention?: Array<{ scope: "source" | "type"; target: string; days: number; updatedAt: string }>;
+  /** Focus session for /v1/focus (M9-06). Leave unset and those routes answer 404. */
+  focus?: { endsAt: string; patterns: string[]; id: string } | null;
+  /** Schedules for /v1/schedules (M9-06). Leave unset and those routes answer 404. */
+  schedules?: Array<{
+    id: string;
+    name: string;
+    patterns: string[];
+    days: number[];
+    start: string;
+    end: string;
+    enabled: boolean;
+  }>;
   /** Daily limits for /v1/limits. Leave unset and those routes answer 404. */
   limits?: Array<{ id: string; pattern: string; minutes: number; strict: boolean }>;
   /** Time zone for /v1/settings. Leave unset and those routes answer 404. */
@@ -261,6 +273,62 @@ function retentionRoute(
   return null;
 }
 
+const FOCUS_ID = "0192f1c2-7c1e-7a3b-9f00-0000000000f1";
+
+function blockingRoute(
+  b: FakeBackend,
+  method: string,
+  pathname: string,
+  body: unknown,
+): Response | null {
+  if (pathname === "/v1/focus" && b.focus !== undefined) {
+    if (method === "GET") return json(200, { session: b.focus });
+    if (method === "POST") {
+      const start = body as { patterns: string[]; minutes: number };
+      b.focus = {
+        id: FOCUS_ID,
+        patterns: start.patterns,
+        endsAt: new Date(Date.now() + start.minutes * 60_000).toISOString(),
+      };
+      return json(201, { session: b.focus });
+    }
+    if (method === "DELETE") {
+      b.focus = null;
+      return new Response(null, { status: 204 });
+    }
+    return null;
+  }
+  const list = b.schedules;
+  if (!list) return null;
+  if (pathname === "/v1/schedules") {
+    if (method === "GET") return json(200, { schedules: list });
+    if (method === "POST") {
+      const save = body as Omit<(typeof list)[number], "id">;
+      const created = {
+        id: `0192f1c2-7c1e-7a3b-9f00-${String(list.length + 1).padStart(12, "0")}`,
+        ...save,
+      };
+      list.push(created);
+      return json(201, created);
+    }
+    return null;
+  }
+  const m = /^\/v1\/schedules\/([^/]+)$/.exec(pathname);
+  if (!m) return null;
+  const at = list.findIndex((s) => s.id === m[1]);
+  if (at === -1) return json(404, { code: "schedule.not_found" });
+  if (method === "PUT") {
+    const replaced = { id: m[1] as string, ...(body as object) } as (typeof list)[number];
+    list[at] = replaced;
+    return json(200, replaced);
+  }
+  if (method === "DELETE") {
+    list.splice(at, 1);
+    return new Response(null, { status: 204 });
+  }
+  return null;
+}
+
 function limitsRoute(
   b: FakeBackend,
   method: string,
@@ -431,6 +499,7 @@ export function installFetch(b: FakeBackend) {
           (await activityRoute(b, method, url)) ??
           retentionRoute(b, method, url.pathname, body) ??
           limitsRoute(b, method, url.pathname, body) ??
+          blockingRoute(b, method, url.pathname, body) ??
           rulesRoute(b, method, url.pathname, body) ??
           eventsRoute(b, method, url, body) ??
           integrationsRoute(b, method, url.pathname, body) ??

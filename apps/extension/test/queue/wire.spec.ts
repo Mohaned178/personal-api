@@ -161,12 +161,12 @@ function wire(
 describe("wireBackground", () => {
   it("registers every listener before it returns, including the flush alarm listener", () => {
     const { listeners } = wire();
-    // The capture engine's, plus one-click connect (M8-01), the daily limits (M9-02) and the pause
-    // before opening (M9-05).
-    expect(listeners.get("tabs.onUpdated")).toHaveLength(4);
+    // The capture engine's, plus one-click connect (M8-01), the daily limits (M9-02), the pause
+    // before opening (M9-05) and focus mode and schedules (M9-06).
+    expect(listeners.get("tabs.onUpdated")).toHaveLength(5);
     expect(listeners.get("tabs.onRemoved")).toHaveLength(3);
-    // The capture engine's, plus the daily limits (M9-02).
-    expect(listeners.get("tabs.onActivated")).toHaveLength(2);
+    // The capture engine's, plus the daily limits (M9-02) and the blocks (M9-06).
+    expect(listeners.get("tabs.onActivated")).toHaveLength(3);
     for (const name of [
       "tabs.onCreated",
       "windows.onFocusChanged",
@@ -176,9 +176,9 @@ describe("wireBackground", () => {
     ]) {
       expect(listeners.get(name), name).toHaveLength(1);
     }
-    // flush, server heartbeat, rules sync, the Today prune (M8-04), the daily limits (M9-02), plus
-    // the capture engine's own heartbeat tick.
-    expect(listeners.get("alarms.onAlarm")).toHaveLength(6);
+    // flush, server heartbeat, rules sync, the Today prune (M8-04), the daily limits (M9-02), the
+    // blocks (M9-06), plus the capture engine's own heartbeat tick.
+    expect(listeners.get("alarms.onAlarm")).toHaveLength(7);
   });
 
   it("one-click: pairs with the code from the tab it opened, stores the connection, closes the tab", async () => {

@@ -226,7 +226,7 @@ export async function startIngestHarness(): Promise<IngestHarness> {
     b,
     reset: async () => {
       await testDb.pool.query(
-        "truncate events, ingestion_log, pairing_codes, rules, rule_sets, rule_history, retention_policies, site_limits, bulk_deletions, exports restart identity",
+        "truncate events, ingestion_log, pairing_codes, rules, rule_sets, rule_history, retention_policies, site_limits, site_schedules, focus_sessions, bulk_deletions, exports restart identity",
       );
       clock.set(FIXED_NOW);
       // The truncate restarts every rule-set version at 0, so cached sets would look current.

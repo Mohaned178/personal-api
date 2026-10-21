@@ -12,6 +12,7 @@ import { DeletionsModule } from "./modules/deletions/deletions.module";
 import { DiagnosticsModule } from "./modules/diagnostics/diagnostics.module";
 import { EventsModule } from "./modules/events/events.module";
 import { ExportsModule } from "./modules/exports/exports.module";
+import { FocusModule } from "./modules/focus/focus.module";
 import { INGEST_EVENTS_PATH } from "./modules/ingest/ingest.controller";
 import { IngestModule } from "./modules/ingest/ingest.module";
 import { IntegrationsModule } from "./modules/integrations/integrations.module";
@@ -19,6 +20,7 @@ import { LimitsModule } from "./modules/limits/limits.module";
 import { PairingModule } from "./modules/pairing/pairing.module";
 import { RetentionModule } from "./modules/retention/retention.module";
 import { RulesModule } from "./modules/rules/rules.module";
+import { SchedulesModule } from "./modules/schedules/schedules.module";
 import { SettingsModule } from "./modules/settings/settings.module";
 import { ClockModule } from "./platform/clock/clock.module";
 import { DbModule } from "./platform/db/db.module";
@@ -63,6 +65,8 @@ import { buildPinoHttpOptions } from "./platform/logging/logging";
     RulesModule,
     RetentionModule,
     LimitsModule,
+    FocusModule,
+    SchedulesModule,
     ExportsModule,
   ],
   providers: [
