@@ -70,7 +70,13 @@ function TopDomains({ domains }: { domains: Insights["domains"] }) {
         {domains.map((d) => (
           <li key={d.domain} className="flex flex-col gap-1">
             <div className="flex justify-between gap-2 text-sm">
-              <span className="truncate">{d.domain}</span>
+              <Link
+                to="/sites/$domain"
+                params={{ domain: d.domain }}
+                className="truncate underline"
+              >
+                {d.domain}
+              </Link>
               <span className="text-muted-foreground">{formatDuration(d.activeMs)}</span>
             </div>
             <div className="h-1.5 w-full rounded-sm bg-muted" aria-hidden="true">

@@ -11,9 +11,11 @@ import { HealthPage } from "@/routes/health-page";
 import { IndexPage } from "@/routes/index";
 import { IntegrationsPage } from "@/routes/integrations-page";
 import { LimitsPage } from "@/routes/limits-page";
+import { PatternsPage } from "@/routes/patterns-page";
 import { RetentionPage } from "@/routes/retention-page";
 import { RulesPage } from "@/routes/rules-page";
 import { SettingsPage } from "@/routes/settings-page";
+import { SitePage } from "@/routes/site-page";
 import { WelcomePage } from "@/routes/welcome-page";
 
 /**
@@ -96,6 +98,20 @@ const limitsRoute = createRoute({
   path: "/limits",
   beforeLoad: requireAuth,
   component: LimitsPage,
+});
+
+const patternsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/patterns",
+  beforeLoad: requireAuth,
+  component: PatternsPage,
+});
+
+const siteRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/sites/$domain",
+  beforeLoad: requireAuth,
+  component: SitePage,
 });
 
 const retentionRoute = createRoute({
@@ -191,6 +207,8 @@ export const routeTree = rootRoute.addChildren([
   eventsRoute,
   healthRoute,
   retentionRoute,
+  patternsRoute,
+  siteRoute,
   limitsRoute,
   rulesRoute,
   settingsRoute,

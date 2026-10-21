@@ -867,6 +867,89 @@ const ROUTES: Route[] = [
     },
   },
   {
+    route: "GET /v1/activity/site",
+    attacks: [
+      {
+        label: "reading one site's totals while the victim has activity, naming the victim",
+        run: async (attacker, victim) => {
+          const res = await cookieGet(attacker, "/v1/activity/site?domain=example.com").set(
+            "X-User-Id",
+            victim.userId,
+          );
+          expect(res.status).toBe(200);
+          // Each user has one visit to example.com: the victim's would make it 2.
+          expect(res.body.pageVisits).toBe(1);
+          expect(res.body.paths.map((p: { pageVisits: number }) => p.pageVisits)).toEqual([1]);
+          const sep = "/v1/activity/site?domain=example.com".includes("?") ? "&" : "?";
+          const named = await cookieGet(
+            attacker,
+            `/v1/activity/site?domain=example.com${sep}userId=${victim.userId}`,
+          );
+          expectProblem(named, 400, "request.invalid");
+        },
+      },
+    ],
+    control: async (owner) => {
+      const res = await cookieGet(owner, "/v1/activity/site?domain=example.com");
+      expect(res.status).toBe(200);
+      expect(res.body.pageVisits).toBe(1);
+    },
+  },
+  {
+    route: "GET /v1/activity/hours",
+    attacks: [
+      {
+        label: "reading the hour cells while the victim has activity, naming the victim",
+        run: async (attacker, victim) => {
+          const res = await cookieGet(attacker, "/v1/activity/hours").set(
+            "X-User-Id",
+            victim.userId,
+          );
+          expect(res.status).toBe(200);
+          expect(res.body.cells).toEqual([]);
+          const sep = "/v1/activity/hours".includes("?") ? "&" : "?";
+          const named = await cookieGet(
+            attacker,
+            `/v1/activity/hours${sep}userId=${victim.userId}`,
+          );
+          expectProblem(named, 400, "request.invalid");
+        },
+      },
+    ],
+    control: async (owner) => {
+      const res = await cookieGet(owner, "/v1/activity/hours");
+      expect(res.status).toBe(200);
+      expect(res.body.cells).toEqual([]);
+    },
+  },
+  {
+    route: "GET /v1/activity/sessions",
+    attacks: [
+      {
+        label: "reading the sessions while the victim has activity, naming the victim",
+        run: async (attacker, victim) => {
+          const res = await cookieGet(attacker, "/v1/activity/sessions").set(
+            "X-User-Id",
+            victim.userId,
+          );
+          expect(res.status).toBe(200);
+          expect(res.body.sessions).toEqual([]);
+          const sep = "/v1/activity/sessions".includes("?") ? "&" : "?";
+          const named = await cookieGet(
+            attacker,
+            `/v1/activity/sessions${sep}userId=${victim.userId}`,
+          );
+          expectProblem(named, 400, "request.invalid");
+        },
+      },
+    ],
+    control: async (owner) => {
+      const res = await cookieGet(owner, "/v1/activity/sessions");
+      expect(res.status).toBe(200);
+      expect(res.body.sessions).toEqual([]);
+    },
+  },
+  {
     route: "GET /v1/settings",
     attacks: [
       {

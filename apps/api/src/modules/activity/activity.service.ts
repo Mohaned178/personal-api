@@ -1,17 +1,27 @@
 import { Inject, Injectable } from "@nestjs/common";
 import {
+  ACTIVITY_CURSOR_INVALID_CODE,
   ACTIVITY_DEFAULT_DAYS,
   ACTIVITY_DOMAINS_DEFAULT_LIMIT,
   ACTIVITY_MAX_DAYS,
   ACTIVITY_RANGE_INVALID_CODE,
+  ACTIVITY_SESSIONS_DEFAULT_LIMIT,
+  ACTIVITY_SITE_PATHS_LIMIT,
   type ActivityDailyQuery,
   type ActivityDailyResponse,
   type ActivityDomainsQuery,
   type ActivityDomainsResponse,
+  type ActivityHoursQuery,
+  type ActivityHoursResponse,
+  type ActivitySessionsQuery,
+  type ActivitySessionsResponse,
+  type ActivitySiteQuery,
+  type ActivitySiteResponse,
 } from "@personal-api/contracts";
 import { CLOCK, type Clock } from "../../platform/clock/clock";
 import { assertUserScope } from "../../platform/db/tenant-scope";
 import { AppException } from "../../platform/errors/problem";
+import { decodeCursor, encodeCursor } from "../events/events.cursor";
 import { SettingsService } from "../settings/settings.service";
 import { withSavedTimeZone } from "../settings/time-zone.errors";
 import { ActivityRepository } from "./activity.repository";
@@ -45,6 +55,65 @@ export class ActivityService {
       query.limit ?? ACTIVITY_DOMAINS_DEFAULT_LIMIT,
     );
     return { from: from.toISOString(), to: to.toISOString(), domains };
+  }
+
+  async site(userId: string, query: ActivitySiteQuery): Promise<ActivitySiteResponse> {
+    assertUserScope(userId);
+    const { from, to } = this.resolveRange(query);
+    const { timeZone } = await this.settings.get(userId);
+    const rows = await withSavedTimeZone(() =>
+      this.repository.site(userId, query.domain, { from, to }, timeZone, ACTIVITY_SITE_PATHS_LIMIT),
+    );
+    return {
+      domain: query.domain,
+      from: from.toISOString(),
+      to: to.toISOString(),
+      timeZone,
+      days: rows.days,
+      activeMs: rows.activeMs,
+      pageVisits: rows.pageVisits,
+      sessions: rows.sessions,
+      averageSessionMs: rows.sessions === 0 ? 0 : Math.round(rows.activeMs / rows.sessions),
+      longestSessionMs: rows.longestSessionMs,
+      paths: rows.paths,
+    };
+  }
+
+  async hours(userId: string, query: ActivityHoursQuery): Promise<ActivityHoursResponse> {
+    assertUserScope(userId);
+    const { from, to } = this.resolveRange(query);
+    const { timeZone } = await this.settings.get(userId);
+    const cells = await withSavedTimeZone(() =>
+      this.repository.hours(userId, { from, to }, timeZone),
+    );
+    return { from: from.toISOString(), to: to.toISOString(), timeZone, cells };
+  }
+
+  async sessions(userId: string, query: ActivitySessionsQuery): Promise<ActivitySessionsResponse> {
+    assertUserScope(userId);
+    const { from, to } = this.resolveRange(query);
+    const limit = query.limit ?? ACTIVITY_SESSIONS_DEFAULT_LIMIT;
+    const after = query.cursor
+      ? decodeCursor(query.cursor, ACTIVITY_CURSOR_INVALID_CODE)
+      : undefined;
+    const rows = await this.repository.sessions(userId, { from, to, after }, limit + 1);
+    const page = rows.slice(0, limit);
+    const last = page[page.length - 1];
+    return {
+      from: from.toISOString(),
+      to: to.toISOString(),
+      sessions: page.map((r) => ({
+        id: r.id,
+        domain: r.domain,
+        startedAt: new Date(r.occurredAt.getTime() - r.durationMs).toISOString(),
+        endedAt: r.occurredAt.toISOString(),
+        durationMs: r.durationMs,
+      })),
+      nextCursor:
+        rows.length > limit && last
+          ? encodeCursor({ occurredAt: last.occurredAt, id: last.id })
+          : null,
+    };
   }
 
   /** `to` defaults to now and `from` to a week before `to`; the pair must be a non-empty range of at most 90 days. */

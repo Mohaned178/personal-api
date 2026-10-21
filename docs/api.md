@@ -293,6 +293,23 @@ and one entry per local day that has activity, with `activeMs` and `pageVisits`.
 `limit` up to 100. Time comes from focus segments; a day with page visits and no focus time shows
 `activeMs: 0`.
 
+Three more routes feed the dashboard's site page and Patterns page (M9-03), with the same `from`/`to`
+rules, and days and hours cut in your time zone:
+
+```bash
+curl -s "$BASE/v1/activity/site?domain=example.com" -b "$JAR"
+curl -s "$BASE/v1/activity/hours" -b "$JAR"
+curl -s "$BASE/v1/activity/sessions?limit=50" -b "$JAR"
+```
+
+- `site` needs `domain` (a lowercase hostname). It answers with `days`, `activeMs`, `pageVisits`,
+  `sessions` (focus segments), `averageSessionMs`, `longestSessionMs` and the 10 busiest `paths`.
+- `hours` answers with `cells` of `{weekday, hour, activeMs}` (`weekday` 0 is Monday), only for hours
+  that have activity.
+- `sessions` lists focus segments newest first (`id`, `domain`, `startedAt`, `endedAt`,
+  `durationMs`). `limit` is 1 to 200 (default 50). Pass `nextCursor` as `cursor`; a cursor this API
+  did not issue is `400 activity.cursor_invalid`.
+
 ### Time zone
 
 Days are cut in your time zone, which is a setting. Like every route here they take the session
