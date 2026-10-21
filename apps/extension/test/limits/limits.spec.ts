@@ -32,7 +32,7 @@ import {
   localDate,
   TODAY_STORAGE_KEY,
 } from "../../lib/today";
-import { advance, newSim, SECOND, setupSimTests } from "../capture/support/sim";
+import { advance, allowDomains, newSim, SECOND, setupSimTests } from "../capture/support/sim";
 import {
   active,
   configOf,
@@ -600,28 +600,46 @@ describe("what counts toward a limit", () => {
     expect((await statusesOf(sim, storage, [la]))[0]?.usedMs).toBe(40_000);
   });
 
-  it("never counts a site the rules drop, or a private window", async () => {
+  /** Browses for `seconds`, in steps shorter than the gap rule, with a focus step after each. */
+  async function browse(sim: ReturnType<typeof newSim>, seconds: number): Promise<void> {
+    for (let done = 0; done < seconds; done += 30) {
+      advance(Math.min(30, seconds - done) * SECOND);
+      await sim.engine.onHeartbeat();
+    }
+  }
+
+  it("never counts a site the rules drop, or a private window, and does count the rest", async () => {
     const storage = memoryStorage();
-    const sim = newSim({ wrapStore: wrapWith(storage) });
+    // The first layer of the rules: a page the gate denies never opens a segment.
+    const sim = newSim({ gate: allowDomains(["a.test"]), wrapStore: wrapWith(storage) });
     const lb = limit("b.test", 1);
     const la = limit("a.test", 30);
     await sim.start();
+
+    // A dropped site, for 5 minutes in steps below the 90 s gap rule: if a segment were open it
+    // would be counted in full.
     await sim.navigate(sim.tabId, "https://b.test/bank");
-    advance(5 * 60 * SECOND);
+    await browse(sim, 5 * 60);
     expect((await statusesOf(sim, storage, [lb, la]))[0]).toMatchObject({
       usedMs: 0,
       reached: false,
     });
+
+    // An allowed site in a private window.
     const incognito = await sim.openWindow({ incognito: true });
     await sim.navigate(incognito.tabId, "https://a.test/private");
-    advance(5 * 60 * SECOND);
+    await browse(sim, 5 * 60);
+    expect((await statusesOf(sim, storage, [lb, la]))[1]?.usedMs).toBe(0);
+
+    // The same allowed site in the normal window counts: only its own 60 seconds, not the rest.
     await sim.closeTab(incognito.tabId);
-    await sim.blur();
+    await sim.focusWindow(sim.windowId);
+    await sim.navigate(sim.tabId, "https://a.test/home");
+    await browse(sim, 60);
     const statuses = await statusesOf(sim, storage, [lb, la]);
-    expect(statuses.map((s) => [s.pattern, s.usedMs, s.reached])).toEqual([
-      ["b.test", 0, false],
-      ["a.test", 0, false],
-    ]);
+    expect(statuses[0]?.usedMs).toBe(0);
+    expect(statuses[1]?.usedMs).toBeGreaterThanOrEqual(55_000);
+    expect(statuses[1]?.usedMs).toBeLessThanOrEqual(61_000);
   });
 
   it("stops counting an open segment that was last seen alive long ago", async () => {
