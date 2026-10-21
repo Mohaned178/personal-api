@@ -10,6 +10,7 @@ import type {
   CaptureStore,
 } from "../capture";
 import type { Connection } from "../connect";
+import type { LimitsDeps, LimitsService } from "../limits/service";
 import type { RulesSync } from "../rules/sync";
 
 /**
@@ -214,8 +215,18 @@ export interface Flusher {
 export type BackgroundBrowserApi = CaptureBrowserApi &
   CaptureListenerApi & {
     alarms: FlushAlarms;
-    /** Only for one-click connect (lib/one-click.ts): close the dashboard tab it opened. */
-    tabs: { remove(tabId: number): Promise<void> };
+    /**
+     * `remove` is for one-click connect (lib/one-click.ts): close the dashboard tab it opened.
+     * `query` and `update` are for the daily limits (lib/limits): find the tabs on a site whose
+     * limit is used up, and move them to the "Time's up" page.
+     */
+    tabs: LimitsDeps["tabs"] & { remove(tabId: number): Promise<void> };
+    /** M9-02 limit notifications (the `notifications` permission). */
+    notifications: LimitsDeps["notifications"];
+    /** M9-02 the toolbar badge, red while a limit is used up. */
+    action: LimitsDeps["action"];
+    /** `getURL` only for the "Time's up" page and the notification icon. */
+    runtime: { getURL(path: string): string };
     storage: {
       local: {
         get(keys: string | string[]): Promise<Record<string, unknown>>;
@@ -250,6 +261,8 @@ export interface WiredBackground {
   flusher: Flusher;
   /** Fetches the rules; `sync()` is also what pairing triggers. */
   rulesSync: RulesSync;
+  /** M9-02 daily site limits: notifications, the badge and the "Time's up" page. */
+  limits: LimitsService;
   /** The gate the engine uses: connected AND not disconnected AND `collectGate` allows (anything but `true` denies). */
   gate: CaptureGate;
   /** Settles (never rejects) once `engine.start()` and `flusher.start()` have settled. */

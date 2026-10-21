@@ -81,6 +81,25 @@
         text-overflow: ellipsis;
         white-space: nowrap;
       }
+      #limits-list {
+        margin: 0;
+        padding: 0;
+        list-style: none;
+      }
+      #limits-list li {
+        display: flex;
+        justify-content: space-between;
+        gap: 0.5rem;
+      }
+      #limits-list .domain {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      #limits-list [data-reached="true"] {
+        color: #d92d20;
+        font-weight: 600;
+      }
       #today-empty {
         margin: 0;
       }
@@ -128,6 +147,11 @@
         <h2>Today</h2>
         <ol id="today-list"></ol>
         <p id="today-empty">No time counted yet today.</p>
+      </section>
+
+      <section id="limits-view" aria-label="Daily limits" hidden>
+        <h2>Daily limits</h2>
+        <ul id="limits-list"></ul>
       </section>
 
       <section id="connected-view" aria-label="Connection" hidden>

@@ -99,6 +99,27 @@ export function openPage(prev: CaptureState | null): SanitizedUrl | null {
   return open ? { domain: open.domain, path: open.path } : null;
 }
 
+/**
+ * M9-02 the time the open focus segment has run today, for the daily limits: committed totals only
+ * grow when a segment closes, so a limit that waited for that would trip late. Mirrors the engine's
+ * gap rule: when more than `GAP_MS` passed since the last focus step (machine sleep, missed alarms),
+ * the segment counts up to that step, not up to `now`. A segment of an earlier browser session is
+ * not counted. Only the part since `dayStart` (local midnight) counts. The segment exists only for a
+ * page the rules allowed, so a dropped or private page never has one.
+ */
+export function openUse(
+  prev: CaptureState | null,
+  now: number,
+  dayStart: number,
+): { domain: string; ms: number } | null {
+  const state = load(prev);
+  const open = state.open;
+  if (!open || !state.alive || state.alive.session !== open.session) return null;
+  const end = now - state.alive.at > GAP_MS ? state.alive.at : now;
+  const ms = end - Math.max(open.startedAt, dayStart);
+  return ms > 0 ? { domain: open.domain, ms } : null;
+}
+
 /** The unchanged state (a read). */
 export const unchanged = (prev: CaptureState | null): CaptureTransition => ({
   state: load(prev),

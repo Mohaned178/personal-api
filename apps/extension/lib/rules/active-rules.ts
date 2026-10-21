@@ -6,6 +6,7 @@ import {
   type IngestConfigResponse,
   ingestConfigResponseSchema,
   type KnownEvent,
+  type Limit,
 } from "@personal-api/contracts";
 import {
   type CompiledRuleSet,
@@ -78,6 +79,19 @@ export function activeRules(stored: unknown, connection: Connection | null): Act
     return compileConfig(rules.config);
   } catch {
     return null;
+  }
+}
+
+/**
+ * M9-02 the daily limits that came with the rules, or an empty list: no limit is enforced unless
+ * the rules around it are valid, bound to this connection and accepted by the engine.
+ */
+export function activeLimits(stored: unknown, connection: Connection | null): Limit[] {
+  try {
+    if (activeRules(stored, connection) === null) return [];
+    return parseStoredRules(stored)?.config.limits ?? [];
+  } catch {
+    return [];
   }
 }
 
