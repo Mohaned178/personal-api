@@ -20,6 +20,7 @@ import { CLOCK, type Clock } from "../../platform/clock/clock";
 import { assertUserScope } from "../../platform/db/tenant-scope";
 import { AppException } from "../../platform/errors/problem";
 import { INVALID_KEY_CODE } from "../keys/ingest-key.guard";
+import { LimitsService } from "../limits/limits.service";
 import { RetentionService } from "../retention/retention.service";
 import { type LoadedRuleSet, RuleSetProvider } from "../rules/rule-set.provider";
 import { etagOf } from "./etag";
@@ -236,6 +237,7 @@ export class IngestService {
     private readonly ruleSets: RuleSetProvider,
     private readonly retention: RetentionService,
     @Inject(CLOCK) private readonly clock: Clock,
+    private readonly limits: LimitsService,
   ) {}
 
   /**
@@ -314,10 +316,12 @@ export class IngestService {
     if (compiled === null) {
       throw new AppException(409, "ingest.rule_error", "The rules could not be loaded");
     }
+    const { limits } = await this.limits.list(userId);
     const config: IngestConfigResponse = {
       ruleSetVersion: compiled.version,
       defaultPolicy: caller.defaultPolicy,
       rules: [...compiled.collect],
+      limits,
     };
     return { config, etag: etagOf(config) };
   }

@@ -24,6 +24,7 @@ import {
 } from "../../../test/ingest-helpers";
 
 import { generateApiKey } from "../keys/key-generation";
+import { LimitsService } from "../limits/limits.service";
 import { RulesService } from "../rules/rules.service";
 
 const CONFIG_PATH = "/v1/ingest/config";
@@ -68,6 +69,9 @@ function ruleFor(name: string, overrides: Partial<RuleDefinition> = {}): RuleDef
 const addRule = (userId: string, definition: RuleDefinition) =>
   h.app.get(RulesService).create(userId, definition);
 
+const addLimit = (userId: string, pattern: string, minutes = 30, strict = false) =>
+  h.app.get(LimitsService).create(userId, { pattern, minutes, strict });
+
 function getConfig(key: string | undefined, headers: Record<string, string> = {}) {
   let req = request(h.app.getHttpServer()).get(CONFIG_PATH);
   if (key) req = req.set("Authorization", `Bearer ${key}`);
@@ -79,7 +83,12 @@ describe("GET /v1/ingest/config", () => {
   it("answers version 0, the policy and no rules for a user without rules", async () => {
     const res = await getConfig(h.a.ingestKey);
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ ruleSetVersion: 0, defaultPolicy: "deny", rules: [] });
+    expect(res.body).toEqual({
+      ruleSetVersion: 0,
+      defaultPolicy: "deny",
+      rules: [],
+      limits: [],
+    });
     expect(res.headers["content-type"]).toMatch(/^application\/json/);
     expect(res.headers["cache-control"]).toBe("private, no-cache");
   });
@@ -181,6 +190,47 @@ describe("the ETag", () => {
     const a = await getConfig(h.a.ingestKey);
     const res = await getConfig(h.b.ingestKey, { "If-None-Match": a.headers.etag as string });
     expect(res.status).toBe(200);
+  });
+});
+
+describe("limits (M9-02)", () => {
+  it("carries the user's limits, by pattern, with their ids", async () => {
+    const late = await addLimit(h.a.userId, "reddit.com", 20, true);
+    const early = await addLimit(h.a.userId, "*.youtube.com", 60);
+    const res = await getConfig(h.a.ingestKey);
+    expect(res.status).toBe(200);
+    const config = ingestConfigResponseSchema.parse(res.body);
+    expect(config.limits).toEqual([early, late]);
+    expect(config.limits.map((limit) => limit.pattern)).toEqual(["*.youtube.com", "reddit.com"]);
+  });
+
+  it("changes the ETag when a limit changes, without moving the rule-set version", async () => {
+    await addRule(h.a.userId, ruleFor("one"));
+    const before = await getConfig(h.a.ingestKey);
+    await addLimit(h.a.userId, "reddit.com");
+    const after = await getConfig(h.a.ingestKey, {
+      "If-None-Match": before.headers.etag as string,
+    });
+    expect(after.status).toBe(200);
+    expect(after.headers.etag).not.toBe(before.headers.etag);
+    expect(after.body.ruleSetVersion).toBe(before.body.ruleSetVersion);
+    // And the new tag is a 304 again.
+    const again = await getConfig(h.a.ingestKey, { "If-None-Match": after.headers.etag as string });
+    expect(again.status).toBe(304);
+  });
+
+  it("gives each key its own user's limits only", async () => {
+    await addLimit(h.a.userId, "limit-of-a.example.com");
+    await addLimit(h.b.userId, "limit-of-b.example.com");
+    const a = await getConfig(h.a.ingestKey);
+    const b = await getConfig(h.b.ingestKey);
+    expect(a.body.limits.map((l: { pattern: string }) => l.pattern)).toEqual([
+      "limit-of-a.example.com",
+    ]);
+    expect(b.body.limits.map((l: { pattern: string }) => l.pattern)).toEqual([
+      "limit-of-b.example.com",
+    ]);
+    expect(JSON.stringify(a.body)).not.toContain("limit-of-b");
   });
 });
 

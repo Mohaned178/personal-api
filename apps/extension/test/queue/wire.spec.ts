@@ -47,6 +47,7 @@ function fakeBrowser(
       onActivated: source("tabs.onActivated"),
       onRemoved: source("tabs.onRemoved"),
       query: async () => [],
+      update: async () => undefined,
       remove: async (tabId: number) => void removedTabs.push(tabId),
     },
     windows: {
@@ -68,7 +69,10 @@ function fakeBrowser(
     runtime: {
       onStartup: source("runtime.onStartup"),
       onInstalled: source("runtime.onInstalled"),
+      getURL: (path: string) => `moz-extension://test${path}`,
     },
+    notifications: { create: async () => "" },
+    action: { setBadgeText: async () => undefined, setBadgeBackgroundColor: async () => undefined },
     storage: {
       session: {
         get: async (key: string) => pick(session, key),
@@ -157,12 +161,13 @@ function wire(
 describe("wireBackground", () => {
   it("registers every listener before it returns, including the flush alarm listener", () => {
     const { listeners } = wire();
-    // The capture engine's, plus one-click connect's (M8-01).
-    expect(listeners.get("tabs.onUpdated")).toHaveLength(2);
+    // The capture engine's, plus one-click connect's (M8-01) and the daily limits (M9-02).
+    expect(listeners.get("tabs.onUpdated")).toHaveLength(3);
     expect(listeners.get("tabs.onRemoved")).toHaveLength(2);
+    // The capture engine's, plus the daily limits (M9-02).
+    expect(listeners.get("tabs.onActivated")).toHaveLength(2);
     for (const name of [
       "tabs.onCreated",
-      "tabs.onActivated",
       "windows.onFocusChanged",
       "idle.onStateChanged",
       "runtime.onStartup",
@@ -170,9 +175,9 @@ describe("wireBackground", () => {
     ]) {
       expect(listeners.get(name), name).toHaveLength(1);
     }
-    // flush, server heartbeat, rules sync, the Today prune (M8-04), plus the capture engine's own
-    // heartbeat tick.
-    expect(listeners.get("alarms.onAlarm")).toHaveLength(5);
+    // flush, server heartbeat, rules sync, the Today prune (M8-04), the daily limits (M9-02), plus
+    // the capture engine's own heartbeat tick.
+    expect(listeners.get("alarms.onAlarm")).toHaveLength(6);
   });
 
   it("one-click: pairs with the code from the tab it opened, stores the connection, closes the tab", async () => {

@@ -92,6 +92,10 @@ declare("session", [
   "GET /v1/retention",
   "PUT /v1/retention/:scope/:target",
   "DELETE /v1/retention/:scope/:target",
+  "GET /v1/limits",
+  "POST /v1/limits",
+  "PUT /v1/limits/:id",
+  "DELETE /v1/limits/:id",
 ]);
 
 interface RouteEntry {

@@ -36,6 +36,7 @@ function fakeBrowser(
       onActivated: noop,
       onRemoved: noop,
       query: async () => [],
+      update: async () => undefined,
       remove: async () => undefined,
     },
     windows: {
@@ -55,7 +56,13 @@ function fakeBrowser(
         world.alarms.create(name, info as { when: number }),
       clear: (name: string) => world.alarms.clear(name),
     },
-    runtime: { onStartup: noop, onInstalled: noop },
+    runtime: {
+      onStartup: noop,
+      onInstalled: noop,
+      getURL: (path: string) => `moz-extension://test${path}`,
+    },
+    notifications: { create: async () => "" },
+    action: { setBadgeText: async () => undefined, setBadgeBackgroundColor: async () => undefined },
     storage: {
       session: {
         get: async () => ({ id: "x" }),

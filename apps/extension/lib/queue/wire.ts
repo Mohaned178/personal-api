@@ -12,6 +12,8 @@ import {
   sameQueueOwner,
 } from "../gate-mirror";
 import { CLIENT_VERSION, createHeartbeatSender } from "../heartbeat";
+import { readOpenUse } from "../limits/open";
+import { createLimitsService } from "../limits/service";
 import { createOneClickHandler } from "../one-click";
 import { getPaused, PAUSED_STORAGE_KEY } from "../pause";
 import { RULES_STORAGE_KEY, readActiveRules } from "../rules/active-rules";
@@ -166,6 +168,22 @@ export function wireBackground(deps: BackgroundDeps): WiredBackground {
   const today = createTodayCounter({ storage: browser.storage.local, now: deps.now });
   const countedStore = createTodayStore({ store, counter: today });
 
+  // M9-02 daily site limits. They only read what is already on the device (the limits that came with
+  // the rules, today's totals and the open segment), so they sit beside the capture path and cannot
+  // widen collection. Notifications, the badge and the "Time's up" redirect are the only effects.
+  const limits = createLimitsService({
+    storage: browser.storage.local,
+    now: deps.now,
+    readOpen: () => readOpenUse(store, deps.now()),
+    notifications: browser.notifications,
+    action: browser.action,
+    tabs: browser.tabs,
+    alarms: browser.alarms,
+    timeUpUrl: (limitId) =>
+      browser.runtime.getURL(`/time-up.html?l=${encodeURIComponent(limitId)}`),
+    iconUrl: browser.runtime.getURL("/icon/128.png"),
+  });
+
   // Layer two. With an explicit `collectGate` (tests) the events are not run through the rules.
   const captureStore =
     deps.collectGate === undefined
@@ -228,6 +246,13 @@ export function wireBackground(deps: BackgroundDeps): WiredBackground {
   browser.alarms.onAlarm.addListener((alarm) => rulesSync.onAlarm(alarm));
   // Yesterday's "Today" entry is deleted on every alarm, even when nothing is browsed after midnight.
   browser.alarms.onAlarm.addListener(() => today.prune());
+  // The limits are evaluated on their own periodic alarm, and when a tab navigates or is activated,
+  // so a site whose limit is used up does not stay open until the next alarm.
+  browser.alarms.onAlarm.addListener((alarm) => limits.onAlarm(alarm));
+  browser.tabs.onUpdated.addListener((_tabId, changeInfo) =>
+    changeInfo.url === undefined ? undefined : limits.tick(),
+  );
+  browser.tabs.onActivated.addListener(() => limits.tick());
 
   const settled = (work: () => Promise<void>): Promise<void> => {
     try {
@@ -249,9 +274,10 @@ export function wireBackground(deps: BackgroundDeps): WiredBackground {
         settled(() => heartbeat.start()),
         settled(() => rulesSync.start()),
         settled(() => today.prune()),
+        settled(() => limits.start()),
       ]),
     )
     .then(() => undefined);
 
-  return { engine, flusher, rulesSync, gate, ready };
+  return { engine, flusher, rulesSync, limits, gate, ready };
 }

@@ -18,7 +18,7 @@ test("loads the extension and exposes the expected manifest @smoke", async ({
 
   const manifest = await serviceWorker.evaluate(() => chrome.runtime.getManifest());
   expect(manifest.manifest_version).toBe(3);
-  expect(manifest.permissions).toEqual(["tabs", "idle", "storage", "alarms"]);
+  expect(manifest.permissions).toEqual(["tabs", "idle", "storage", "alarms", "notifications"]);
   expect(manifest.host_permissions).toBeUndefined();
   expect(manifest.content_scripts).toBeUndefined();
 });

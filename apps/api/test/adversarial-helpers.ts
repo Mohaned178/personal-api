@@ -78,6 +78,7 @@ export async function tenantState(pool: Pool, userId: string): Promise<Record<st
     retentionPolicies: await q(
       "select * from retention_policies where user_id = $1 order by scope, target",
     ),
+    siteLimits: await q("select * from site_limits where user_id = $1 order by pattern"),
   };
 }
 

@@ -32,6 +32,8 @@ export interface FakeBackend {
   rules?: FakeRuleStore;
   /** Retention policies for /v1/retention. Leave unset and those routes answer 404. */
   retention?: Array<{ scope: "source" | "type"; target: string; days: number; updatedAt: string }>;
+  /** Daily limits for /v1/limits. Leave unset and those routes answer 404. */
+  limits?: Array<{ id: string; pattern: string; minutes: number; strict: boolean }>;
   /** Time zone for /v1/settings. Leave unset and those routes answer 404. */
   timeZone?: string;
   /** Names for GET /v1/settings/time-zones (what the database accepts). */
@@ -214,6 +216,49 @@ function retentionRoute(
   return null;
 }
 
+function limitsRoute(
+  b: FakeBackend,
+  method: string,
+  pathname: string,
+  body: unknown,
+): Response | null {
+  const list = b.limits;
+  if (!list) return null;
+  if (pathname === "/v1/limits") {
+    if (method === "GET") return json(200, { limits: list });
+    if (method === "POST") {
+      const save = body as { pattern: string; minutes: number; strict?: boolean };
+      if (list.some((l) => l.pattern === save.pattern)) {
+        return json(409, { code: "limit.pattern_taken" });
+      }
+      const created = {
+        id: `0192f1c2-7c1e-7a3b-9f00-${String(list.length + 1).padStart(12, "0")}`,
+        pattern: save.pattern,
+        minutes: save.minutes,
+        strict: save.strict ?? false,
+      };
+      list.push(created);
+      return json(201, created);
+    }
+    return null;
+  }
+  const m = /^\/v1\/limits\/([^/]+)$/.exec(pathname);
+  if (!m) return null;
+  const at = list.findIndex((l) => l.id === m[1]);
+  if (at === -1) return json(404, { code: "limit.not_found" });
+  if (method === "PUT") {
+    const save = body as { pattern: string; minutes: number; strict?: boolean };
+    const replaced = { id: m[1] as string, ...save, strict: save.strict ?? false };
+    list[at] = replaced;
+    return json(200, replaced);
+  }
+  if (method === "DELETE") {
+    list.splice(at, 1);
+    return new Response(null, { status: 204 });
+  }
+  return null;
+}
+
 export const PAIRING_CODE = "ABCD-EFGH-JKLM-NPQR-STUV";
 export const INGEST_KEY = "pa_ing_secretsecretsecret";
 
@@ -331,6 +376,7 @@ export function installFetch(b: FakeBackend) {
         return (
           (await activityRoute(b, method, url)) ??
           retentionRoute(b, method, url.pathname, body) ??
+          limitsRoute(b, method, url.pathname, body) ??
           rulesRoute(b, method, url.pathname, body) ??
           eventsRoute(b, method, url, body) ??
           integrationsRoute(b, method, url.pathname, body) ??

@@ -172,7 +172,8 @@ curl -s -o /dev/null -w "%{http_code}\n" -X POST "$BASE/v1/ingest/heartbeat" \
 ### The rules the extension runs
 
 `GET /v1/ingest/config` (same Bearer ingest key) returns your enabled collect rules, the rule-set
-version and the integration's default policy, with a strong `ETag`. Only the key of a
+version, the integration's default policy and your daily site limits (`limits`, see section 7),
+with a strong `ETag` that changes when any of them does. Only the key of a
 `browser-extension` integration may call it: an `http` integration's key gets
 `403 ingest.config_unsupported`, because only an extension applies rules itself. The browser extension polls it
 with `If-None-Match`; a match is `304` with no body. The format and the extension's behaviour are
@@ -181,7 +182,7 @@ in [rule-format.md](rule-format.md#extension-sync-m4-06).
 ```bash
 # $EXT_KEY: the ingest key of a browser-extension integration (the extension gets it when it pairs)
 curl -s "$BASE/v1/ingest/config" -H "Authorization: Bearer $EXT_KEY"
-# {"ruleSetVersion":0,"defaultPolicy":"deny","rules":[]}
+# {"ruleSetVersion":0,"defaultPolicy":"deny","rules":[],"limits":[]}
 # With $KEY from the `http` integration above: 403 {"code":"ingest.config_unsupported", ...}
 ```
 
@@ -338,6 +339,25 @@ curl -s -X DELETE "$BASE/v1/retention/type/browser.page_visited" -b "$JAR"   # 2
 `days` is a whole number from 1 to 3650. An event whose `occurredAt` is older than its own
 retention is rejected with `ingest.occurred_at_too_old`.
 
+### Daily site limits
+
+A limit is a domain pattern plus minutes per day: `youtube.com` is that site only, `*.youtube.com`
+its subdomains (not the apex). The browser extension gets your limits with its rules and enforces
+them on the device: a notification with 10 minutes left, a notification and a "Time's up" page at the
+limit, and "5 more minutes" unless the limit is `strict`. Everything resets at your local midnight.
+A limit counts only time on sites your rules collect. The server stores the limits and nothing else:
+it never sees how much time you used.
+
+```bash
+curl -s "$BASE/v1/limits" -b "$JAR"                       # { "limits": [ { "id", "pattern", "minutes", "strict" } ] }
+curl -s -X POST "$BASE/v1/limits" -b "$JAR" -H "Content-Type: application/json"   -d '{"pattern":"youtube.com","minutes":60}'              # 201, the limit with its id
+curl -s -X PUT "$BASE/v1/limits/$LIMIT_ID" -b "$JAR" -H "Content-Type: application/json"   -d '{"pattern":"youtube.com","minutes":45,"strict":true}' # replaces the whole limit
+curl -s -X DELETE "$BASE/v1/limits/$LIMIT_ID" -b "$JAR"     # 204
+```
+
+`minutes` is a whole number from 1 to 1440, `strict` defaults to `false`. A body with `id` or
+`userId` is a `400`. You can have one limit per pattern and up to 50 limits.
+
 ### Delete data
 
 Deletion is a hard delete. Database backups keep deleted data until they rotate.
@@ -453,6 +473,9 @@ Errors are `application/problem+json` (RFC 9457) with a stable `code`:
 | 404  | `integration.not_found`    | The integration id is unknown, belongs to another user, or is malformed (all look the same). |
 | 404  | `rule.not_found`           | The rule id is unknown, belongs to another user, or is malformed (all look the same). |
 | 409  | `rule.limit_reached`       | The user already has 100 rules.                                                        |
+| 404  | `limit.not_found`          | The limit id is unknown, belongs to another user, or is malformed (all look the same). |
+| 409  | `limit.pattern_taken`      | `POST`/`PUT /v1/limits`: another limit of yours already has this pattern.              |
+| 409  | `limit.limit_reached`      | `POST /v1/limits`: the user already has 50 limits.                                     |
 | 409  | `ingest.rule_error`        | `GET /v1/ingest/config` only: a stored rule is invalid, so no rules are sent.          |
 | 413  | `http.payload_too_large`   | The body is over the route's limit (100 KB, or 256 KB for `/v1/ingest/events`), or has no declared length on the auth routes. |
 | 400  | `activity.range_invalid`   | `from` is not before `to`, or the range is more than 90 days.                          |

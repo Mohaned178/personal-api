@@ -17,7 +17,7 @@ describe.each(["chrome-mv3", "firefox-mv3"])("built %s manifest", (target) => {
   });
 
   it("requests exactly the planned permissions", () => {
-    expect(manifest.permissions).toEqual(["tabs", "idle", "storage", "alarms"]);
+    expect(manifest.permissions).toEqual(["tabs", "idle", "storage", "alarms", "notifications"]);
   });
 
   it("requests the API origin only as optional host permissions", () => {

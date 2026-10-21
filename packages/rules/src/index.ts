@@ -4,6 +4,7 @@
  */
 export { canTrustCollected } from "./collected-trust.js";
 export { compileRuleSet } from "./compile.js";
+export { domainMatches } from "./domain.js";
 export { evaluate } from "./evaluate.js";
 export type {
   CompiledRuleSet,

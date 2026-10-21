@@ -10,6 +10,9 @@ import {
   disconnect,
   getConnection,
 } from "../../lib/connect";
+import { describeLimit } from "../../lib/limits/format";
+import { readOpenUse } from "../../lib/limits/open";
+import { readLimitStatuses } from "../../lib/limits/service";
 import { ONE_CLICK_ERROR_STORAGE_KEY, startOneClick } from "../../lib/one-click";
 import { setPaused } from "../../lib/pause";
 import {
@@ -122,7 +125,7 @@ function renderState(next: PopupState): void {
 function refreshState(): Promise<void> {
   return loadPopupState(stateDeps)
     .then(renderState)
-    .then(() => Promise.all([refreshTabVerdict(), refreshToday()]))
+    .then(() => Promise.all([refreshTabVerdict(), refreshToday(), refreshLimits()]))
     .then(() => undefined);
 }
 
@@ -221,6 +224,44 @@ async function refreshToday(): Promise<void> {
     todayView.hidden = false;
   } catch {
     todayView.hidden = true;
+  }
+}
+
+// -----------------------------------------------------------------------------------------------
+// M9-02 "Daily limits": the time left on each limited site, counted on this device
+// (lib/limits/service.ts). The limits come with the rules, so no server read here either.
+
+const limitsView = byId<HTMLElement>("limits-view");
+const limitsList = byId<HTMLUListElement>("limits-list");
+
+async function refreshLimits(): Promise<void> {
+  if (inTab || state === null || state.connection === "not_connected") {
+    limitsView.hidden = true;
+    return;
+  }
+  try {
+    const statuses = await readLimitStatuses({
+      storage: browser.storage.local,
+      now: Date.now,
+      readOpen: () => readOpenUse(store, Date.now()),
+    });
+    limitsList.replaceChildren(
+      ...statuses.map((status) => {
+        const item = document.createElement("li");
+        const name = document.createElement("span");
+        name.className = "domain";
+        name.textContent = status.pattern;
+        name.title = status.pattern;
+        const left = document.createElement("span");
+        left.textContent = describeLimit(status);
+        left.dataset.reached = String(status.reached);
+        item.append(name, left);
+        return item;
+      }),
+    );
+    limitsView.hidden = statuses.length === 0;
+  } catch {
+    limitsView.hidden = true;
   }
 }
 
@@ -340,7 +381,10 @@ browser.storage.onChanged.addListener((changes, area) => {
       void refreshState();
     });
   }
-  if (area === "local" && TODAY_STORAGE_KEY in changes) void refreshToday();
+  if (area === "local" && TODAY_STORAGE_KEY in changes) {
+    void refreshToday();
+    void refreshLimits();
+  }
   if (area === "session" && ONE_CLICK_ERROR_STORAGE_KEY in changes) {
     const message = changes[ONE_CLICK_ERROR_STORAGE_KEY]?.newValue;
     if (typeof message === "string") setStatus(message, true);

@@ -1,4 +1,5 @@
 import { globMatches, type RuleCondition, type RuleWhen } from "@personal-api/contracts";
+import { domainMatches } from "./domain.js";
 import type { SourceKind } from "./types.js";
 
 type Data = Readonly<Record<string, unknown>>;
@@ -10,11 +11,6 @@ function fieldValue(data: Data, field: string): unknown {
   if (!field.startsWith(DATA_PREFIX)) return undefined;
   const key = field.slice(DATA_PREFIX.length);
   return Object.hasOwn(data, key) ? data[key] : undefined;
-}
-
-function domainMatches(pattern: string, domain: string): boolean {
-  // `*.example.com` matches any subdomain, never the apex; a bare domain matches exactly.
-  return pattern.startsWith("*.") ? domain.endsWith(pattern.slice(1)) : domain === pattern;
 }
 
 function compare(op: "gt" | "lt", value: unknown, bound: string | number): boolean {

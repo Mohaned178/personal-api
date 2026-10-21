@@ -20,6 +20,7 @@ export * from "./exports.js";
 export * from "./ingest.js";
 export * from "./ingest-config.js";
 export * from "./integrations.js";
+export * from "./limits.js";
 export * from "./pairing.js";
 export * from "./parse-event.js";
 export * from "./primitives.js";

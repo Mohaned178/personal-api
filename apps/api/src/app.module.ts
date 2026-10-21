@@ -15,6 +15,7 @@ import { ExportsModule } from "./modules/exports/exports.module";
 import { INGEST_EVENTS_PATH } from "./modules/ingest/ingest.controller";
 import { IngestModule } from "./modules/ingest/ingest.module";
 import { IntegrationsModule } from "./modules/integrations/integrations.module";
+import { LimitsModule } from "./modules/limits/limits.module";
 import { PairingModule } from "./modules/pairing/pairing.module";
 import { RetentionModule } from "./modules/retention/retention.module";
 import { RulesModule } from "./modules/rules/rules.module";
@@ -61,6 +62,7 @@ import { buildPinoHttpOptions } from "./platform/logging/logging";
     PairingModule,
     RulesModule,
     RetentionModule,
+    LimitsModule,
     ExportsModule,
   ],
   providers: [

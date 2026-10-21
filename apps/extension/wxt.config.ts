@@ -1,8 +1,9 @@
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "wxt";
 
-// Only the four permissions the plan allows. The API origin is requested at runtime
-// through optional_host_permissions; there are no content scripts and no <all_urls>.
+// Only the five permissions the plan allows (`notifications` came with the daily limits, M9-02).
+// The API origin is requested at runtime through optional_host_permissions; there are no content
+// scripts and no <all_urls>.
 // Targets: `chrome-mv3` (Chrome-family, including Edge) and `firefox-mv3`.
 export default defineConfig({
   // The API uses 3000 (and the web dev server proxies to it), so the WXT dev server stays off it.
@@ -29,7 +30,7 @@ export default defineConfig({
     name: "Personal API",
     description:
       "Sends browsing events to your self-hosted Personal API, only for sites you allow.",
-    permissions: ["tabs", "idle", "storage", "alarms"],
+    permissions: ["tabs", "idle", "storage", "alarms", "notifications"],
     optional_host_permissions: ["https://*/*", "http://*/*"],
     // Never run in incognito windows, even if the user allows it (invariant 3).
     incognito: "not_allowed",

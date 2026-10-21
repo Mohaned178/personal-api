@@ -10,6 +10,7 @@ import { EventsPage } from "@/routes/events-page";
 import { HealthPage } from "@/routes/health-page";
 import { IndexPage } from "@/routes/index";
 import { IntegrationsPage } from "@/routes/integrations-page";
+import { LimitsPage } from "@/routes/limits-page";
 import { RetentionPage } from "@/routes/retention-page";
 import { RulesPage } from "@/routes/rules-page";
 import { SettingsPage } from "@/routes/settings-page";
@@ -88,6 +89,13 @@ const healthRoute = createRoute({
   path: "/health",
   beforeLoad: requireAuth,
   component: HealthPage,
+});
+
+const limitsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/limits",
+  beforeLoad: requireAuth,
+  component: LimitsPage,
 });
 
 const retentionRoute = createRoute({
@@ -183,6 +191,7 @@ export const routeTree = rootRoute.addChildren([
   eventsRoute,
   healthRoute,
   retentionRoute,
+  limitsRoute,
   rulesRoute,
   settingsRoute,
   connectExtensionRoute,
