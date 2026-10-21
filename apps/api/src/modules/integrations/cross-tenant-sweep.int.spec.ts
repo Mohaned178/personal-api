@@ -950,6 +950,27 @@ const ROUTES: Route[] = [
     },
   },
   {
+    route: "GET /v1/recommendations",
+    attacks: [
+      {
+        label: "reading suggestions while the victim has activity, naming the victim",
+        run: async (attacker, victim) => {
+          const res = await cookieGet(attacker, `/v1/recommendations?userId=${victim.userId}`).set(
+            "X-User-Id",
+            victim.userId,
+          );
+          expect(res.status).toBe(200);
+          expect(res.body.recommendations).toEqual([]);
+        },
+      },
+    ],
+    control: async (owner) => {
+      const res = await cookieGet(owner, "/v1/recommendations");
+      expect(res.status).toBe(200);
+      expect(res.body.recommendations).toEqual([]);
+    },
+  },
+  {
     route: "GET /v1/settings",
     attacks: [
       {
