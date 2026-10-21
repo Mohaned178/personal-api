@@ -37,6 +37,25 @@ stores yet, so you install it from source (see [Install the browser extension fr
 4. **Read Insights.** The dashboard home shows today's and this week's time, a 7-day chart and your
    top sites. The popup's **Today** list shows your top 5 sites for today, computed on your device.
    **Stop tracking this site** opens the Rules page with a drop rule for that site ready to save.
+5. **Set daily limits.** On **Limits**, add a site and its minutes per day. Use `youtube.com` for that
+   site only, or `*.youtube.com` for its subdomains. With 10 minutes left you get a notification
+   (once a day, for limits longer than 10 minutes). At the limit you get another notification, the
+   extension badge turns red, and the site's tabs move to a **Time's up** page. **5 more minutes** adds
+   time, and when that runs out the page blocks again. A **strict** limit has no such button, so it
+   holds until local midnight, when every limit resets. A notification shows only the pattern you set.
+   The popup shows the time left on each limited site.
+6. **Read recommendations.** Insights and each site's page suggest changes from your own last two to four
+   weeks, with no outside service. A heavy site can get a stepped limit plan, applied in one click. A
+   limit you stayed under all week can be lowered. Time spent late at night can become a schedule
+   ("Block 23:00 to 07:00"). **Dismiss** hides a suggestion.
+7. **Pause before opening.** In the popup, add the sites you want to pause before opening under
+   **Pause before opening** (or use the current site's button), and choose a pause of 5 to 10 seconds.
+   Opening one of them shows a short countdown. Then **Continue** opens the site, or **Close this tab**
+   closes it. The page you were opening is never stored or sent.
+8. **Focus and schedules.** On **Focus**, start a focus session that blocks the sites you list, separated by
+   commas, for a number of minutes (45 by default). A schedule blocks sites on the
+   weekdays and times you choose, such as 09:00 to 17:00 on weekdays. A blocked site shows a **Time's up**
+   page with no override. End a focus session from the same page.
 
 Only the domain and path of a page are kept. Query strings, fragments, titles, form contents and
 private windows are never collected.

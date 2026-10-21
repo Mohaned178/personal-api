@@ -4,6 +4,31 @@ All notable changes to Personal API are listed here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [1.2.0] - Unreleased
+
+"Take back your time": limits, pauses and focus that you set yourself, and a clearer picture of where the time goes.
+
+### Added
+
+- **Daily site limits** with notifications. A limit is a site pattern and minutes per day, with an optional strict
+  mode. The popup shows the time left, the badge turns red at the limit, and the tab moves to a "Time's up" page
+  ("5 more minutes" unless strict). Limits reset at local midnight.
+- **Focus mode and schedules.** Block sites for a set number of minutes, or on chosen weekdays and times. Blocks
+  are enforced on the device and never change what is collected.
+- **Pause before opening.** Pick sites that show a 5 to 10 second pause before they open. The address being opened is
+  never stored or sent.
+- **Recommendations** on Insights and each site's page, from your own last two to four weeks: a stepped limit plan,
+  a lower limit you stayed under, or a late-night schedule. Each one can be applied or dismissed. No outside service.
+- **Detailed dashboard.** A per-site page (time per day, visits, sessions, top paths), an hour-by-weekday heatmap,
+  this week against last week per site, and a timeline of today's sessions, in your time zone.
+- **Categories, goals and a weekly summary.** Sites are productive, neutral or distracting (an editable list kept in
+  the dashboard). Insights shows the split, goals such as "under 1h of distracting sites per day" with a streak, and
+  a weekly summary of this week against last.
+
+### Changed
+
+- The extension asks for the `notifications` permission, for limit notifications. It is the only new permission.
+
 ## [1.1.0] - Unreleased
 
 "Easy to use": a non-developer connects, picks what to track and sees time per site without writing rules.
