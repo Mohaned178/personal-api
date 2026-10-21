@@ -2,6 +2,7 @@ import type { RouterHistory } from "@tanstack/react-router";
 import { createRootRoute, createRoute, createRouter, redirect } from "@tanstack/react-router";
 import { fetchIsAuthenticated, fetchSetupStatus } from "@/lib/auth";
 import { safeRedirect } from "@/lib/safe-redirect";
+import { isWelcomeDone, needsWelcome } from "@/lib/welcome";
 import { RootLayout } from "@/routes/__root";
 import { LoginPage, SetupPage, SignupPage } from "@/routes/auth-pages";
 import { ConnectExtensionDonePage, ConnectExtensionPage } from "@/routes/connect-extension-page";
@@ -14,6 +15,7 @@ import { KeysPage } from "@/routes/keys-page";
 import { RetentionPage } from "@/routes/retention-page";
 import { RulesPage } from "@/routes/rules-page";
 import { SettingsPage } from "@/routes/settings-page";
+import { WelcomePage } from "@/routes/welcome-page";
 
 /**
  * File-less, code-based routes on purpose: no codegen step, so `vite build` and `vitest` need no
@@ -48,11 +50,25 @@ async function requireAuth({ location }: { location: { href: string } }): Promis
   throw redirect({ to: status?.needsSetup ? "/setup" : "/login", search });
 }
 
+/** Home sends a new user to the setup wizard once (M8-02): no active integration or no rule yet. */
 const indexRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/",
-  beforeLoad: requireAuth,
+  beforeLoad: async (ctx) => {
+    await requireAuth(ctx);
+    if (!isWelcomeDone() && (await needsWelcome())) throw redirect({ to: "/welcome" });
+  },
   component: IndexPage,
+});
+
+const welcomeRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/welcome",
+  beforeLoad: async (ctx) => {
+    await requireAuth(ctx);
+    if (isWelcomeDone()) throw redirect({ to: "/" });
+  },
+  component: WelcomePage,
 });
 
 const integrationsRoute = createRoute({
@@ -178,6 +194,7 @@ const setupRoute = createRoute({
 
 export const routeTree = rootRoute.addChildren([
   indexRoute,
+  welcomeRoute,
   integrationsRoute,
   keysRoute,
   endpointsRoute,
