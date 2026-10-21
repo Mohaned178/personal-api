@@ -21,13 +21,6 @@ const NAV = [
       { label: "Retention", to: "/retention" },
     ],
   },
-  {
-    label: "Developer",
-    links: [
-      { label: "Read keys", to: "/keys" },
-      { label: "Endpoints", to: "/endpoints" },
-    ],
-  },
   { label: "Settings", to: "/settings" },
 ] as const;
 

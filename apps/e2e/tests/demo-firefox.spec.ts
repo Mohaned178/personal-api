@@ -15,17 +15,18 @@ import {
 import { LOOPBACK_HOST_PERMISSION, patchBuildWithHostPermissions } from "../support/patched-build";
 import { allowDomainsRule, type RuleDocument } from "../support/stack";
 
-// M7-01: the v1 definition of done. The whole 8-step demo as ONE test on the real firefox-mv3 build
+// M7-01: the v1 definition of done. The whole 6-step demo as ONE test on the real firefox-mv3 build
 // in headless Firefox, against the real API, the real worker and a real Postgres.
 //
 //   1. sign up and log in
 //   2. connect the extension with one click (popup, dashboard, "Connect this browser")
 //   3. a rule allows a site: before it nothing is collected (deny by default), after it the visit is
 //   4. the events show up through the API, with the query string and fragment stripped
-//   5. create a read key and a saved-query endpoint
-//   6. read the endpoint with its own key
-//   7. change the rule: later visits behave differently, and the endpoint follows
-//   8. export the data, then delete the account and everything is gone
+//   5. change the rule: later visits behave differently, and the activity totals follow
+//   6. export the data, then delete the account and everything is gone
+//
+// (M9-01 removed read keys and saved-query endpoints, which were steps 5 and 6 of the original
+// eight.)
 //
 // The account steps call the same HTTP routes the dashboard calls, with the user's session (the
 // dashboard's own screens are covered by apps/web's tests). The browser steps drive the real popup
@@ -39,7 +40,6 @@ import { allowDomainsRule, type RuleDocument } from "../support/stack";
 const IP_DOMAIN = "127.0.0.1";
 const NAME_DOMAIN = "localhost";
 const ARRIVAL_TIMEOUT_MS = 60_000;
-const SLUG = "demo-visits-by-domain";
 
 interface ApiEvent {
   id: string;
@@ -48,7 +48,7 @@ interface ApiEvent {
   trace: { ruleSetVersion: number } | null;
 }
 
-test("the full 8-step demo on Firefox", async ({ stack, site }) => {
+test("the full 6-step demo on Firefox", async ({ stack, site }) => {
   test.setTimeout(480_000);
   const build = await patchBuildWithHostPermissions(FIREFOX_EXTENSION_PATH, [
     LOOPBACK_HOST_PERMISSION,
@@ -131,6 +131,11 @@ test("the full 8-step demo on Firefox", async ({ stack, site }) => {
       expect(visits.map((event) => event.data.path).sort()).toEqual(["/b", "/p/2"]);
       expect(visits.every((event) => event.trace?.ruleSetVersion === 1)).toBe(true);
       eventIds = events.map((event) => event.id);
+      // An ingest key can only ingest: it does not read events back.
+      const withIngestKey = await fetch(`${stack.apiOrigin}/v1/events`, {
+        headers: { authorization: `Bearer ${ingestKey}` },
+      });
+      expect(withIngestKey.status).toBe(401);
       // Nothing of the query string or the fragment is anywhere in what was stored.
       const stored = JSON.stringify((await stack.eventsOf(integrationId)).map((e) => e.data));
       expect(stored).not.toContain("q=secret");
@@ -138,64 +143,8 @@ test("the full 8-step demo on Firefox", async ({ stack, site }) => {
       expect(stored).not.toContain("?");
     });
 
-    // ---- 5. a read key and a saved-query endpoint ------------------------------------------
-    let readKey = "";
-    let endpointKey = "";
-    await test.step("5. create a read key and a saved-query endpoint", async () => {
-      const keyRes = await account.request("POST", "/v1/keys", {
-        name: "demo read",
-        scopes: ["events:read"],
-      });
-      expect(keyRes.status).toBe(201);
-      readKey = ((await keyRes.json()) as { key: string }).key;
-      expect(readKey).toMatch(/^pa_read_/);
-
-      const endpointRes = await account.request("POST", "/v1/endpoints", {
-        slug: SLUG,
-        definition: {
-          when: { type: ["browser.page_visited"] },
-          window: { kind: "last_n_days", days: 7 },
-          aggregate: "count_by_domain",
-        },
-      });
-      expect(endpointRes.status).toBe(201);
-      endpointKey = ((await endpointRes.json()) as { key: string }).key;
-      expect(endpointKey).toMatch(/^pa_read_/);
-    });
-
-    // ---- 6. read the endpoint with its own key ---------------------------------------------
-    const readEndpoint = async (key: string) =>
-      fetch(`${stack.apiOrigin}/v1/me/${SLUG}`, { headers: { authorization: `Bearer ${key}` } });
-    await test.step("6. the endpoint answers with its own key, and only that", async () => {
-      const res = await readEndpoint(endpointKey);
-      expect(res.status).toBe(200);
-      const body = (await res.json()) as { kind: string; rows: unknown[] };
-      expect(body.kind).toBe("count_by_domain");
-      expect(body.rows).toEqual([{ domain: IP_DOMAIN, count: 2 }]);
-
-      // The general read key reads events but is not an endpoint key, and an endpoint key does not
-      // read events: each key does only what its scopes allow.
-      const events = await fetch(`${stack.apiOrigin}/v1/events`, {
-        headers: { authorization: `Bearer ${readKey}` },
-      });
-      expect(events.status).toBe(200);
-      const crossed = await fetch(`${stack.apiOrigin}/v1/events`, {
-        headers: { authorization: `Bearer ${endpointKey}` },
-      });
-      expect(crossed.status).toBe(403);
-      // An ingest key can only ingest.
-      const withIngestKey = await fetch(`${stack.apiOrigin}/v1/events`, {
-        headers: { authorization: `Bearer ${ingestKey}` },
-      });
-      expect(withIngestKey.status).toBe(401);
-      // The same holds the other way round on the endpoint route: the general read key has no
-      // `endpoint:<id>` scope (one 404, which hides the slug), and an ingest key is not a read key.
-      expect((await readEndpoint(readKey)).status).toBe(404);
-      expect((await readEndpoint(ingestKey)).status).toBe(401);
-    });
-
-    // ---- 7. change the rule ----------------------------------------------------------------
-    await test.step("7. changing the rule changes what later visits do", async () => {
+    // ---- 5. change the rule ----------------------------------------------------------------
+    await test.step("5. changing the rule changes what later visits do", async () => {
       const flipped: RuleDocument = {
         ...allowDomainsRule([NAME_DOMAIN]),
         name: "e2e: allow the other hostname",
@@ -209,19 +158,25 @@ test("the full 8-step demo on Firefox", async ({ stack, site }) => {
       expect(await paths(IP_DOMAIN)).toEqual(["/p/2", "/b"]);
       expect(await paths(NAME_DOMAIN)).toEqual(["/p/4"]);
 
-      // The endpoint reads the same data, so it follows.
-      const body = (await (await readEndpoint(endpointKey)).json()) as { rows: unknown[] };
-      expect(body.rows).toEqual([
-        { domain: IP_DOMAIN, count: 2 },
-        { domain: NAME_DOMAIN, count: 1 },
-      ]);
+      // The activity totals read the same data, so they follow.
+      const activity = await account.request("GET", "/v1/activity/domains");
+      expect(activity.status).toBe(200);
+      const { domains } = (await activity.json()) as {
+        domains: Array<{ domain: string; pageVisits: number }>;
+      };
+      expect(domains.map((d) => [d.domain, d.pageVisits]).sort()).toEqual(
+        [
+          [IP_DOMAIN, 2],
+          [NAME_DOMAIN, 1],
+        ].sort(),
+      );
       const events = await stack.eventsOf(integrationId);
       expect(pageVisits(events).map((event) => event.trace?.ruleSetVersion)).toEqual([1, 1, 2]);
       eventIds = events.map((event) => event.id);
     });
 
-    // ---- 8. export, then delete the account ------------------------------------------------
-    await test.step("8. export the data, then delete the account and it is all gone", async () => {
+    // ---- 6. export, then delete the account ------------------------------------------------
+    await test.step("6. export the data, then delete the account and it is all gone", async () => {
       await stack.startWorker();
       const started = await account.request("POST", "/v1/exports", {});
       expect(started.status).toBe(202);
@@ -267,7 +222,6 @@ test("the full 8-step demo on Firefox", async ({ stack, site }) => {
 
       // The session is gone, every key stopped working, and no row or file of the user is left.
       expect((await account.request("GET", "/v1/me")).status).toBe(401);
-      expect((await readEndpoint(endpointKey)).status).toBe(401);
       const ingest = await fetch(`${stack.apiOrigin}/v1/ingest/config`, {
         headers: { authorization: `Bearer ${ingestKey}` },
       });
@@ -276,7 +230,6 @@ test("the full 8-step demo on Firefox", async ({ stack, site }) => {
         ["events", "user_id"],
         ["integrations", "user_id"],
         ["rules", "user_id"],
-        ["endpoints", "user_id"],
         ["api_keys", "user_id"],
         ["session", "user_id"],
         ["account", "user_id"],

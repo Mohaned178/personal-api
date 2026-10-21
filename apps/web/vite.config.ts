@@ -20,7 +20,7 @@ export default defineConfig({
     },
   },
   server: {
-    // The API owns /api/auth (Better Auth) and /v1 (platform endpoints, from M1); proxying both
+    // The API owns /api/auth (Better Auth) and /v1 (platform routes, from M1); proxying both
     // keeps the dashboard same-origin in dev, like it is when the API serves the build. Better Auth
     // only trusts BETTER_AUTH_URL's origin, so the proxy presents :5173 requests as that origin;
     // otherwise every auth POST (sign in, sign up, sign out) is a 403 in dev.

@@ -153,7 +153,7 @@ export function IndexPage() {
       <header className="flex items-start justify-between gap-4">
         <div className="flex flex-col gap-1">
           <h1 className="text-3xl font-semibold tracking-tight">Personal API</h1>
-          <p className="text-sm text-muted-foreground">Your Data. Your Endpoints. Your Rules.</p>
+          <p className="text-sm text-muted-foreground">Your Data. Your Rules.</p>
         </div>
         <Button variant="outline" onClick={onSignOut}>
           Sign out
