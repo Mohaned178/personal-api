@@ -135,8 +135,8 @@ test.describe("Firefox: a daily limit", () => {
     const limitId = await addLimit(account, false);
     await syncLimit(firefox, limitId);
 
-    // Under the limit (50 s of 1 min): the site opens and stays open.
-    await setTimeOnSite(firefox, 50_000);
+    // Well under the limit (10 s of 1 min): the site opens and stays open.
+    await setTimeOnSite(firefox, 10_000);
     const page = url("/p/limit");
     await visitFirefox(firefox, tab, page);
     await evaluateLimits(firefox);
@@ -149,9 +149,12 @@ test.describe("Firefox: a daily limit", () => {
     await expect
       .poll(() => urlOf(firefox, tab), { timeout: BLOCK_TIMEOUT_MS, intervals: [500] })
       .toBe(`moz-extension://${firefox.extensionUuid}/time-up.html?l=${limitId}`);
+    // The page fills itself in from storage after it loads, so wait for its content.
+    await expect
+      .poll(() => firefox.textOf(tab, "#summary"), { timeout: 15_000 })
+      .toContain(SITE_DOMAIN);
     expect(await firefox.textOf(tab, "#title")).toBe("Time's up");
-    expect(await firefox.textOf(tab, "#summary")).toContain(SITE_DOMAIN);
-    expect(await firefox.isDisplayed(tab, "#snooze")).toBe(true);
+    await expect.poll(() => firefox.isDisplayed(tab, "#snooze"), { timeout: 15_000 }).toBe(true);
 
     // The extension keeps no page: only ids, numbers and the date are written for the limit.
     const stored = JSON.stringify(await firefox.storageGet(null));
@@ -172,13 +175,18 @@ test.describe("Firefox: a daily limit", () => {
     const limitId = await addLimit(account, true);
     await syncLimit(firefox, limitId);
 
-    await setTimeOnSite(firefox, LIMIT_MINUTES * 60_000 + 1_000);
+    // Visit first (nothing is used yet), then use the time up, like the other test.
+    await setTimeOnSite(firefox, 10_000);
     await visitFirefox(firefox, tab, url("/p/strict"));
+    await setTimeOnSite(firefox, LIMIT_MINUTES * 60_000 + 1_000);
     await evaluateLimits(firefox);
     await expect
       .poll(() => urlOf(firefox, tab), { timeout: BLOCK_TIMEOUT_MS, intervals: [500] })
       .toBe(`moz-extension://${firefox.extensionUuid}/time-up.html?l=${limitId}`);
-    expect(await firefox.isDisplayed(tab, "#snooze")).toBe(false);
+    // The button starts hidden, so first wait for the strict note: it appears once the page has
+    // read the limit, and only then does "no 5 more minutes" mean something.
+    await expect.poll(() => firefox.isDisplayed(tab, "#note"), { timeout: 15_000 }).toBe(true);
     expect(await firefox.textOf(tab, "#note")).toContain("Strict mode");
+    expect(await firefox.isDisplayed(tab, "#snooze")).toBe(false);
   });
 });
