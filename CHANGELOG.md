@@ -21,6 +21,16 @@ All notable changes to Personal API are listed here. The format follows
 ### Changed
 
 - The extension never captures the connected server's own origin, even under an allow-all rule.
+- `GET /v1/events` and `GET /v1/activity/*` take the dashboard session only. The home tagline is
+  now "Your Data. Your Rules."
+
+### Removed
+
+- **Saved-query endpoints and read keys.** `/v1/endpoints`, `GET /v1/me/:slug`, `/v1/keys`, the Read keys
+  and Endpoints pages, `pa_read_` keys and their rate limit are gone, with `docs/saved-queries.md`. The
+  routes answer 404, and a `pa_read_` key is an unknown bearer (401). Migration `0013` deletes the
+  endpoints and read keys that existed and drops the `endpoints` table and the read-key columns of
+  `api_keys`. Ingest keys (`pa_ing_`) and pairing are unchanged. The demo e2e is now six steps.
 
 ## [1.0.0] - Unreleased
 

@@ -26,7 +26,7 @@ export class AccountRepository {
    *  2. Better Auth's `verification` rows, which are keyed by identifier or value instead of a
    *     user id, so the cascade misses them,
    *  3. the `user` row. Every other table has `user_id ... ON DELETE CASCADE` (sessions, accounts,
-   *     integrations, keys, events, rules, endpoints, ...); account.int.spec.ts proves that for
+   *     integrations, keys, events, rules, ...); account.int.spec.ts proves that for
    *     every table in the schema.
    * The values are bound parameters (invariant 7). Nothing is read back.
    */
